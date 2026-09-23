@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '0.9.4';
+  HC.VERSION = '1.0.0';
 
   const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -362,6 +362,15 @@
       return;
     }
     addItemRow(ds.cid, name);
+  };
+
+  /** 「買うものは入れなくてよい」の切り替え（お品書き待ちの一覧から外す） */
+  A.noItems = (ds) => {
+    const on = ds.on === '1';
+    S.mutate(on ? 'お品書き待ちから外す' : 'お品書き待ちに戻す', (d) => {
+      if (d.entries[ds.cid]) d.entries[ds.cid].noItems = on;
+    });
+    UI.toast(on ? 'お品書き待ちの一覧から外しました' : 'お品書き待ちに戻しました', { undo: true });
   };
 
   /** 品目を1行足す。過去に入れた金額が分かっていれば価格も入れておく */

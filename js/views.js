@@ -236,7 +236,10 @@
       <div class="cur-links">${V.links(c, e)}</div>
       ${V.shots(cid)}
       ${e.memo ? `<div class="cur-memo">${esc(e.memo).replace(/\n/g, '<br>')}</div>` : ''}
-      ${e.items.length ? `<ul class="items">${items}</ul>` : '<p class="muted small">購入予定のアイテムが未登録です</p>'}
+      ${e.items.length ? `<ul class="items">${items}</ul>`
+        : (s.isPending(e)
+          ? `<p class="cur-pend">${U.icon('clock', 'sm')}お品書き待ち。買ったものはこの場で記録できます</p>`
+          : '<p class="muted small">買うものは登録していません</p>')}
       <button class="add-extra" data-act="extraBuy" data-cid="${cid}">${U.icon('plus')}追加で買ったものを記録</button>
       ${near.length ? `<div class="near"><span class="near-l">${U.icon('compass', 'sm')}この近く</span>
         ${near.map((x) => {
@@ -270,19 +273,22 @@
         if (f === 'todo') return e.status === 'todo' || e.status === 'later';
         if (f === 'done') return !(e.status === 'todo' || e.status === 'later');
         if (f === 'must') return e.pri === 1;
+        if (f === 'pend') return s.isPending(e);
         return true;
       });
       const mustTotal = U.sum(Object.values(d.entries).filter((e) => e.pri === 1), (e) => s.entryPlanned(e));
       const diff = st.usable - st.plannedTotal - U.sum(d.extras, (x) => x.cost);
+      const pend = s.pendingCids();
       let html = `<section class="card plan-sum">
         <div><span>サークル</span><b>${Object.keys(d.entries).length}</b></div>
         <div><span>予定合計</span><b>${U.yen(st.plannedTotal)}</b></div>
         <div><span>うち必須</span><b>${U.yen(mustTotal)}</b></div>
         ${st.budget ? `<div><span>予算との差</span><b class="${diff < 0 ? 'neg' : 'pos'}">${diff >= 0 ? '+' : ''}${U.yen(diff)}</b></div>` : `<div><button class="link-btn" data-act="budgetEdit">予算を設定</button></div>`}
       </section>
+      ${V.pending(pend)}
       ${V.sim()}
       <div class="toolbar">
-        <div class="seg sm">${[['all', '全部'], ['todo', '未完了'], ['must', '必須'], ['done', '完了']].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="listFilter" data-f="${k}">${l}</button>`).join('')}</div>
+        <div class="seg sm">${[['all', '全部'], ['todo', '未完了'], ['must', '必須'], ['pend', `待ち${pend.length ? ' ' + pend.length : ''}`], ['done', '完了']].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="listFilter" data-f="${k}">${l}</button>`).join('')}</div>
         <span class="grow"></span>
         <button class="btn sm primary" data-act="routeMenu">${U.icon('route')}ルート作成</button>
       </div>`;
@@ -301,6 +307,25 @@
   };
 
   /**
+   * お品書きがまだ出ていないサークルのまとめ。
+   * 発表されたらここから開いて買うものを入れる、という使い方を想定している
+   */
+  V.pending = (cids) => {
+    if (!cids || !cids.length) return '';
+    const s = S();
+    const chips = cids.slice(0, 14).map((cid) => {
+      const c = s.circle(cid) || s.entry(cid).snap;
+      return `<button class="pend-chip" data-act="openCircle" data-cid="${esc(cid)}">${V.space(c)}<span>${esc(c.name)}</span></button>`;
+    }).join('');
+    return `<section class="card pend-card" id="sec-pend">
+      <h3>${U.icon('clock')}お品書き待ち <small>${cids.length}サークル</small></h3>
+      <p class="muted small">買うものがまだ入っていないサークルです。お品書きが出たらタップして入力してください。入れるまでは金額に含まれません。</p>
+      <div class="pend-list">${chips}</div>
+      ${cids.length > 14 ? `<button class="link-btn" data-act="listFilter" data-f="pend">残り${cids.length - 14}件も見る</button>` : ''}
+    </section>`;
+  };
+
+  /**
    * 予算の試算表。「必須だけ／優先まで／通常まで／全部」で、
    * いくらになるか・予算と現金がいくら残るかを並べて見せる
    */
@@ -312,7 +337,9 @@
     const hasBudget = sim.usable > 0;
     const hasCash = sim.cash > 0;
     const money = (v, invert) => `<b class="${v == null ? '' : (invert ? (v < 0 ? 'neg' : 'pos') : '')}">${v == null ? '—' : U.yen(v)}</b>`;
-    const rows = sim.rows.map((r) => `
+    // その優先度のサークルが1件も無い段は、同じ数字が並ぶだけなので出さない
+    const shown = sim.rows.filter((r, i) => r.count > 0 || i === 0 || r.tier === sim.fitTier);
+    const rows = (shown.length ? shown : sim.rows.slice(0, 1)).map((r) => `
       <tr class="${r.tier === sim.fitTier ? 'fit' : ''}${r.cumCount === 0 ? ' none' : ''}">
         <td class="lb">${r.tier === sim.fitTier ? U.icon('check', 'sm') : ''}${esc(r.label)}<small>${r.cumCount}サークル</small></td>
         <td class="mo">${U.yen(r.total)}</td>
@@ -320,17 +347,23 @@
         ${hasCash ? `<td class="mo">${money(r.cashLeft, true)}</td>` : ''}
       </tr>`).join('');
     const last = sim.rows[3];
+    const pend = s.pendingCids().length;
+    const fit = sim.fitTier ? sim.rows[sim.fitTier - 1] : null;
+    const notes = [];
+    if (sim.spent) notes.push(`合計には支払い済みの ${U.yen(sim.spent)}${sim.extras ? `（うちサークル外 ${U.yen(sim.extras)}）` : ''} を含みます。`);
+    if (last.unknown) notes.push(`価格未定が ${last.unknown}件。平均 ${U.yen(sim.avg)} とみて <b>${U.yen(last.unknownEst)}</b> ほど増える見込みです。`);
+    if (pend) notes.push(`<b class="pend-ink">お品書き待ちが ${pend}サークル。決まればここに乗ります。</b>`);
+    if (!hasBudget) notes.push('<button class="link-btn" data-act="budgetEdit">予算を入れると、残りも出ます</button>');
+    else if (!fit) notes.push('<b class="neg">必須だけでも予算を超えます。</b>');
+    else if (fit.cumCount >= last.cumCount) notes.push('<b class="pos">計画を全部買っても予算に収まります。</b>');
+    else notes.push(`予算に収まるのは <b>${esc(fit.label)}</b> までです。`);
     return `<section class="card sim" id="sec-sim">
-      <h3>${U.icon('yen')}いくら必要か <small>優先度ごとの積み上げ</small></h3>
+      <h3>${U.icon('yen')}予算の見通し <small>優先度の高い順に足していった場合</small></h3>
       <table class="simtable">
-        <thead><tr><th>ここまで買うと</th><th>合計</th>${hasBudget ? '<th>予算の残り</th>' : ''}${hasCash ? '<th>現金の残り</th>' : ''}</tr></thead>
+        <thead><tr><th>どこまで買うか</th><th>合計</th>${hasBudget ? '<th>予算の残り</th>' : ''}${hasCash ? '<th>現金の残り</th>' : ''}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      <p class="muted small">
-        合計には支払済み ${U.yen(sim.spent)}${sim.extras ? `（うちサークル外 ${U.yen(sim.extras)}）` : ''} を含みます。
-        ${last.unknown ? `価格未定が${last.unknown}件あり、平均 ${U.yen(sim.avg)} で見ると <b>${U.yen(last.unknownEst)}</b> 増える見込みです。` : ''}
-        ${hasBudget ? (sim.fitTier ? `いまの予算で回れるのは <b>${esc(sim.rows[sim.fitTier - 1].label)}</b> です。` : '<b class="neg">必須だけでも予算を超えています。</b>') : '<button class="link-btn" data-act="budgetEdit">予算を設定すると残りも出ます</button>'}
-      </p>
+      <p class="muted small">${notes.join(' ')}</p>
     </section>`;
   };
 
@@ -346,7 +379,9 @@
       <span class="ord">${n}</span>
       <button class="prow-main" data-act="openCircle" data-cid="${cid}">
         <span class="l1">${V.space(c)}<span class="nm">${esc(c.name)}</span></span>
-        <span class="l2">${e.items.length ? esc(itemNames(e)) : '<i>アイテム未登録</i>'}${e.memo ? ` ・ ${U.icon('note', 'sm')}` : ''}</span>
+        <span class="l2">${s.isPending(e)
+          ? `<span class="pend">${U.icon('clock', 'sm')}お品書き待ち</span>`
+          : (e.items.length ? esc(itemNames(e)) : '<i>買うもの未入力</i>')}${e.memo ? ` ・ ${U.icon('note', 'sm')}` : ''}</span>
       </button>
       <span class="prow-side">
         <button class="pri-btn" data-act="priMenu" data-cid="${cid}">${V.pri(e.pri)}</button>
@@ -444,7 +479,8 @@
           c.tw ? `@${esc(c.tw)}` : '',
           fav ? `<span class="fav">${U.icon('heart', 'sm')}</span>` : '',
           hist.length ? `<span class="hist">${hist.map((h) => `${esc(h.event)}${h.spent ? ' ' + U.yen(h.spent) : ''}`).join(' / ')}</span>` : '',
-          e && e.items.length ? `<span class="it">${esc(itemNames(e))}</span>` : '',
+          e && s.isPending(e) ? `<span class="pend">${U.icon('clock', 'sm')}お品書き待ち</span>`
+            : (e && e.items.length ? `<span class="it">${esc(itemNames(e))}</span>` : ''),
         ].filter(Boolean).join(' ・ ');
         out.push(`<div class="crow ${e ? `planned p${e.pri} st-${e.status}` : ''}">
           <button class="crow-main" data-act="openCircle" data-cid="${c.id}">${V.space(c)}<span class="crow-text"><span class="nm">${esc(c.name)}</span>${sub ? `<span class="sub">${sub}</span>` : ''}</span></button>
@@ -484,6 +520,12 @@
     html += `
       <div class="field"><label>優先度</label>
         <div class="seg pri-seg">${[1, 2, 3, 4].map((p) => `<button class="p${p} ${e.pri === p ? 'on' : ''}" data-act="setPri" data-cid="${cid}" data-pri="${p}">${s.PRI[p].label}</button>`).join('')}</div></div>
+      ${s.isPending(e) ? `<div class="pend-note">${U.icon('clock', 'sm')}
+        <div><b>お品書き待ち</b><small>発表されたら、下の「買うもの」に入れてください。入れるまで金額には入りません。</small></div>
+        <button class="btn sm ghost" data-act="noItems" data-cid="${cid}" data-on="1">入れなくてよい</button></div>`
+        : (e.noItems ? `<div class="pend-note done">${U.icon('check', 'sm')}
+        <div><b>買うものは入れない設定です</b><small>お品書き待ちの一覧には出ません。</small></div>
+        <button class="btn sm ghost" data-act="noItems" data-cid="${cid}" data-on="0">戻す</button></div>` : '')}
       <div class="field"><label>買うもの <small class="cd-sum">予定 ${U.yen(planned)}${spent ? ` ・ 支払済 ${U.yen(spent)}` : ''}</small></label>
         <div class="ie-list">${e.items.map((i) => `
           <div class="ie-row it-${i.status}${i.planned === false ? ' extra' : ''}">

@@ -292,6 +292,7 @@
     memo: '',
     menu: '',
     status: 'todo',
+    noItems: false,   // true = お品書き待ちではなく、買うものを入れないと決めた
     snap: { name: c.name, tw: c.tw, space: c.space },
     addedAt: Date.now(),
   });
@@ -308,6 +309,13 @@
     t: null,
     ...extra,
   });
+
+  /** お品書きがまだ出ていない＝買うものが1つも入っていないサークル（自分で「入れない」と決めたものは除く） */
+  S.isPending = (e) => !!e && !e.noItems && !e.items.some((i) => i.planned !== false);
+  S.pendingCids = (id = S.state.eventId) => {
+    const d = S.d(id);
+    return d.order.filter((cid) => S.isPending(d.entries[cid]));
+  };
 
   S.itemCost = (it) => (it.paid != null ? it.paid : (it.price || 0) * (it.qty || 1));
   S.entryPlanned = (e) => U.sum(e.items.filter((i) => i.planned !== false), (i) => (i.price || 0) * (i.qty || 1));
@@ -513,7 +521,7 @@
     Object.values(d.entries).forEach((e) => e.items.forEach((i) => { if (i.status === 'todo' && i.price) known.push(i.price); }));
     const avg = known.length ? Math.round(U.sum(known) / known.length) : 0;
 
-    const LABEL = ['必須だけ', '＋優先まで', '＋通常まで', '＋余裕まで（全部）'];
+    const LABEL = ['必須だけ', '優先まで', '通常まで', 'すべて'];
     let cum = 0, cumCount = 0, cumUnknown = 0;
     const rows = [1, 2, 3, 4].map((tier) => {
       let add = 0, count = 0, unknown = 0;
@@ -543,7 +551,8 @@
       };
     });
     // 予算に収まる一番深いところ
-    const fits = st.usable ? [...rows].reverse().find((r) => r.budgetLeft >= 0) : null;
+    // 1件も無い段は見出しとして意味がないので、収まる段の判定から外す
+    const fits = st.usable ? [...rows].reverse().find((r) => r.budgetLeft >= 0 && (r.count > 0 || r.tier === 1)) : null;
     return { rows, spent: st.spent, extras, usable: st.usable, cash: d.cash || 0, avg, fitTier: fits ? fits.tier : 0 };
   };
 
@@ -830,6 +839,7 @@
     if (e.memo) o.m = e.memo;
     if (e.menu) o.u = e.menu;
     if (e.status !== 'todo') o.s = e.status;
+    if (e.noItems) o.ni = 1;
     // サークル名などは読み込み側でイベントの一覧から引けるので、引けない時だけ持たせる
     if (e.snap && !known.has(e.cid)) o.k = [e.snap.name, e.snap.tw || '', e.snap.space || ''];
     if (e.doneAt) o.da = e.doneAt;
@@ -839,7 +849,7 @@
     if (!o || !('c' in o)) return o; // すでに通常形式
     const c = byId.get(o.c);
     const snap = c ? { name: c.name, tw: c.tw, space: c.space } : { name: (o.k || [])[0] || o.c, tw: (o.k || [])[1] || '', space: (o.k || [])[2] || o.c };
-    return { cid: o.c, pri: o.r || 3, items: (o.i || []).map(fatItem), memo: o.m || '', menu: o.u || '', status: o.s || 'todo', doneAt: o.da || null, snap, addedAt: Date.now() };
+    return { cid: o.c, pri: o.r || 3, items: (o.i || []).map(fatItem), memo: o.m || '', menu: o.u || '', status: o.s || 'todo', noItems: !!o.ni, doneAt: o.da || null, snap, addedAt: Date.now() };
   };
 
   /** 読み込んだ計画データを通常形式へ戻す（スリム形式・通常形式のどちらでも通る） */

@@ -206,7 +206,7 @@ body[data-view="map"] { padding-bottom: 0; overflow: hidden; }
 .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn.danger.ghost { background: transparent; color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 .btn.ghost { background: transparent; }
-.btn.sm { min-height: 34px; padding: 0 10px; font-size: .85rem; border-radius: 10px; }
+.btn.sm { min-height: 38px; padding: 0 12px; font-size: .85rem; border-radius: 10px; }
 .btn.lg { min-height: 52px; font-size: 1.05rem; }
 .btn.xl { min-height: 60px; font-size: 1.15rem; border-radius: 14px; }
 .btn.block { width: 100%; }
@@ -220,10 +220,10 @@ body[data-view="map"] { padding-bottom: 0; overflow: hidden; }
 .btn-grid3 .btn { padding: 0 6px; font-size: .9rem; }
 .icon-btn { width: 40px; height: 40px; display: inline-grid; place-items: center; border-radius: 10px; color: var(--muted); flex: none; }
 .icon-btn:hover { background: var(--surface2); }
-.icon-btn.sm { width: 30px; height: 30px; }
+.icon-btn.sm { width: 38px; height: 38px; }
 .icon-btn.solid { background: var(--surface); color: var(--text); box-shadow: var(--shadow); border: 1px solid var(--line); width: 44px; height: 44px; }
 .icon-btn.solid.on { color: var(--accent); border-color: var(--accent); }
-.link-btn { color: var(--accent); font-weight: 600; font-size: .85rem; display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.link-btn { color: var(--accent); font-weight: 600; font-size: .85rem; display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-height: 38px; padding: 0 4px; }
 .link-btn.more { margin: 8px auto 0; display: flex; }
 
 .input {
@@ -249,7 +249,7 @@ select.input { appearance: auto; }
 .seg button { flex: 1; min-height: 38px; border-radius: 9px; font-weight: 650; font-size: .88rem; color: var(--muted); padding: 0 6px; }
 .seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 .seg.sm { width: auto; }
-.seg.sm button { min-height: 32px; font-size: .8rem; padding: 0 9px; white-space: nowrap; }
+.seg.sm button { min-height: 36px; font-size: .8rem; padding: 0 9px; white-space: nowrap; }
 .pri-seg button.on.p1 { background: var(--p1); color: #fff; }
 .pri-seg button.on.p2 { background: var(--p2); color: #fff; }
 .pri-seg button.on.p3 { background: var(--p3); color: #fff; }
@@ -267,10 +267,10 @@ select.input { appearance: auto; }
   .chips.scroll { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; }
 }
 .chip {
-  flex: none; min-height: 34px; padding: 0 12px; border-radius: 999px; font-size: .85rem; font-weight: 650;
+  flex: none; min-height: 38px; padding: 0 13px; border-radius: 999px; font-size: .85rem; font-weight: 650;
   background: var(--surface); border: 1px solid var(--line); white-space: nowrap;
 }
-.chip.sm { min-height: 30px; padding: 0 10px; font-size: .8rem; }
+.chip.sm { min-height: 36px; padding: 0 11px; font-size: .8rem; }
 .chip.on { background: var(--text); color: var(--bg); border-color: var(--text); }
 
 .pri-chip { display: inline-flex; align-items: center; height: 23px; padding: 0 9px; border-radius: 6px; font-size: .78rem; font-weight: 800; color: #fff; flex: none; }
@@ -288,7 +288,7 @@ select.input { appearance: auto; }
 .sp.xl { font-size: 2.6rem; font-weight: 850; line-height: 1.05; letter-spacing: .02em; }
 
 .link-chip {
-  display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 10px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 11px; border-radius: 999px;
   background: var(--surface2); color: var(--text); text-decoration: none; font-size: .8rem; font-weight: 650; border: 1px solid var(--line);
 }
 .link-chip.menu { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
@@ -313,7 +313,7 @@ select.input { appearance: auto; }
 .stepper { display: inline-flex; align-items: center; gap: 4px; background: var(--surface2); border-radius: 10px; padding: 2px; }
 .stepper .icon-btn { width: 36px; height: 36px; font-size: 1.1rem; font-weight: 700; color: var(--text); }
 .stepper b { min-width: 1.5em; text-align: center; }
-.stepper.sm .icon-btn { width: 30px; height: 30px; }
+.stepper.sm .icon-btn { width: 36px; height: 36px; }
 
 /* ------------------------------------------------------------ 財布 */
 .wallet { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; cursor: pointer; }
@@ -458,7 +458,7 @@ select.input { appearance: auto; }
 .ie-price { position: relative; }
 .ie-price span { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: .85rem; }
 .ie-price .input { padding-left: 20px; text-align: right; font-variant-numeric: tabular-nums; }
-.ie-row .icon-btn { width: 34px; height: 34px; }
+.ie-row .icon-btn { width: 38px; height: 38px; }
 .ie-st { grid-column: 1 / -1; font-size: .75rem; color: var(--ok); font-weight: 700; margin-top: -4px; }
 .ie-row.it-soldout .ie-st, .ie-row.it-skip .ie-st { color: var(--muted); }
 .ie-row.extra .ie-name { border-style: dashed; }
@@ -592,7 +592,8 @@ select.input { appearance: auto; }
   display: flex; align-items: center; gap: 4px; max-width: calc(100% - 24px); width: max-content;
   background: #1e2430; color: #fff; border-radius: 14px; padding: 6px 6px 6px 14px; box-shadow: var(--shadow-lg); font-size: .9rem; font-weight: 600;
 }
-.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: none; }
+.toast .toast-btn { pointer-events: auto; }
 .toast.error { background: var(--danger); }
 .toast-msg { padding: 6px 4px; }
 .toast-btn { display: inline-flex; align-items: center; gap: 4px; color: #7cc8ff; font-weight: 800; padding: 8px 10px; border-radius: 10px; white-space: nowrap; }
@@ -708,7 +709,7 @@ body.editing { overflow: hidden; }
 .near-l { display: inline-flex; align-items: center; gap: 4px; font-size: .76rem; color: var(--muted); font-weight: 650; }
 .near-chip {
   display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
-  padding: 5px 10px; border-radius: 999px; background: var(--surface2); border: 1px solid var(--line); font-size: .8rem;
+  min-height: 38px; padding: 5px 12px; border-radius: 999px; background: var(--surface2); border: 1px solid var(--line); font-size: .8rem;
 }
 .near-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 11em; }
 .cur-memo-add {
@@ -791,3 +792,41 @@ body.offline .link-chip.x, body.offline .link-chip.px, body.offline .link-chip.w
   padding: 4px 10px; border-radius: 999px; font-size: .74rem; font-weight: 700;
   background: var(--accent); color: var(--on-accent); white-space: nowrap;
 }
+
+/* 指で押す前提：見た目は小さくても、当たり判定は 40px 以上にする */
+.pri-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; min-width: 44px; }
+.cur-memo-add { min-height: 42px; }
+.prow-side .icon-btn, .crow .add-btn { min-height: 40px; min-width: 40px; }
+
+/* ブロックの1文字チップ（A…Q）も指で押しやすい幅にする */
+#cfilters .chip { min-width: 40px; justify-content: center; }
+.btn.sm { min-height: 38px; }
+
+/* ------------------------------------------------------------ お品書き待ち */
+.pend, .pend-ink { color: var(--p2); font-weight: 700; }
+.pend { display: inline-flex; align-items: center; gap: 3px; }
+.pend-card { border-color: color-mix(in srgb, var(--p2) 45%, var(--line)); }
+.pend-card h3 .ic { color: var(--p2); }
+.pend-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pend-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  min-height: 40px; padding: 5px 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--p2) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--p2) 40%, transparent); font-size: .82rem; font-weight: 650;
+}
+.pend-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 10em; }
+.pend-note {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 10px 12px; border-radius: 12px;
+  background: color-mix(in srgb, var(--p2) 12%, transparent); border: 1px solid color-mix(in srgb, var(--p2) 35%, transparent);
+}
+.pend-note > .ic { color: var(--p2); flex: none; }
+.pend-note div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.pend-note b { font-size: .88rem; }
+.pend-note small { color: var(--muted); font-size: .76rem; }
+.pend-note.done { background: var(--surface2); border-color: var(--line); }
+.pend-note.done > .ic { color: var(--ok); }
+.cur-pend {
+  display: flex; align-items: center; gap: 6px; margin: 10px 0; padding: 10px 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--p2) 12%, transparent); color: var(--p2); font-weight: 650; font-size: .85rem;
+}
+.prow .l2 .pend { font-size: .8rem; }
