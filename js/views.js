@@ -368,7 +368,7 @@
         el.dataset.ev = ev.id;
         el.innerHTML = `<div class="circles-view">
           <div class="search-bar">
-            <div class="search-box">${U.icon('search')}<input id="csearch" type="search" placeholder="サークル名・スペース(G23)・@ID・メモ" autocomplete="off" value="${esc(this.q)}" enterkeyhint="search"><button class="icon-btn clear" data-act="clearSearch" aria-label="クリア">${U.icon('x')}</button></div>
+            <div class="search-box">${U.icon('search')}<input id="csearch" type="search" placeholder="サークル名・スペース(G23・24)・メモ" autocomplete="off" value="${esc(this.q)}" enterkeyhint="search"><button class="icon-btn clear" data-act="clearSearch" aria-label="クリア">${U.icon('x')}</button></div>
             <div class="chips scroll" id="cfilters"></div>
           </div>
           <div id="clist" class="clist"></div>
@@ -402,7 +402,9 @@
       const d = s.d();
       const q = this.q.trim();
       const nq = U.norm(q);
-      const sq = P.parseSpaceQuery(q);
+      const sq = P.parseSpaceQuery(q);     // 「G23」「g 23」
+      const numQ = P.parseNumQuery(q);     // 「24」「23-24」＝番号だけ
+      const idQ = /^[@＠]/.test(q) ? U.toHalf(q).slice(1).toLowerCase() : ''; // 「@id」と書いたときだけID検索
       const f = this.f;
       return ev.circles.filter((c) => {
         const e = d.entries[c.id];
@@ -411,11 +413,15 @@
         if (f === 'hist' && !s.historyOf(c).length) return false;
         if (f.startsWith('b:') && c.block !== f.slice(2)) return false;
         if (!q) return true;
+        // 「@id」と書いたときだけ X の ID を探す（ふだんは ID を引っかけない）
+        if (idQ) return !!(c.tw && c.tw.toLowerCase().includes(idQ));
         if (sq) return c.block === sq.block && (c.nums.includes(sq.num) || String(c.nums[0]).startsWith(String(sq.num)));
+        // 数字だけのときはスペース番号。24 なら A24・N24… をブロック横断で出す
+        if (numQ) return c.nums.some((n) => n >= numQ.from && n <= numQ.to);
         if (U.norm(c.name).includes(nq)) return true;
-        if (c.tw && c.tw.toLowerCase().includes(nq.replace(/^@/, ''))) return true;
         if (U.norm(c.space) === nq) return true;
         if (e && (U.norm(e.memo).includes(nq) || e.items.some((i) => U.norm(i.name).includes(nq)))) return true;
+        if (c.tw && c.tw.toLowerCase().includes(nq)) return true; // 名前で見つからないときの保険
         return false;
       });
     },

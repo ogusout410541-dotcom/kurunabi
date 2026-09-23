@@ -67,6 +67,18 @@
     return m ? { block: m[1].toUpperCase(), num: +m[2] } : null;
   };
 
+  /**
+   * 数字だけの検索（「24」「23-24」）→ スペース番号の範囲。
+   * ブロックをまたいで A24・N24… を拾うために使う
+   */
+  P.parseNumQuery = (q) => {
+    const t = U.toHalf(q).trim();
+    if (!/^\d{1,3}(\s*[-‐ー~〜]\s*\d{1,3})?$/.test(t)) return null;
+    const ns = t.split(/[-‐ー~〜]/).map((x) => parseInt(x, 10)).filter((n) => Number.isFinite(n));
+    if (!ns.length) return null;
+    return { from: Math.min(...ns), to: Math.max(...ns) };
+  };
+
   P.twitterHandle = (url) => {
     if (!url) return '';
     const s = U.toHalf(url).trim();
