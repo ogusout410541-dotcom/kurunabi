@@ -160,7 +160,11 @@
   let applying = false;
   const schedule = U.debounce(() => {
     if (!conf().auto || !Sy.configured()) return;
-    Sy.push().then((r) => { if (r && r.conflict) U.emit('sync', { conflict: r.server }); });
+    Sy.push().then((r) => {
+      if (r && r.conflict) U.emit('sync', { conflict: r.server });
+      // 送信中に次の変更が来たときは取りこぼさないよう、もう一度予約する
+      else if (r && r.skipped === 'busy') schedule();
+    });
   }, PUSH_WAIT);
 
   U.on('change', (m) => {

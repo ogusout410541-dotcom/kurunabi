@@ -1068,7 +1068,13 @@
         HC.sync.importConfig(obj);
         UI.toast('設定しました。取り込んでいます…');
         const r = await HC.sync.pull({ force: true });
-        UI.toast(r.ok ? (r.empty ? '同期の準備ができました（まだデータはありません）' : '取り込みました') : ('取り込めませんでした：' + (r.error || '')), { error: !!r.error });
+        if (r.ok && r.empty && Object.keys(S.d().entries).length) {
+          // 保管場所が空なら、この端末の内容で始める
+          const p = await HC.sync.push({ force: true });
+          UI.toast(p.ok ? 'この端末の内容で同期を始めました' : ('送れませんでした：' + (p.error || '')), { error: !p.ok });
+        } else {
+          UI.toast(r.ok ? (r.empty ? '同期の準備ができました（まだデータはありません）' : '取り込みました') : ('取り込めませんでした：' + (r.error || '')), { error: !!r.error });
+        }
         app.refresh();
       } catch (e) {
         UI.toast(e.message, { error: true });
