@@ -729,7 +729,15 @@
           <p class="muted small">「当日の記録だけリセット」は計画を残して購入済・売切などを未購入に戻します（リハーサル後に）。</p>
         </section>
 
-        <p class="muted small center pad">クルナビ v${HC.VERSION} ・ データはこの端末のブラウザ内だけに保存されます</p>
+        <section class="card" id="sec-version">
+          <h3>${U.icon('check')}バージョン <small>この端末で動いているのは v${HC.VERSION}</small></h3>
+          <p class="muted small">更新してもデータは消えません（計画・記録はこの端末のブラウザ内に残ります）。
+            入力の途中なら、入力欄から指を離してから更新してください。</p>
+          <div class="btn-row wrap">
+            <button class="btn" data-act="checkUpdate">${U.icon('download')}更新を確認</button>
+            <button class="btn ghost" data-act="reloadApp">${U.icon('undo')}読み込み直す</button>
+          </div>
+        </section>
       </div>`;
     },
   };

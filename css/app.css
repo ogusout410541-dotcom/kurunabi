@@ -784,3 +784,10 @@ body.offline .link-chip.x, body.offline .link-chip.px, body.offline .link-chip.w
 .sync-row span { display: inline-flex; align-items: center; gap: 5px; }
 .sync-row small { color: var(--muted); margin-left: auto; }
 #sec-sync code { font-size: .8rem; background: var(--surface2); padding: 1px 5px; border-radius: 5px; }
+
+/* 新しい版が届いていることを、押せる形で出しておく */
+.update-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 999px; font-size: .74rem; font-weight: 700;
+  background: var(--accent); color: var(--on-accent); white-space: nowrap;
+}

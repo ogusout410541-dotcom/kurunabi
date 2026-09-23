@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '0.9.2';
+  HC.VERSION = '0.9.4';
 
   const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -513,6 +513,42 @@
     if (V.map.inst) V.map.inst.build();
     UI.toast('元の配置図に戻しました');
   };
+
+  // ---- バージョンの確認（更新が当たったのか分かるように）
+  /** 新しい版が届いたら、ヘッダーに押せる印を出しっぱなしにする */
+  const showUpdateChip = () => {
+    app.updateReady = true;
+    const el = U.$('#update-chip');
+    if (!el) return;
+    el.hidden = false;
+    el.innerHTML = `${U.icon('download', 'sm')}更新あり`;
+  };
+  app.showUpdateChip = showUpdateChip;
+
+  A.applyUpdate = async () => {
+    if (!(await UI.confirm('新しい版に切り替えます。計画・記録はそのまま残ります。\n入力の途中なら、いったん入力欄から離れてから実行してください。', { ok: '更新する' }))) return;
+    S.flush();
+    location.reload();
+  };
+  A.checkUpdate = async () => {
+    if (!('serviceWorker' in navigator) || !/^https:$/.test(location.protocol)) {
+      return UI.toast(`いま v${HC.VERSION} です（この開き方では更新確認は使えません）`);
+    }
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) return UI.toast(`いま v${HC.VERSION} です（オフライン保存はまだ有効になっていません）`);
+    UI.toast('新しい版がないか見ています…');
+    try { await reg.update(); } catch (_) { /* 圏外など */ }
+    setTimeout(() => {
+      if (reg.waiting || reg.installing) {
+        showUpdateChip();
+        UI.toast(`新しい版があります（いまは v${HC.VERSION}）`, { ms: 10000, action: { label: '更新する', fn: () => location.reload() } });
+      } else {
+        UI.toast(`v${HC.VERSION} が最新です`);
+      }
+    }, 1500);
+  };
+
+  A.reloadApp = () => location.reload();
 
   // ---- PCとスマホの同期
   const syncMsg = (r) => (r && r.error ? '同期できませんでした：' + r.error : '');
@@ -1346,19 +1382,28 @@
         navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {});
       } else {
         navigator.serviceWorker.register('sw.js').then((reg) => {
+          if (reg.waiting) showUpdateChip();   // 前回のうちに届いていた版
+          setTimeout(() => reg.update().catch(() => {}), 3000); // 起動のたびに新しい版を見に行く
           // 新しい版が入ったら知らせる（当日に古い画面のまま気づかない、を防ぐ）
           reg.addEventListener('updatefound', () => {
             const sw = reg.installing;
             if (!sw) return;
             sw.addEventListener('statechange', () => {
               if (sw.state === 'installed' && navigator.serviceWorker.controller) {
-                UI.toast('新しいバージョンがあります', { ms: 8000, action: { label: '更新', fn: () => location.reload() } });
+                showUpdateChip();
+                UI.toast(`新しい版があります（いまは v${HC.VERSION}）`, { ms: 10000, action: { label: '更新する', fn: () => location.reload() } });
               }
             });
           });
         }).catch(() => {});
       }
     }
+    // 前回開いたときと版が変わっていたら、更新が当たったことを知らせる
+    try {
+      const seen = localStorage.getItem('kurunavi.version');
+      if (seen && seen !== HC.VERSION) UI.toast(`v${HC.VERSION} に更新されました`, { ms: 6000 });
+      localStorage.setItem('kurunavi.version', HC.VERSION);
+    } catch (_) { /* noop */ }
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     paintNet();
     // 同期は起動をふさがないよう、後ろで様子を見る
