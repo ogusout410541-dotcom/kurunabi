@@ -1,6 +1,6 @@
 /* オフライン対応：アプリ本体をキャッシュ（会場は電波が弱い前提）
    ファイルを変更したら CACHE のバージョンを上げること */
-const CACHE = 'kurunavi-v1.0.0';
+const CACHE = 'kurunavi-v1.0.1';
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/util.js', 'js/parser.js', 'js/layout.js', 'js/qr.js', 'js/shots.js', 'js/store.js', 'js/ui.js', 'js/map.js', 'js/sync.js', 'js/editor.js', 'js/views.js', 'js/app.js',
@@ -38,17 +38,36 @@ self.addEventListener('message', (e) => {
   }
 });
 
-// 同一オリジンは「キャッシュ優先＋裏で更新」
+// アプリ本体のパス一覧（この中のファイルは「同じ版のかたまり」で揃える）
+const shellPaths = new Set(ASSETS.map((p) => new URL(p, self.registration ? self.registration.scope : self.location.href).pathname));
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== location.origin) return;
+  const isShell = shellPaths.has(url.pathname) || req.mode === 'navigate';
+
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const hit = await cache.match(req, { ignoreSearch: true });
+      if (isShell) {
+        // 本体は裏で1ファイルずつ入れ替えない。
+        // 個別に新しくすると「古いJSと新しいJSが混ざった状態」で動いてしまうため、
+        // 差し替えは新しい Service Worker の install（ASSETS をまとめて取得）にまかせる
+        if (hit) return hit;
+        try {
+          const res = await fetch(req);
+          if (res && res.ok) cache.put(req, res.clone());
+          return res;
+        } catch (_) {
+          return (await cache.match('index.html')) || Response.error();
+        }
+      }
+      // 本体以外（あとから足す画像など）は、キャッシュ優先＋裏で更新
       const net = fetch(req)
         .then((res) => { if (res.ok) cache.put(req, res.clone()); return res; })
-        // 圏外でキャッシュにも無いとき、画面遷移ならアプリ本体を返す（白画面にしない）
-        .catch(() => hit || (req.mode === 'navigate' ? cache.match('index.html') : undefined));
+        .catch(() => hit);
       return hit || net;
     })
   );
