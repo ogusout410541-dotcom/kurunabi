@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '0.9.0';
+  HC.VERSION = '0.9.1';
 
   const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -618,6 +618,7 @@
 
   U.on('sync', (m) => {
     if (m && m.conflict) askConflict(m.conflict);
+    if (m && m.pulledNew) UI.toast(`別の端末${m.device ? `（${U.esc(m.device)}）` : ''}の変更を取り込みました`);
     app.dirty.add('more');
     if (app.view === 'more') renderView('more');
   });

@@ -176,9 +176,27 @@
 
   window.addEventListener('online', () => { if (conf().dirty) schedule(); });
 
+  // ---- 端末を持ち替えたときの取り込み --------------------------------
+  let lastPullAt = 0;
+  const PULL_GAP = 15000; // 短い間に何度も取りに行かない
+
+  /** 画面に戻ってきたら、別の端末の変更を拾いに行く */
+  const maybePull = async () => {
+    if (!Sy.configured() || !navigator.onLine || Sy.state.busy) return;
+    if (Date.now() - lastPullAt < PULL_GAP) return;
+    lastPullAt = Date.now();
+    const r = await Sy.pull();
+    if (r && r.conflict) U.emit('sync', { conflict: r.server });
+    else if (r && r.ok && r.updated) U.emit('sync', { pulledNew: true, device: r.device });
+  };
+
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') maybePull(); });
+  window.addEventListener('focus', maybePull);
+
   /** 起動時：軽く様子を見る（失敗しても画面は普通に使える） */
   Sy.boot = async () => {
     if (!Sy.configured() || !navigator.onLine) return;
+    lastPullAt = Date.now();
     const r = await Sy.pull();
     if (r && r.conflict) U.emit('sync', { conflict: r.server });
   };
