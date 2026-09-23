@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '1.0.1';
+  HC.VERSION = '1.0.2';
 
   const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -539,6 +539,17 @@
     S.flush();
     location.reload();
   };
+  /**
+   * いま配信されている版（Service Worker が持っているキャッシュ名）を聞く。
+   * 本体は install のときに skipWaiting で即入れ替わるので、reg.waiting では判定できない。
+   * 「画面で動いている版」と「保存されている版」を突き合わせるのが確実
+   */
+  const storedVersion = async () => {
+    const st = await app.swAsk('status');
+    const m = st && String(st.cache || '').match(/kurunavi-v([\d.]+)/);
+    return m ? m[1] : '';
+  };
+
   A.checkUpdate = async () => {
     if (!('serviceWorker' in navigator) || !/^https:$/.test(location.protocol)) {
       return UI.toast(`いま v${HC.VERSION} です（この開き方では更新確認は使えません）`);
@@ -547,14 +558,16 @@
     if (!reg) return UI.toast(`いま v${HC.VERSION} です（オフライン保存はまだ有効になっていません）`);
     UI.toast('新しい版がないか見ています…');
     try { await reg.update(); } catch (_) { /* 圏外など */ }
-    setTimeout(() => {
-      if (reg.waiting || reg.installing) {
-        showUpdateChip();
-        UI.toast(`新しい版があります（いまは v${HC.VERSION}）`, { ms: 10000, action: { label: '更新する', fn: () => location.reload() } });
-      } else {
-        UI.toast(`v${HC.VERSION} が最新です`);
-      }
-    }, 1500);
+    await new Promise((r) => setTimeout(r, 2500));
+    const v = await storedVersion();
+    if ((v && v !== HC.VERSION) || reg.waiting || reg.installing) {
+      showUpdateChip();
+      UI.toast(`新しい版 ${v ? 'v' + v : ''} が届いています（画面は v${HC.VERSION}）`, {
+        ms: 10000, action: { label: '更新する', fn: () => location.reload() },
+      });
+    } else {
+      UI.toast(`v${HC.VERSION} が最新です`);
+    }
   };
 
   A.reloadApp = () => location.reload();
@@ -1387,11 +1400,18 @@
 
     // オフライン用 Service Worker（開発中の localhost では古いキャッシュが邪魔なので使わない）
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+      // 新しい版が主導権を取ったら、画面の中身は古いままなので「更新あり」を出す
+      navigator.serviceWorker.addEventListener('controllerchange', () => showUpdateChip());
       if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
         navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {});
       } else {
         navigator.serviceWorker.register('sw.js').then((reg) => {
           if (reg.waiting) showUpdateChip();   // 前回のうちに届いていた版
+          // 画面で動いている版と、保存されている版が違えば「更新あり」（skipWaiting で静かに入れ替わるため）
+          setTimeout(async () => {
+            const v = await storedVersion();
+            if (v && v !== HC.VERSION) showUpdateChip();
+          }, 4000);
           setTimeout(() => reg.update().catch(() => {}), 3000); // 起動のたびに新しい版を見に行く
           // 新しい版が入ったら知らせる（当日に古い画面のまま気づかない、を防ぐ）
           reg.addEventListener('updatefound', () => {
