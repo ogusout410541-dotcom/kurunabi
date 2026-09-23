@@ -20,6 +20,7 @@ js/parser.js          HC.parser : サークル一覧の貼り付け解析、ス�
 js/layout.js          HC.layout : 配置図 spec → セル座標、通路距離、ルート最適化（最近傍＋2-opt）
 js/qr.js              HC.qr     : QRコード生成（外部ライブラリ不使用・バイトモード・v1〜40）
 js/shots.js           HC.shots  : お品書き画像＋配置図画像の保管（IndexedDB。localStorage とは別系統）
+js/sync.js            HC.sync   : PCとスマホの同期（GASに置いたJSONを読み書き。オフライン優先）
 js/editor.js          HC.editor : 配置図エディタ（画像の上に島・壁・入口・通路を置いて spec を作る）
 data/holocle12.js     同梱イベント（サークル500件＋12thの配置図レイアウト＋タイムテーブル）
 data/holocle12-map.webp  公式配置図（公式PDFから書き出し。4046x1800、座標系は 2000x890）
@@ -32,6 +33,7 @@ js/app.js             HC.app / HC.actions : 起動、画面切替、data-act の
 sw.js                 オフラインキャッシュ（リリース時は CACHE のバージョンを上げる）
                       画面から 'status' / 'refresh' を postMessage で問い合わせできる（設定のオフライン欄）
 tools/serve.ps1       ローカル確認用サーバー (http://localhost:7827/)
+tools/gas/コード.gs    同期用の Google Apps Script（貼り付けてウェブアプリとしてデプロイする。手順は先頭のコメント）
 ```
 
 ## データモデル（`HC.store.state`）
@@ -154,6 +156,17 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
   表示時は `HC.shots.mapUrl(eventId)` で Blob URL に解決する（map.js / editor.js の両方）
 - 上部の「席が無いサークル N件」が編集中の検算。0件なら一覧の全サークルに席がある
 
+## 同期（js/sync.js）
+
+- 保存先は GAS のウェブアプリ。`S.state.sync = { url, phrase, auto, syncedAt, dirty, lastAt, device }`
+- 合言葉はサーバーに送らず、`SHA-256('kurunavi:' + phrase)` の先頭16バイトを置き場所のキー `k` にする
+- POST は `Content-Type: text/plain` で送る（preflight を起こさないため。GAS は CORS の事前確認に応答できない）
+- 送るのは **data / customEvents / favorites / layouts / eventId** だけ。`settings`（テーマ・地図の向きなど）と
+  IndexedDB のお品書き画像は端末ごとに残す
+- **競合は base（最後に見たサーバーの更新時刻）で検出**。食い違えばサーバーの内容を返し、画面で「向こうを取り込む／こちらで上書き」を選ばせる
+- オフライン時は `dirty` を立てて送らない。`online` イベントで再開。当日の会場で通信が切れても普段どおり使える
+- 設定はQRで渡せる（`kind:'sync'` の共有リンク）。**合言葉が入っているので人に見せない**
+
 ## オフライン
 
 - https で一度開けば SW が本体一式（現在21ファイル）をキャッシュし、圏外でも計画・記録・地図・お品書き画像はそのまま使える
@@ -186,6 +199,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 - [x] 配置図エディタ（`js/editor.js`）
 - [x] 入口位置：公式PDFの壁の開口部を実測（PDF座標 x=701 / x=1867 → 配置図座標 1385 / 520。「会場入口」表記は 1867 側）。ずれていればエディタで直せる
 - [x] 近くの未訪問サークル（`S.nearby`）／その場でメモ／巡回表の印刷
+- [x] PCとスマホの同期（`js/sync.js` ＋ `tools/gas/コード.gs`。自動送信・競合の選択・設定QR）
 - [x] 予算シミュレーション（`S.simulate()` → リストタブの「いくら必要か」表。必須だけ／優先まで／通常まで／全部で、合計・予算残・現金残を比較）
 - [x] 品目入力の最適化（価格の学習・同名は数量+1・まとめて入力 `P.parseItemLines`・スマホはテンキー・＋の長押しで優先度選択）
 - 同行者と分担は**作らない**（1人で行くため。2026-09-23 に本人確認済み）

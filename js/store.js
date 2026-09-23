@@ -39,6 +39,17 @@
     defaultPay: 'cash',
   });
 
+  // PCとスマホの同期（js/sync.js）。url と phrase が入っていれば動く
+  const defaultSync = () => ({
+    url: '',        // GAS ウェブアプリの /exec URL
+    phrase: '',     // 合言葉（サーバーには送らず、ハッシュだけ使う）
+    auto: true,     // 変更してから数秒後に自動で送る
+    syncedAt: 0,    // 最後に確認したサーバー側の更新時刻
+    dirty: false,   // まだ送っていない変更があるか
+    lastAt: 0,      // 最後に送受信した時刻（この端末の時計）
+    device: '',     // この端末の呼び名
+  });
+
   const defaultState = () => ({
     v: VERSION,
     eventId: (HC.bundled && HC.bundled[0] && HC.bundled[0].id) || '',
@@ -46,6 +57,7 @@
     data: {},
     favorites: {},
     layouts: {},   // イベントIDごとの配置図（エディタで作ったもの。同梱の配置図より優先）
+    sync: defaultSync(),
     settings: defaultSettings(),
   });
 
@@ -85,6 +97,7 @@
     out.data = st.data || {};
     out.favorites = st.favorites || {};
     out.layouts = st.layouts || {};
+    out.sync = { ...defaultSync(), ...(st.sync || {}) };
     Object.keys(out.data).forEach((k) => (out.data[k] = { ...defaultData(), ...out.data[k] }));
     out.v = VERSION;
     return out;
@@ -804,11 +817,12 @@
     if (i.paid != null) o.a = i.paid;
     if (i.pay) o.y = i.pay;
     if (i.planned === false) o.x = 1;
+    if (i.t) o.tt = i.t;   // 買った時刻（記録をそのまま持ち帰れるように）
     return o;
   };
   const fatItem = (o) =>
     typeof o === 'object' && o && 'n' in o
-      ? { id: U.uid(), name: o.n, price: o.p || 0, qty: o.q || 1, status: o.s || 'todo', paid: o.a != null ? o.a : null, pay: o.y || null, planned: !o.x, t: null }
+      ? { id: U.uid(), name: o.n, price: o.p || 0, qty: o.q || 1, status: o.s || 'todo', paid: o.a != null ? o.a : null, pay: o.y || null, planned: !o.x, t: o.tt || null }
       : { ...S.newItem(), ...o };
 
   const slimEntry = (e, known) => {
@@ -818,13 +832,14 @@
     if (e.status !== 'todo') o.s = e.status;
     // サークル名などは読み込み側でイベントの一覧から引けるので、引けない時だけ持たせる
     if (e.snap && !known.has(e.cid)) o.k = [e.snap.name, e.snap.tw || '', e.snap.space || ''];
+    if (e.doneAt) o.da = e.doneAt;
     return o;
   };
   const fatEntry = (o, byId) => {
     if (!o || !('c' in o)) return o; // すでに通常形式
     const c = byId.get(o.c);
     const snap = c ? { name: c.name, tw: c.tw, space: c.space } : { name: (o.k || [])[0] || o.c, tw: (o.k || [])[1] || '', space: (o.k || [])[2] || o.c };
-    return { cid: o.c, pri: o.r || 3, items: (o.i || []).map(fatItem), memo: o.m || '', menu: o.u || '', status: o.s || 'todo', doneAt: null, snap, addedAt: Date.now() };
+    return { cid: o.c, pri: o.r || 3, items: (o.i || []).map(fatItem), memo: o.m || '', menu: o.u || '', status: o.s || 'todo', doneAt: o.da || null, snap, addedAt: Date.now() };
   };
 
   /** 読み込んだ計画データを通常形式へ戻す（スリム形式・通常形式のどちらでも通る） */

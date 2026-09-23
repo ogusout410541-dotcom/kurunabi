@@ -659,6 +659,34 @@
           </div>
         </section>
 
+        ${(() => {
+          const c = s.state.sync;
+          const on = !!(c.url && c.phrase);
+          const st = HC.sync.state;
+          return `<section class="card" id="sec-sync">
+            <h3>${U.icon('share')}PCとスマホで同期 <small>${on ? (c.dirty ? '未送信の変更あり' : '同期中') : '未設定'}</small></h3>
+            ${on ? `
+              <div class="sync-row">
+                <span>${U.icon(c.dirty ? 'upload' : 'check', 'sm')}${c.dirty ? 'まだ送っていない変更があります' : 'この端末の内容は送信済みです'}</span>
+                ${c.lastAt ? `<small>最終 ${esc(U.time(c.lastAt))}</small>` : ''}
+              </div>
+              ${st.error ? `<p class="warn small">${U.icon('warn', 'sm')} ${esc(st.error)}</p>` : ''}
+              <label class="toggle-row"><span>自動で送る<small>変更の数秒後に送ります</small></span><input type="checkbox" data-f="syncAuto" ${c.auto ? 'checked' : ''}><i></i></label>
+              <div class="btn-grid2">
+                <button class="btn" data-act="syncNow">${U.icon('upload')}いま送る</button>
+                <button class="btn" data-act="syncPull">${U.icon('download')}取り込む</button>
+                <button class="btn" data-act="syncQr">${U.icon('share')}設定をスマホへ（QR）</button>
+                <button class="btn ghost" data-act="syncSetup">${U.icon('edit')}URL・合言葉を変える</button>
+              </div>
+              <p class="muted small">送るのは計画・購入記録・お気に入り・自作の配置図です。テーマなどの画面設定と、お品書きの写真は端末ごとに残ります。</p>
+              <button class="btn danger ghost block" data-act="syncOff">${U.icon('x')}同期をやめる</button>
+            ` : `
+              <p class="muted small">Google Apps Script に置いた自分用の保管場所を通して、PCとスマホで計画・記録を行き来させます。費用はかかりません。用意のしかたは <code>tools/gas/コード.gs</code> の先頭に書いてあります。</p>
+              <div class="btn-row wrap"><button class="btn primary" data-act="syncSetup">${U.icon('share')}同期を設定する</button></div>
+            `}
+          </section>`;
+        })()}
+
         <section class="card" id="sec-offline">
           <h3>${U.icon('wifi')}オフライン</h3>
           <p class="muted small">${location.protocol === 'https:'

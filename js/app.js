@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '0.8.1';
+  HC.VERSION = '0.9.0';
 
   const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -514,6 +514,114 @@
     UI.toast('元の配置図に戻しました');
   };
 
+  // ---- PCとスマホの同期
+  const syncMsg = (r) => (r && r.error ? '同期できませんでした：' + r.error : '');
+
+  A.syncSetup = async () => {
+    const c = S.state.sync;
+    const url = await UI.prompt('同期用のURL（GASウェブアプリの .../exec）', {
+      value: c.url, placeholder: 'https://script.google.com/macros/s/.../exec',
+      ok: '次へ', type: 'url',
+    });
+    if (url == null) return;
+    const phrase = await UI.prompt('合言葉（PCとスマホで同じものを入れます）', {
+      value: c.phrase, placeholder: '例：holocle-12th-ogu',
+      ok: '保存',
+    });
+    if (phrase == null) return;
+    c.url = String(url).trim();
+    c.phrase = String(phrase).trim();
+    c.syncedAt = 0;
+    c.dirty = true;
+    S.save();
+    app.refresh();
+    if (!c.url || !c.phrase) return UI.toast('URLと合言葉の両方が要ります', { error: true });
+    UI.toast('保存しました。いまの内容を送ります…');
+    const r = await HC.sync.push({ force: true });
+    UI.toast(r.ok ? '同期の準備ができました' : syncMsg(r), { error: !r.ok });
+    app.refresh();
+  };
+
+  A.syncNow = async () => {
+    if (!HC.sync.configured()) return A.syncSetup();
+    UI.toast('送っています…');
+    const r = await HC.sync.push();
+    if (r.conflict) return askConflict(r.server);
+    UI.toast(r.ok ? '送りました' : (r.skipped === 'offline' ? 'オフラインです。つながったら自動で送ります' : syncMsg(r)), { error: !!r.error });
+    app.refresh();
+  };
+
+  A.syncPull = async () => {
+    if (!HC.sync.configured()) return A.syncSetup();
+    UI.toast('取り込んでいます…');
+    const r = await HC.sync.pull();
+    if (r.conflict) return askConflict(r.server);
+    UI.toast(r.ok ? (r.empty ? 'まだ何も置かれていません' : (r.same ? '最新の状態です' : '取り込みました')) : syncMsg(r), { error: !!r.error });
+    app.refresh();
+  };
+
+  /** 両方で変更があったとき、どちらを残すか選んでもらう */
+  const askConflict = (server) => {
+    UI.sheet({
+      id: 'sync-conflict',
+      center: true,
+      title: '同期：どちらを残しますか',
+      html: `<p class="small">別の端末（${U.esc(server.device || '不明')}）で ${U.esc(U.time(server.updated))} に保存された内容があり、この端末にも未送信の変更があります。<br>
+        <b>どちらか一方だけが残ります。</b></p>
+        <div class="btn-row wrap">
+          <button class="btn primary" data-take-server>${U.icon('download')}向こうを取り込む</button>
+          <button class="btn" data-take-local>${U.icon('upload')}こちらで上書き</button>
+        </div>
+        <p class="muted small">迷ったら、先に「設定 → 全データのバックアップ」で今の状態をファイルに残してから選んでください。</p>`,
+      onMount: (el) => {
+        U.$('[data-take-server]', el).onclick = async () => {
+          UI.close('sync-conflict');
+          const r = await HC.sync.takeServer();
+          UI.toast(r.ok ? '向こうの内容を取り込みました' : syncMsg(r), { error: !!r.error });
+          app.refresh();
+        };
+        U.$('[data-take-local]', el).onclick = async () => {
+          UI.close('sync-conflict');
+          const r = await HC.sync.overwrite();
+          UI.toast(r.ok ? 'この端末の内容で上書きしました' : syncMsg(r), { error: !!r.error });
+          app.refresh();
+        };
+      },
+    });
+  };
+
+  /** 同期の設定をQRでスマホへ渡す（長いURLを打たずに済む） */
+  A.syncQr = async () => {
+    if (!HC.sync.configured()) return A.syncSetup();
+    const packed = await U.pack(HC.sync.exportConfig());
+    const url = `${appUrl()}#import=${packed}`;
+    const svg = HC.qr && HC.qr.svg(url, { ecl: 'L', px: 280, quiet: 3 });
+    UI.sheet({
+      id: 'sync-qr',
+      center: true,
+      title: '同期の設定をスマホへ',
+      html: `<p class="small">スマホのカメラでこのQRを読むと、同じ合言葉で同期できるようになります。</p>
+        ${svg ? `<div class="qrbox">${svg}</div>` : '<p class="warn small">QRを作れませんでした</p>'}
+        <p class="muted small">このQRには合言葉が入っています。人に見せないでください。</p>
+        <div class="btn-row"><button class="btn" data-copy>${U.icon('link')}リンクをコピー</button></div>`,
+      onMount: (el) => { U.$('[data-copy]', el).onclick = async () => UI.toast((await U.copy(url)) ? 'コピーしました' : 'コピーできませんでした'); },
+    });
+  };
+
+  A.syncOff = async () => {
+    if (!(await UI.confirm('同期をやめます。この端末のデータはそのまま残ります。', { ok: 'やめる', danger: true }))) return;
+    S.state.sync = { ...S.state.sync, url: '', phrase: '', syncedAt: 0, dirty: false };
+    S.save();
+    app.refresh();
+    UI.toast('同期をやめました');
+  };
+
+  U.on('sync', (m) => {
+    if (m && m.conflict) askConflict(m.conflict);
+    app.dirty.add('more');
+    if (app.view === 'more') renderView('more');
+  });
+
   // ---- オフライン（会場の電波が切れても計画と記録はそのまま使える）
   const paintNet = () => {
     const on = navigator.onLine;
@@ -953,6 +1061,20 @@
   };
 
   const importObj = async (obj) => {
+    // 同期の設定（QRで渡されたもの）は、読み込んだらそのまま取り込みに行く
+    if (obj && obj.kind === 'sync') {
+      if (!(await UI.confirm('同期の設定を受け取りました。この端末でも同じ合言葉で同期しますか？', { ok: '設定する' }))) return;
+      try {
+        HC.sync.importConfig(obj);
+        UI.toast('設定しました。取り込んでいます…');
+        const r = await HC.sync.pull({ force: true });
+        UI.toast(r.ok ? (r.empty ? '同期の準備ができました（まだデータはありません）' : '取り込みました') : ('取り込めませんでした：' + (r.error || '')), { error: !!r.error });
+        app.refresh();
+      } catch (e) {
+        UI.toast(e.message, { error: true });
+      }
+      return;
+    }
     const what = obj.kind === 'backup' ? '全データ（すべてのイベント）' : `計画（${Object.keys(obj.data?.entries || {}).length}サークル）`;
     if (!(await UI.confirm(`${what}を読み込みます。この端末の${obj.kind === 'backup' ? '全データ' : '同じイベントの計画'}は上書きされます。\n（読み込み前の状態は「読み込み前の状態に戻す」で復元できます）`, { ok: '読み込む' }))) return;
     try {
@@ -1065,6 +1187,11 @@
         break;
       case 'endAt':
         S.mutate(null, (d) => { d.endAt = el.value; });
+        break;
+      case 'syncAuto':
+        S.state.sync.auto = el.checked;
+        S.save();
+        if (el.checked && S.state.sync.dirty) A.syncNow();
         break;
       case 'setting':
         S.setSetting(ds.k, el.checked);
@@ -1227,6 +1354,8 @@
     }
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     paintNet();
+    // 同期は起動をふさがないよう、後ろで様子を見る
+    HC.sync.boot().catch(() => {});
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
