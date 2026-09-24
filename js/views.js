@@ -106,7 +106,7 @@
       ${rows}
       <div class="den-foot"><span>合計</span><b>${U.yen(total)}</b><span class="muted">${count}枚</span>
         ${count ? `<button class="link-btn" data-act="cashClear">${U.icon('x', 'sm')}全部消す</button>` : ''}</div>
-      <p class="muted small">枚数を入れておくと、支払いのときに「どの金種で出すか」を出します。記録するときに「財布の中身から引く」を押せば、おつりまで含めて自動で減らします。</p>
+      <p class="muted small">枚数を入れておくと、支払いのときに出す金種の組み合わせが出ます。記録のときに「財布の中身から引く」を押すと、出した分を引いて、おつりを足し戻します。</p>
     </div>`;
   };
 
@@ -261,7 +261,7 @@
           <span class="nm">${esc(i.name || '（無題）')}${i.planned === false ? '<small>追加</small>' : ''}</span>
           <span class="pr">${i.status === 'bought' && i.paid != null ? U.yen(i.paid) : priceTxt(i)}</span>
         </button>
-        <button class="icon-btn" data-act="itemMenu" data-cid="${cid}" data-iid="${i.id}" aria-label="アイテム操作">${U.icon('more')}</button>
+        <button class="icon-btn" data-act="itemMenu" data-cid="${cid}" data-iid="${i.id}" aria-label="この品物の操作">${U.icon('more')}</button>
       </li>`).join('');
     return `<section class="card cur p${e.pri} st-${e.status}">
       <div class="cur-top">
@@ -360,7 +360,7 @@
     }).join('');
     return `<section class="card pend-card" id="sec-pend">
       <h3>${U.icon('clock')}お品書き待ち <small>${cids.length}サークル</small></h3>
-      <p class="muted small">買うものがまだ入っていないサークルです。お品書きが出たらタップして入力してください。入れるまでは金額に含まれません。</p>
+      <p class="muted small">買うものがまだ入っていないサークルです。お品書きが出たら、押して入れてください。入れるまでは金額に含まれません。</p>
       <div class="pend-list">${chips}</div>
       ${cids.length > 14 ? `<button class="link-btn" data-act="listFilter" data-f="pend">残り${cids.length - 14}件も見る</button>` : ''}
     </section>`;
@@ -588,7 +588,7 @@
         <div><b>お品書き待ち</b><small>発表されたら、下の「買うもの」に入れてください。入れるまで金額には入りません。</small></div>
         <button class="btn sm ghost" data-act="noItems" data-cid="${cid}" data-on="1">入れなくてよい</button></div>`
         : (e.noItems ? `<div class="pend-note done">${U.icon('check', 'sm')}
-        <div><b>買うものは入れない設定です</b><small>お品書き待ちの一覧には出ません。</small></div>
+        <div><b>買うものは入れない印を付けています</b><small>お品書き待ちの一覧には出ません。</small></div>
         <button class="btn sm ghost" data-act="noItems" data-cid="${cid}" data-on="0">戻す</button></div>` : '')}
       <div class="field"><label>買うもの <small class="cd-sum">予定 ${U.yen(planned)}${spent ? ` ・ 支払済 ${U.yen(spent)}` : ''}</small></label>
         <div class="ie-list">${e.items.map((i) => `
@@ -725,7 +725,7 @@
           <div class="grid2">
             <label class="field"><span>予算（総額）</span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" data-f="budget" value="${d.budget || ''}" placeholder="30000"></div></label>
             <label class="field"><span>別枠（交通・食費など）</span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" data-f="reserve" value="${d.reserve || ''}" placeholder="0"></div></label>
-            <label class="field"><span>持っていく現金 <small>${S().hasCashBreak() ? '金種から自動計算' : '任意'}</small></span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" data-f="cash" value="${d.cash || ''}" placeholder="財布の残りを表示" ${S().hasCashBreak() ? 'readonly' : ''}></div></label>
+            <label class="field"><span>持っていく現金 <small>${S().hasCashBreak() ? '下の金種から計算' : '任意'}</small></span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" data-f="cash" value="${d.cash || ''}" placeholder="財布の残りを表示" ${S().hasCashBreak() ? 'readonly' : ''}></div></label>
             <div class="field"><span>支払いの初期値</span>${seg('defaultPay', [['cash', '現金'], ['card', 'キャッシュレス']])}</div>
           </div>
           <div class="field wallet-field"><span>財布の中身（金種ごとの枚数）</span>${V.cashEditor()}</div>
@@ -763,7 +763,7 @@
 
         <section class="card" id="sec-transfer">
           <h3>${U.icon('share')}スマホへ送る・バックアップ</h3>
-          <p class="muted small">PCで作った計画をスマホに移す方法は2つ。1つはQRコード（下の「共有リンク」）をスマホのカメラで読む方法、もう1つはファイルを書き出してスマホに送り、スマホ側で「読み込み」する方法です。</p>
+          <p class="muted small">PCで作った計画をスマホに移すには、QRコード（下の「共有リンク」）をスマホのカメラで読むか、ファイルに書き出してスマホへ送り、スマホ側で「読み込み」します。</p>
           <div class="btn-grid2">
             <button class="btn primary" data-act="shareLink">${U.icon('link')}共有リンクをコピー</button>
             <button class="btn" data-act="exportPlan">${U.icon('download')}計画をファイルに書き出し</button>
@@ -836,13 +836,13 @@
             <button class="btn" data-act="resetDay">当日の記録だけリセット</button>
             <button class="btn danger ghost" data-act="clearPlan">この計画を全消去</button>
           </div>
-          <p class="muted small">「当日の記録だけリセット」は計画を残して購入済・売切などを未購入に戻します（リハーサル後に）。</p>
+          <p class="muted small">「当日の記録だけリセット」は計画を残したまま、購入済・売切などを未購入に戻します。使い方を試したあと、本番前に戻すときに。</p>
         </section>
 
         <section class="card" id="sec-version">
           <h3>${U.icon('check')}バージョン <small>この端末で動いているのは v${HC.VERSION}</small></h3>
           <p class="muted small">更新してもデータは消えません（計画・記録はこの端末のブラウザ内に残ります）。
-            入力の途中なら、入力欄から指を離してから更新してください。</p>
+            入力の途中なら、いったん入力欄の外を押してから更新してください。</p>
           <p class="ver-state muted small" id="ver-state"></p>
           <div class="btn-row wrap">
             <button class="btn" data-act="checkUpdate">${U.icon('download')}更新を確認</button>

@@ -207,7 +207,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## 版の更新（ここを間違えると「いつまでも古い版のまま」になる）
 
-- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.1.0）
+- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.1.1）
 - **SW の install はブラウザのHTTPキャッシュを避けて取り込む**（`freshRequests()`＝`cache:'reload'` ＋ `?v=CACHE`）。
   GitHub Pages は `Cache-Control: max-age=600` を返すので、ふつうに `cache.addAll(ASSETS)` すると
   **新しい版のキャッシュに古いファイルが入り**、プッシュしても画面がいつまでも古いままになる。2026-09-24 に実際にこれで詰まった

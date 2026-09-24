@@ -185,7 +185,7 @@
       ? `${U.icon('warn', 'sm')}配置図を組み立てられません（${U.esc(st.buildError || '値を確認してください')}）`
       : miss.length
         ? `${U.icon('warn', 'sm')}席が無いサークル ${miss.length}件`
-        : `${U.icon('check', 'sm')}全${S().ev().circles.length}サークル配置ずみ`;
+        : `${U.icon('check', 'sm')}全${S().ev().circles.length}サークルに席があります`;
   };
 
   const viewBox = (L) => {

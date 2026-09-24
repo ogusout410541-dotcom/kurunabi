@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '1.1.0';
+  HC.VERSION = '1.1.1';
 
   const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -147,7 +147,7 @@
     const unit = it.paid != null ? Math.round(it.paid / (it.qty || 1)) : it.price;
     UI.numpad({
       hint: payHint,
-      title: `${it.name || 'アイテム'} の支払額`,
+      title: `${it.name || '品物'} の支払額`,
       showName: false,
       amount: unit || '',
       qty: it.qty,
@@ -308,14 +308,14 @@
     const e = S.entry(ds.cid);
     const it = e && e.items.find((i) => i.id === ds.iid);
     if (!it) return;
-    UI.menu(it.name || 'アイテム', [
+    UI.menu(it.name || '品物', [
       { label: it.status === 'bought' ? '支払額を修正' : '支払額を入れて購入済に', icon: 'yen', act: () => numpadForItem(ds.cid, it) },
       it.status === 'bought'
         ? { label: '未購入に戻す', icon: 'undo', act: () => S.setItemStatus(ds.cid, ds.iid, 'todo') }
         : { label: '予定価格で購入済に', icon: 'check', act: () => { S.toggleItem(ds.cid, ds.iid); checkAllChecked(ds.cid); } },
-      { label: 'このアイテムは売り切れ', icon: 'ban', act: () => { S.setItemStatus(ds.cid, ds.iid, 'soldout'); UI.toast('売切にしました', { undo: true }); } },
+      { label: 'これは売り切れ', icon: 'ban', act: () => { S.setItemStatus(ds.cid, ds.iid, 'soldout'); UI.toast('売切にしました', { undo: true }); } },
       { label: '今回は買わない', icon: 'skip', act: () => S.setItemStatus(ds.cid, ds.iid, 'skip') },
-      { label: 'アイテムを削除', icon: 'trash', danger: true, act: () => { S.mutate('アイテム削除', (d) => { const en = d.entries[ds.cid]; en.items = en.items.filter((i) => i.id !== ds.iid); }); UI.toast('削除しました', { undo: true }); } },
+      { label: 'この品物を削除', icon: 'trash', danger: true, act: () => { S.mutate('買うものを削除', (d) => { const en = d.entries[ds.cid]; en.items = en.items.filter((i) => i.id !== ds.iid); }); UI.toast('削除しました', { undo: true }); } },
     ]);
   };
 
@@ -412,7 +412,7 @@
   const addItemRow = (cid, name, opt = {}) => {
     const hint = name ? S.priceHint(name) : 0;
     let newId = null;
-    S.mutate('アイテム追加', (d) => {
+    S.mutate('買うものを追加', (d) => {
       if (opt.restore) {
         const it = d.entries[cid].items.find((i) => i.id === opt.restore);
         if (it) it.qty = Math.max(1, (it.qty || 2) - 1);
@@ -443,7 +443,7 @@
     const it = e2 && e2.items.find((i) => i.id === ds.iid);
     if (!it) return;
     UI.numpad({
-      title: `${it.name || 'アイテム'} の予定価格`,
+      title: `${it.name || '品物'} の予定価格`,
       showName: false,
       showPay: false,
       allowZero: true,
@@ -570,7 +570,7 @@
   app.showUpdateChip = showUpdateChip;
 
   A.applyUpdate = async () => {
-    if (!(await UI.confirm('新しい版に切り替えます。計画・記録はそのまま残ります。\n入力の途中なら、いったん入力欄から離れてから実行してください。', { ok: '更新する' }))) return;
+    if (!(await UI.confirm('新しい版に切り替えます。計画・記録はそのまま残ります。\n入力の途中なら、いったん入力欄の外を押してから実行してください。', { ok: '更新する' }))) return;
     S.flush();
     location.reload();
   };
@@ -594,13 +594,13 @@
     if (!el) return;
     const mark = (cls, text) => { el.className = 'ver-state ' + cls; el.innerHTML = text; };
     if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
-      mark('muted small', `この開き方ではオフライン保存を使っていません（公開したURLで開くと、保存されている版もここに出ます）`);
+      mark('muted small', 'この開き方では、保存されている版は確認できません（公開したURLで開くと出ます）');
       return;
     }
     mark('muted small', '保存されている版を確認中…');
     const v = await storedVersion();
     if (!v) { mark('muted small', '保存されている版を確認できませんでした'); return; }
-    if (v === HC.VERSION) mark('ok small', `${U.icon('check', 'sm')}保存されている版も v${v}。いま動いているのは最新です`);
+    if (v === HC.VERSION) mark('ok small', `${U.icon('check', 'sm')}保存されている版も v${v}。最新の状態です`);
     else mark('warn small', `${U.icon('warn', 'sm')}保存されている版は v${v}（画面は v${HC.VERSION}）。読み込み直すと切り替わります`);
   };
 
@@ -609,14 +609,14 @@
       return UI.toast(`いま v${HC.VERSION} です（この開き方では更新確認は使えません）`);
     }
     const reg = await navigator.serviceWorker.getRegistration();
-    if (!reg) return UI.toast(`いま v${HC.VERSION} です（オフライン保存はまだ有効になっていません）`);
+    if (!reg) return UI.toast(`いま v${HC.VERSION} です（オフライン用の取り込みがまだです）`);
     UI.toast('新しい版がないか見ています…');
     try { await reg.update(); } catch (_) { /* 圏外など */ }
     await new Promise((r) => setTimeout(r, 2500));
     const v = await storedVersion();
     if ((v && v !== HC.VERSION) || reg.waiting || reg.installing) {
       showUpdateChip();
-      UI.toast(`新しい版 ${v ? 'v' + v : ''} が届いています（画面は v${HC.VERSION}）`, {
+      UI.toast(`新しい版 ${v ? 'v' + v : ''} があります（いまの画面は v${HC.VERSION}）`, {
         ms: 10000, action: { label: '更新する', fn: () => location.reload() },
       });
     } else {
@@ -811,7 +811,7 @@
         if (t != null) S.mutate('終了時刻', (x) => { x.endAt = t; });
       } },
       { label: 'いまから計り直す', icon: 'timer', hint: '開始時刻を使わず、押した時点からの経過にする', act: () => A.clockStart() },
-      { label: '経過表示をやめる', icon: 'x', act: () => S.mutate('経過表示オフ', (x) => { x.openAt = ''; x.startedAt = 0; }) },
+      { label: '経過表示をやめる', icon: 'x', act: () => S.mutate('経過表示をやめる', (x) => { x.openAt = ''; x.startedAt = 0; }) },
     ]);
   };
 
@@ -1002,7 +1002,7 @@
     inst.build();
     if (vb) inst.setVB(vb);
     renderView('map');
-    UI.toast(S.state.settings.mapMode === 'image' ? '公式配置図の上に表示中' : 'シンプル表示');
+    UI.toast(S.state.settings.mapMode === 'image' ? '公式の配置図に重ねました' : 'シンプルな地図に戻しました');
   };
   A.mapClose = () => V.map.select(null);
 
@@ -1038,7 +1038,7 @@
 
   A.cashClear = async () => {
     if (!(await UI.confirm('財布の金種の枚数を全部消しますか？', { ok: '消す' }))) return;
-    S.mutate('現金の内訳', (d) => { d.cashBreak = {}; d.cash = 0; });
+    S.mutate('金種の枚数', (d) => { d.cashBreak = {}; d.cash = 0; });
     repaintWallet();
     UI.toast('消しました', { undo: true });
   };
@@ -1054,10 +1054,12 @@
       html: `<div class="grid1">
         <label class="field"><span>予算（総額）</span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" name="budget" value="${d.budget || ''}" placeholder="30000"></div></label>
         <label class="field"><span>別枠（交通・食費など、予算から除く）</span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" name="reserve" value="${d.reserve || ''}" placeholder="0"></div></label>
-        <label class="field"><span>持っていく現金（任意・財布の残りを表示）</span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" name="cash" value="${d.cash || ''}" placeholder="0"></div></label>
+        <label class="field"><span>持っていく現金${S.hasCashBreak() ? `（下の「金種」から計算）` : `（任意・財布の残りを表示）`}</span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" name="cash" value="${d.cash || ''}" placeholder="0" ${S.hasCashBreak() ? 'readonly' : ''}></div></label>
+        <button class="btn ghost block" data-wallet>${U.icon('wallet')}財布の中身（金種ごとの枚数）</button>
         <button class="btn primary block" data-ok>保存</button></div>`,
       onMount: (el) => {
         setTimeout(() => U.$('input', el).focus(), 60);
+        U.$('[data-wallet]', el).onclick = () => { UI.close(id); A.wallet(); };
         U.$('[data-ok]', el).onclick = () => {
           const v = (n) => U.parseYen(U.$(`[name="${n}"]`, el).value);
           S.mutate('予算変更', (dd) => { dd.budget = v('budget'); dd.reserve = v('reserve'); dd.cash = v('cash'); });
@@ -1101,7 +1103,7 @@
       if (!ta.value.trim()) { res.textContent = ''; return; }
       const list = P.parseCircleList(ta.value);
       const sm = P.summary(list);
-      res.textContent = `解析：${sm.count}サークル（${Object.entries(sm.blocks).map(([b, n]) => `${b}:${n}`).join(' ')}）`;
+      res.textContent = `読み取り：${sm.count}サークル（${Object.entries(sm.blocks).map(([b, n]) => `${b}:${n}`).join(' ')}）`;
       res.classList.toggle('bad', !sm.count);
     }, 200));
     U.$('[data-ok]', el).onclick = () => onSubmit({
@@ -1123,7 +1125,7 @@
       onMount: (el) => bindEventForm(el, (f) => {
         if (!f.name) return UI.toast('イベント名を入力してください', { error: true });
         const list = P.parseCircleList(f.text);
-        if (!list.length) return UI.toast('サークル一覧を解析できませんでした。貼り付け内容を確認してください', { error: true });
+        if (!list.length) return UI.toast('サークル一覧を読み取れませんでした。貼り付けた内容を確かめてください', { error: true });
         const prev = S.state.eventId;
         const r = S.createEvent({ ...f, copyBudgetFrom: f.copyBudget ? prev : null });
         UI.close('newevent');
@@ -1146,7 +1148,7 @@
           const patch = { name: f.name || custom.name, short: f.short || f.name || custom.short, date: f.date, layoutFrom: f.layoutFrom };
           if (f.text.trim()) {
             const list = P.parseCircleList(f.text);
-            if (!list.length) return UI.toast('サークル一覧を解析できませんでした', { error: true });
+            if (!list.length) return UI.toast('サークル一覧を読み取れませんでした', { error: true });
             patch.circles = P.toCompact(list);
           }
           S.updateCustomEvent(id, patch);
@@ -1538,7 +1540,7 @@
             sw.addEventListener('statechange', () => {
               if (sw.state === 'installed' && navigator.serviceWorker.controller) {
                 showUpdateChip();
-                UI.toast(`新しい版があります（いまは v${HC.VERSION}）`, { ms: 10000, action: { label: '更新する', fn: () => location.reload() } });
+                UI.toast(`新しい版があります（いまの画面は v${HC.VERSION}）`, { ms: 10000, action: { label: '更新する', fn: () => location.reload() } });
               }
             });
           });

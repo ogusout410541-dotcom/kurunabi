@@ -115,7 +115,7 @@
       console.error(e);
       if (!saveFailedNotified) {
         saveFailedNotified = true;
-        U.emit('toast', '保存に失敗しました（容量不足の可能性）。データを書き出してください', { error: true });
+        U.emit('toast', '保存できませんでした（空き容量が足りないかもしれません）。データを書き出してください', { error: true });
       }
     }
   };
@@ -321,7 +321,7 @@
   S.hasCashBreak = () => S.cashCount() > 0;
 
   S.setCashBreak = (denom, n) =>
-    S.mutate('現金の内訳', (d) => {
+    S.mutate('金種の枚数', (d) => {
       d.cashBreak = { ...d.cashBreak, [denom]: Math.max(0, Math.min(999, Math.round(n) || 0)) };
       d.cash = S.cashTotal(d.cashBreak);   // 財布の残り表示と合わせる
     });
@@ -384,7 +384,7 @@
 
   /** 実際にその出し方で払ったとき、手持ちを更新する（釣りは受け取った体で足す） */
   S.applyPay = (plan) =>
-    S.mutate('現金の出し入れ', (d) => {
+    S.mutate('財布から支払う', (d) => {
       const br = { ...d.cashBreak };
       Object.entries(plan.use || {}).forEach(([den, n]) => { br[den] = Math.max(0, (br[den] || 0) - n); });
       let change = plan.change || 0;
@@ -478,7 +478,7 @@
     });
 
   S.setItemStatus = (cid, iid, status) =>
-    S.mutate('アイテム状態', (d) => {
+    S.mutate('買うものの状態を変える', (d) => {
       const it = d.entries[cid]?.items.find((i) => i.id === iid);
       if (!it) return;
       it.status = status;
@@ -911,7 +911,7 @@
     const nums = m && P.parseNums(m[2]);
     if (!nums) return { error: 'スペース番号を「G23」「A01-02」の形で入力してください' };
     const block = m[1].toUpperCase();
-    const c = { id: block + U.pad2(nums[0]), block, nums, space: P.spaceLabel(block, nums), name: name || '（名称未設定）', tw: P.twitterHandle(tw || ''), px: '', web: '' };
+    const c = { id: block + U.pad2(nums[0]), block, nums, space: P.spaceLabel(block, nums), name: name || '（名前なし）', tw: P.twitterHandle(tw || ''), px: '', web: '' };
     if (S.ev().byId.has(c.id) && !S.d().addCircles.some((x) => x.id === c.id)) return { error: `${c.space} はすでに登録されています` };
     S.mutate('サークル追加', (d) => {
       d.addCircles = d.addCircles.filter((x) => x.id !== c.id).concat(c);
@@ -1062,7 +1062,7 @@
       const n = Object.keys(S.state.data[id].entries).length;
       return `${S.ev(id).name} の計画（${n}サークル）を読み込みました`;
     }
-    throw new Error('不明なデータ形式です');
+    throw new Error('読み取れない形式のデータです');
   };
 
   /** 当日記録だけリセット（計画は残す）— リハーサル後などに */
