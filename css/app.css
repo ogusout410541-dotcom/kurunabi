@@ -585,6 +585,49 @@ select.input { appearance: auto; }
 .np-opts .seg { flex: 1; min-width: 180px; }
 .np-opts .seg button.on { background: var(--accent); color: #fff; }
 
+/* 支払いのヒント（テンキーの中） */
+.np-hint { margin-bottom: 10px; }
+.np-hint-in {
+  background: var(--ok-soft); border: 1px solid transparent; border-radius: 12px; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 6px; font-size: .9rem;
+}
+.np-hint-in.short { background: var(--warn-bg); color: var(--warn-ink); flex-direction: row; align-items: center; gap: 6px; font-weight: 700; }
+.ph-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ph-row > b { font-weight: 800; white-space: nowrap; }
+.ph-row.alt { color: var(--muted); }
+.ph-row.alt > b { font-weight: 700; }
+.ph-coins { display: flex; gap: 6px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.ph-coins span {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+  padding: 3px 9px; font-weight: 800; white-space: nowrap;
+}
+.ph-coins small { font-weight: 700; color: var(--muted); margin-left: 2px; }
+.ph-deduct { display: flex; align-items: center; gap: 8px; min-height: 36px; font-weight: 700; cursor: pointer; }
+.ph-deduct input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+/* 財布の中身（金種ごとの枚数） */
+.denoms { display: flex; flex-direction: column; gap: 4px; }
+.den-row { display: grid; grid-template-columns: 5.2em 38px minmax(56px, 1fr) 38px 5.6em; align-items: center; gap: 6px; }
+.den-label { font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+.den-row.has .den-label { color: var(--text); }
+.den-n { text-align: center; min-height: 40px; padding: 6px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.den-sum { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: .85rem; }
+.den-foot {
+  display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-top: 8px;
+  border-top: 1px solid var(--line); font-variant-numeric: tabular-nums;
+}
+.den-foot > b { font-size: 1.15rem; font-weight: 850; }
+.den-foot .link-btn { margin-left: auto; }
+.w-wallet { justify-self: start; margin-top: 2px; }
+
+.ver-state { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-weight: 650; }
+.ver-state.ok { color: var(--ok); }
+.ver-state.warn { color: var(--warn-ink); background: var(--warn-bg); border-radius: 10px; padding: 6px 10px; }
+
+.pay-ready { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: var(--ok-soft); font-size: .9rem; font-weight: 700; }
+.pay-ready .pr-l { color: var(--muted); font-weight: 650; }
+.pay-ready.short { background: var(--warn-bg); color: var(--warn-ink); }
+
 /* トースト */
 .toast {
   position: fixed; left: 50%; bottom: calc(var(--tab-h) + var(--safe-b) + 12px); z-index: 70;
@@ -830,3 +873,22 @@ body.offline .link-chip.x, body.offline .link-chip.px, body.offline .link-chip.w
   background: color-mix(in srgb, var(--p2) 12%, transparent); color: var(--p2); font-weight: 650; font-size: .85rem;
 }
 .prow .l2 .pend { font-size: .8rem; }
+
+/* ------------------------------------------------------------ 地図の区間表示 */
+.map-svg .route.faded { opacity: .18; }
+.map-svg .route.leg-line { stroke: var(--p2); stroke-width: 4; stroke-dasharray: none; opacity: 1; filter: drop-shadow(0 0 3px rgba(0,0,0,.35)); }
+.map-svg .leg-mark circle { fill: none; stroke: var(--p2); stroke-width: 3; }
+.map-svg .leg-mark.to circle { fill: color-mix(in srgb, var(--p2) 35%, transparent); }
+.map-seg {
+  position: absolute; left: 10px; right: 10px; bottom: calc(var(--tab-h) + var(--safe-b) + 10px); z-index: 20;
+  display: flex; align-items: stretch; gap: 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 6px;
+}
+.map-seg .icon-btn.solid { width: 44px; height: auto; min-height: 44px; box-shadow: none; }
+.map-seg .icon-btn[disabled] { opacity: .3; }
+.seg-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 2px 4px; text-align: left; }
+.seg-no { font-size: .7rem; color: var(--muted); font-weight: 700; }
+.seg-route { display: flex; align-items: center; gap: 4px; font-size: .95rem; font-weight: 700; }
+.seg-route .ic { color: var(--muted); }
+.seg-name { font-size: .8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+body[data-view="map"] .map-legend { bottom: auto; }

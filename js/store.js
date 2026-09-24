@@ -26,6 +26,7 @@
   };
   S.ITEM_PRESETS = ['新刊', '既刊', '新刊セット', 'グッズ', 'アクスタ', '缶バッジ', 'ステッカー', '色紙', '無料配布'];
   S.PRICE_PRESETS = [100, 300, 500, 700, 1000, 1500, 2000, 3000, 5000];
+  S.DENOMS = [10000, 5000, 1000, 500, 100, 50, 10, 5, 1];   // 現金の金種（多い順）
 
   const defaultSettings = () => ({
     theme: 'auto',
@@ -35,6 +36,7 @@
     mapMode: 'simple', // simple | image
     mapOrient: 'auto', // auto | land | port
     routeMode: 'must', // must | tier | short
+    wallFirst: true,   // 壁（Aブロックなど列が長くなる席）を先に回る
     showRoute: true,
     defaultPay: 'cash',
   });
@@ -74,6 +76,7 @@
     openAt: '',     // 開場時刻 'HH:MM'（空ならイベント側の既定値。経過時間の基準）
     endAt: '',      // 終了時刻 'HH:MM'（空ならイベント側の既定値）
     startedAt: 0,   // 「いま開始」で押した時刻。openAt が無いときの基準
+    cashBreak: {},  // 持っている現金の内訳 { 1000: 5, 500: 2, ... }
     updated: Date.now(),
   });
 
@@ -309,6 +312,96 @@
     t: null,
     ...extra,
   });
+
+  // ------------------------------------------------------------------ 現金の金種
+  /** 内訳の合計金額 */
+  S.cashTotal = (br = S.d().cashBreak) => U.sum(S.DENOMS, (d) => d * (br[d] || 0));
+  /** 内訳の合計枚数 */
+  S.cashCount = (br = S.d().cashBreak) => U.sum(S.DENOMS, (d) => br[d] || 0);
+  S.hasCashBreak = () => S.cashCount() > 0;
+
+  S.setCashBreak = (denom, n) =>
+    S.mutate('現金の内訳', (d) => {
+      d.cashBreak = { ...d.cashBreak, [denom]: Math.max(0, Math.min(999, Math.round(n) || 0)) };
+      d.cash = S.cashTotal(d.cashBreak);   // 財布の残り表示と合わせる
+    });
+
+  /**
+   * 「いくらをどう出すか」を考える。
+   * 手持ちの枚数の範囲で、ちょうど払えるならその出し方、無理なら一番小さい過払い（釣り）を返す。
+   * @returns {{exact:boolean, pay:number, change:number, use:{[denom]:n}, coins:number}|null}
+   */
+  const planFor = (amount, have, wantMax) => {
+    const cap = amount + 10000;
+    const N = S.DENOMS.length;
+    let dp = new Int32Array(cap + 1).fill(-1);
+    dp[0] = 0;
+    const used = [];   // used[i][v] = 金種iを何枚使うか（あとで出し方を復元する）
+    for (let i = 0; i < N; i++) {
+      const den = S.DENOMS[i];
+      const stock = Math.max(0, Math.min(999, Math.floor(have[den] || 0)));
+      const ndp = new Int32Array(cap + 1).fill(-1);
+      const cnt = new Int16Array(cap + 1);
+      for (let v = 0; v <= cap; v++) {
+        let best = -1, bestK = 0;
+        for (let k = 0; k <= stock && k * den <= v; k++) {
+          const prev = dp[v - k * den];
+          if (prev < 0) continue;
+          const val = prev + k;
+          if (best < 0 || (wantMax ? val > best : val < best)) { best = val; bestK = k; }
+        }
+        ndp[v] = best;
+        cnt[v] = bestK;
+      }
+      dp = ndp;
+      used.push(cnt);
+    }
+    let pay = -1;
+    for (let v = amount; v <= cap; v++) if (dp[v] >= 0) { pay = v; break; }
+    if (pay < 0) return null;
+    const use = {};
+    let v = pay;
+    for (let i = N - 1; i >= 0; i--) {
+      const k = used[i][v];
+      if (k > 0) { use[S.DENOMS[i]] = k; v -= k * S.DENOMS[i]; }
+    }
+    return { exact: pay === amount, pay, change: pay - amount, use, coins: dp[pay] };
+  };
+
+  /** 支払い案。ちょうど出せるときは「枚数が少ない案」と「小銭が減る案」を返す */
+  S.payPlan = (amount, br = S.d().cashBreak) => {
+    if (!amount || amount <= 0 || !S.cashCount(br)) return null;
+    if (S.cashTotal(br) < amount) return { short: true };
+    const min = planFor(amount, br, false);
+    if (!min) return null;
+    const out = { best: min };
+    if (min.exact) {
+      const max = planFor(amount, br, true);
+      if (max && max.exact && max.coins > min.coins && max.coins <= min.coins + 5) out.alt = max;   // 小銭を少し多めに出す案
+    }
+    return out;
+  };
+
+  /** 実際にその出し方で払ったとき、手持ちを更新する（釣りは受け取った体で足す） */
+  S.applyPay = (plan) =>
+    S.mutate('現金の出し入れ', (d) => {
+      const br = { ...d.cashBreak };
+      Object.entries(plan.use || {}).forEach(([den, n]) => { br[den] = Math.max(0, (br[den] || 0) - n); });
+      let change = plan.change || 0;
+      S.DENOMS.forEach((den) => {
+        while (change >= den) { br[den] = (br[den] || 0) + 1; change -= den; }
+      });
+      d.cashBreak = br;
+      d.cash = S.cashTotal(br);
+    });
+
+  /** 壁サークル（配置図で壁に面した席＝列が伸びやすい）か */
+  S.isWall = (cid) => {
+    const c = S.circle(cid);
+    if (!c) return false;
+    const cells = Lay.cellsOf(S.ev().layout, c);
+    return cells.some((x) => x.wall);
+  };
 
   /** お品書きがまだ出ていない＝買うものが1つも入っていないサークル（自分で「入れない」と決めたものは除く） */
   S.isPending = (e) => !!e && !e.noItems && !e.items.some((i) => i.planned !== false);
@@ -708,10 +801,21 @@
         const p = last && Lay.pointOf(L, S.circle(last.cid));
         if (p) start = p;
       }
-      const groups =
+      let groups =
         mode === 'short' ? [active]
           : mode === 'tier' ? [1, 2, 3, 4].map((p) => active.filter((cid) => d.entries[cid].pri === p))
             : [active.filter((cid) => d.entries[cid].pri === 1), active.filter((cid) => d.entries[cid].pri !== 1)];
+      // 壁サークルは列が長くなりやすいので、希望があれば先に回る
+      if (S.state.settings.wallFirst) {
+        const wall = active.filter((cid) => S.isWall(cid));
+        if (wall.length && wall.length < active.length) {
+          const wallSet = new Set(wall);
+          // 必須の壁 → その他の壁 → 残り（元の段の順番は保つ）
+          const mustWall = wall.filter((cid) => d.entries[cid].pri === 1);
+          const restWall = wall.filter((cid) => d.entries[cid].pri !== 1);
+          groups = [mustWall, restWall, ...groups.map((g) => g.filter((cid) => !wallSet.has(cid)))].filter((g) => g.length);
+        }
+      }
       const seq = [];
       let cur = start;
       groups.forEach((g) => {

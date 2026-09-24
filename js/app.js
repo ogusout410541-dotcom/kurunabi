@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '1.0.2';
+  HC.VERSION = '1.1.0';
 
   const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -34,6 +34,7 @@
     const el = U.$('#v-' + v);
     V[v].render(el);
     app.dirty.delete(v);
+    if (v === 'more') app.paintVersion();   // 「いま動いている版／保存されている版」を後から埋める
   };
 
   app.refresh = () => {
@@ -118,9 +119,34 @@
     if (app.view === 'go') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  /** テンキーに出す「現金の出し方」。金種を入れていないときは何も出さない */
+  const payHint = (amount) => {
+    if (!S.hasCashBreak() || !amount) return '';
+    const plan = S.payPlan(amount);
+    if (!plan) return '';
+    if (plan.short) return `<div class="np-hint-in short">${U.icon('warn', 'sm')}手持ちの現金では足りません（あと ${U.yen(amount - S.cashTotal())}）</div>`;
+    const fmt = (use) => S.DENOMS.filter((d) => use[d]).map((d) => `<span>${U.num(d)}<small>×${use[d]}</small></span>`).join('');
+    const b = plan.best;
+    return `<div class="np-hint-in">
+      <div class="ph-row"><b>${b.exact ? 'ちょうど出せます' : `${U.yen(b.pay)} を出す（おつり ${U.yen(b.change)}）`}</b><div class="ph-coins">${fmt(b.use)}</div></div>
+      ${plan.alt ? `<div class="ph-row alt"><b>小銭を減らすなら</b><div class="ph-coins">${fmt(plan.alt.use)}</div></div>` : ''}
+      <label class="ph-deduct"><input type="checkbox" data-deduct checked> 財布の中身から引く</label>
+    </div>`;
+  };
+  app.payHint = payHint;
+
+  /** 「財布から引く」が押されていたら、手持ちの金種を更新する */
+  const deductIfAsked = (r) => {
+    if (!r || !r.deduct || r.pay !== 'cash' || !S.hasCashBreak()) return;
+    const plan = S.payPlan(r.amount);
+    if (plan && plan.best) S.applyPay(plan.best);
+  };
+  app.deductIfAsked = deductIfAsked;
+
   const numpadForItem = (cid, it) => {
     const unit = it.paid != null ? Math.round(it.paid / (it.qty || 1)) : it.price;
     UI.numpad({
+      hint: payHint,
       title: `${it.name || 'アイテム'} の支払額`,
       showName: false,
       amount: unit || '',
@@ -129,6 +155,7 @@
       okLabel: '購入済にする',
       onOk: (r) => {
         S.recordPurchase(cid, { iid: it.id, amount: r.amount, qty: r.qty, pay: r.pay });
+        deductIfAsked(r);
         U.vibrate();
         checkAllChecked(cid);
       },
@@ -214,6 +241,7 @@
     const c = S.circle(cid) || e.snap;
     if (!e.items.length) {
       UI.numpad({
+        hint: payHint,
         title: `${c.space} ${c.name} の支払額`,
         name: '',
         okLabel: '記録して完了',
@@ -226,6 +254,7 @@
             en.doneAt = now;
             if (d.focus === cid) d.focus = null;
           });
+          deductIfAsked(r);
           afterFinish(cid, '完了');
         },
       });
@@ -234,6 +263,7 @@
     const unknown = e.items.filter((i) => i.status === 'todo' && !i.price);
     if (unknown.length) {
       UI.numpad({
+        hint: payHint,
         title: `価格未定「${unknown.map((i) => i.name || '無題').join('・')}」の支払額`,
         showName: false,
         okLabel: '記録して完了',
@@ -253,6 +283,7 @@
             en.doneAt = now;
             if (d.focus === cid) d.focus = null;
           });
+          deductIfAsked(r);
           afterFinish(cid, '完了');
         },
       });
@@ -291,8 +322,10 @@
   A.extraBuy = (ds) => {
     const c = S.circle(ds.cid) || S.entry(ds.cid)?.snap;
     UI.numpad({
+      hint: payHint,
       title: `${c.space} 追加購入`,
       onOk: (r) => {
+        deductIfAsked(r);
         S.recordPurchase(ds.cid, { name: r.name, amount: r.amount, qty: r.qty, pay: r.pay });
         U.vibrate();
         UI.toast(`追加購入 ${U.yen(r.amount)} を記録`, { undo: true });
@@ -302,9 +335,11 @@
 
   A.outsideBuy = () => {
     UI.numpad({
+      hint: payHint,
       title: 'サークル外の支出（企業ブース・飲食など）',
       onOk: (r) => {
         S.recordPurchase(null, { name: r.name || 'その他', amount: r.amount, qty: r.qty, pay: r.pay });
+        deductIfAsked(r);
         UI.toast(`${U.yen(r.amount)} を記録`, { undo: true });
       },
     });
@@ -550,8 +585,27 @@
     return m ? m[1] : '';
   };
 
+  /**
+   * 設定の「バージョン」欄に、画面で動いている版と、端末に保存されている版の両方を出す。
+   * 更新したのに変わらない／更新が効いたのか分からない、を見て分かるようにするため
+   */
+  app.paintVersion = async () => {
+    const el = U.$('#ver-state');
+    if (!el) return;
+    const mark = (cls, text) => { el.className = 'ver-state ' + cls; el.innerHTML = text; };
+    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
+      mark('muted small', `この開き方ではオフライン保存を使っていません（公開したURLで開くと、保存されている版もここに出ます）`);
+      return;
+    }
+    mark('muted small', '保存されている版を確認中…');
+    const v = await storedVersion();
+    if (!v) { mark('muted small', '保存されている版を確認できませんでした'); return; }
+    if (v === HC.VERSION) mark('ok small', `${U.icon('check', 'sm')}保存されている版も v${v}。いま動いているのは最新です`);
+    else mark('warn small', `${U.icon('warn', 'sm')}保存されている版は v${v}（画面は v${HC.VERSION}）。読み込み直すと切り替わります`);
+  };
+
   A.checkUpdate = async () => {
-    if (!('serviceWorker' in navigator) || !/^https:$/.test(location.protocol)) {
+    if (!('serviceWorker' in navigator) || !(location.protocol === 'https:' || navigator.serviceWorker.controller)) {
       return UI.toast(`いま v${HC.VERSION} です（この開き方では更新確認は使えません）`);
     }
     const reg = await navigator.serviceWorker.getRegistration();
@@ -909,6 +963,37 @@
   };
   A.mapZoom = (ds) => ensureMap()?.zoomBy(+ds.k);
   A.mapFit = () => ensureMap()?.fit();
+  /** 地図を「区間ごと」に見る／やめる */
+  A.mapSeg = () => {
+    const inst = ensureMap();
+    if (!inst) return;
+    if (inst.segIndex != null) return A.mapSegOff();
+    const legs = inst.legs();
+    if (!legs.length) return UI.toast('まだ回る先がありません');
+    // いま向かう区間から始める
+    inst.showLeg(0);
+    V.mapSeg();
+    UI.toast('区間ごとの表示にしました（上下のボタンで送れます）');
+  };
+
+  A.mapSegMove = (ds) => {
+    const inst = ensureMap();
+    if (!inst || inst.segIndex == null) return;
+    const legs = inst.legs();
+    const next = U.clamp(inst.segIndex + (+ds.d || 1), 0, legs.length - 1);
+    if (next === inst.segIndex) return;
+    inst.showLeg(next);
+    V.mapSeg();
+    U.vibrate(10);
+  };
+
+  A.mapSegOff = () => {
+    const inst = ensureMap();
+    if (!inst) return;
+    inst.clearLeg();
+    V.mapSeg();
+  };
+
   A.mapRoute = () => { S.setSetting('showRoute', !S.state.settings.showRoute); renderView('map'); };
   A.mapImage = () => {
     S.setSetting('mapMode', S.state.settings.mapMode === 'image' ? 'simple' : 'image');
@@ -929,6 +1014,35 @@
     applyLook();
     renderView('more');
   };
+
+// ---- 財布（金種）
+  /** 金種の表をシートで開く（当日タブから。設定タブには直接埋めてある） */
+  A.wallet = () => {
+    UI.sheet({
+      id: 'wallet',
+      center: true,
+      title: '財布の中身',
+      html: `${V.cashEditor()}<div class="btn-row"><button class="btn block" data-close>閉じる</button></div>`,
+    });
+  };
+  /** 開いていれば中身だけ描き直す（同じ id で呼ぶと本文が入れ替わる） */
+  const repaintWallet = () => { if (document.querySelector('[data-sheet="wallet"]')) A.wallet(); };
+
+  A.denomStep = (ds) => {
+    const den = Number(ds.d);
+    const now = (S.d().cashBreak || {})[den] || 0;
+    S.setCashBreak(den, now + Number(ds.n));
+    U.vibrate(6);
+    repaintWallet();
+  };
+
+  A.cashClear = async () => {
+    if (!(await UI.confirm('財布の金種の枚数を全部消しますか？', { ok: '消す' }))) return;
+    S.mutate('現金の内訳', (d) => { d.cashBreak = {}; d.cash = 0; });
+    repaintWallet();
+    UI.toast('消しました', { undo: true });
+  };
+
 
   A.budgetEdit = () => {
     const d = S.d();
@@ -1222,6 +1336,10 @@
       case 'memo':
       case 'menu':
         S.mutate(null, (d) => { if (d.entries[ds.cid]) d.entries[ds.cid][f] = el.value.trim(); });
+        break;
+      case 'denom':
+        S.setCashBreak(Number(ds.d), U.parseYen(el.value));
+        repaintWallet();
         break;
       case 'budget':
       case 'reserve':

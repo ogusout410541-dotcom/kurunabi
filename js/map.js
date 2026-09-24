@@ -118,6 +118,49 @@
     inst.fit = () => inst.setVB({ ...inst.base });
 
     /** 色分け・番号バッジ・ルート線を最新状態に */
+    /** 巡回の脚（A→B）の一覧。区間表示とルート線の両方で使う */
+    inst.legs = () => {
+      const d = S.d();
+      const q = S.queue();
+      const L = inst.L;
+      if (!L) return [];
+      const remaining = [...q.todo, ...q.later];
+      const lastDone = q.finished.map((cid) => d.entries[cid]).filter((e) => e.doneAt).sort((a, b) => b.doneAt - a.doneAt)[0];
+      let from = (lastDone && Lay.pointOf(L, S.circle(lastDone.cid))) || S.startPoint();
+      let fromName = lastDone ? (S.circle(lastDone.cid) || {}).space : (L.starts.find((s) => s.id === d.start) || L.starts[0] || {}).label || 'スタート';
+      const legs = [];
+      remaining.forEach((cid, i) => {
+        const c = S.circle(cid);
+        const p = c && Lay.pointOf(L, c);
+        if (!p) return;
+        legs.push({ i: legs.length, cid, from, to: p, fromName, toName: c.space, toCircle: c, no: i + 1, dist: Lay.dist(L, from, p) });
+        from = p;
+        fromName = c.space;
+      });
+      return legs;
+    };
+
+    /** その区間だけを画面に収める */
+    inst.showLeg = (i) => {
+      const legs = inst.legs();
+      if (!legs.length) return null;
+      const n = U.clamp(i, 0, legs.length - 1);
+      inst.segIndex = n;
+      const leg = legs[n];
+      const pad = 90;
+      const a = T(leg.from), b = T(leg.to);
+      const x = Math.min(a.x, b.x) - pad, y = Math.min(a.y, b.y) - pad;
+      const w = Math.abs(b.x - a.x) + pad * 2, h = Math.abs(b.y - a.y) + pad * 2;
+      const box = inst.base;
+      const ratio = box.h / box.w;
+      const vw = Math.max(w, h / ratio), vh = vw * ratio;
+      inst.setVB({ x: (x + w / 2) - vw / 2, y: (y + h / 2) - vh / 2, w: vw, h: vh });
+      inst.paint();
+      return leg;
+    };
+
+    inst.clearLeg = () => { inst.segIndex = null; inst.paint(); inst.fit(); };
+
     inst.paint = () => {
       if (!inst.L) return;
       const d = S.d();
@@ -161,13 +204,26 @@
           pts.push(...seg.slice(1));
           prev = p;
         });
-        route = `<polyline class="route" points="${pts.map((p) => `${p.x},${p.y}`).join(' ')}"/>` +
+        const segMode = inst.segIndex != null;
+        route = `<polyline class="route${segMode ? ' faded' : ''}" points="${pts.map((p) => `${p.x},${p.y}`).join(' ')}"/>` +
           `<g class="start-mark"><circle cx="${st.x}" cy="${st.y}" r="7"/></g>`;
-        // 次の目的地までの区間を強調
-        const cur = q.current && Lay.pointOf(L, S.circle(q.current));
-        if (cur) {
-          const seg = Lay.polyline(L, st, cur);
-          if (q.current === remaining[0]) route += `<polyline class="route next-leg" points="${seg.map((p) => `${p.x},${p.y}`).join(' ')}"/>`;
+        if (segMode) {
+          // 選んだ区間だけをはっきり描く（線が重なって見分けられない問題への対応）
+          const legs = inst.legs();
+          const leg = legs[U.clamp(inst.segIndex, 0, legs.length - 1)];
+          if (leg) {
+            const seg = Lay.polyline(L, leg.from, leg.to);
+            route += `<polyline class="route leg-line" points="${seg.map((p) => `${p.x},${p.y}`).join(' ')}"/>`;
+            route += `<g class="leg-mark from"><circle cx="${leg.from.x}" cy="${leg.from.y}" r="9"/></g>`;
+            route += `<g class="leg-mark to"><circle cx="${leg.to.x}" cy="${leg.to.y}" r="11"/></g>`;
+          }
+        } else {
+          // 次の目的地までの区間を強調
+          const cur = q.current && Lay.pointOf(L, S.circle(q.current));
+          if (cur && q.current === remaining[0]) {
+            const seg = Lay.polyline(L, st, cur);
+            route += `<polyline class="route next-leg" points="${seg.map((p) => `${p.x},${p.y}`).join(' ')}"/>`;
+          }
         }
       }
       U.$('.route-layer', svg).innerHTML = route;

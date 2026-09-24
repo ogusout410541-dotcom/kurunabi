@@ -77,11 +77,37 @@
         <div><span>残り予定</span><b>${U.yen(st.plannedLeft)}</b></div>
         <div><span>見込み残</span><b class="${st.projected < 0 ? 'neg' : 'pos'}">${U.yen(st.projected)}</b></div>
         ${st.cashLeft != null ? `<div><span>財布の現金</span><b class="${st.cashLeft < 0 ? 'neg' : ''}">${U.yen(st.cashLeft)}</b></div>` : ''}
+        <button class="link-btn w-wallet" data-act="wallet">${U.icon('wallet', 'sm')}${S().hasCashBreak() ? `金種 ${S().cashCount()}枚` : '金種を入れる'}</button>
       </div>
       <div class="w-bar" aria-hidden="true"><i class="spent" style="width:${pSpent}%"></i><i class="plan" style="width:${pPlan}%"></i></div>
       ${st.projected < 0 ? `<div class="w-warn">${U.icon('warn', 'sm')} 予定を全部買うと ${U.yen(-st.projected)} 足りません${st.mustLeft ? `（必須の残り ${U.yen(st.mustLeft)}）` : ''}</div>` : ''}
       ${st.unknown ? `<div class="w-note">価格未定 ${st.unknown}件は見込みに含まれていません</div>` : ''}
     </section>`;
+  };
+
+  // ------------------------------------------------------------------ 財布の中身（金種）
+  /** 金種ごとの枚数を入れる表。設定と当日タブの両方から開く */
+  V.cashEditor = () => {
+    const s = S();
+    const br = s.d().cashBreak || {};
+    const rows = s.DENOMS.map((den) => {
+      const n = br[den] || 0;
+      return `<div class="den-row${n ? ' has' : ''}">
+        <span class="den-label">${U.yen(den)}</span>
+        <button class="icon-btn sm" data-act="denomStep" data-d="${den}" data-n="-1" aria-label="${U.yen(den)}を1枚減らす">${U.icon('minus', 'sm')}</button>
+        <input class="input den-n" inputmode="numeric" data-f="denom" data-d="${den}" value="${n || ''}" placeholder="0">
+        <button class="icon-btn sm" data-act="denomStep" data-d="${den}" data-n="1" aria-label="${U.yen(den)}を1枚増やす">${U.icon('plus', 'sm')}</button>
+        <span class="den-sum">${n ? U.yen(den * n) : ''}</span>
+      </div>`;
+    }).join('');
+    const total = s.cashTotal();
+    const count = s.cashCount();
+    return `<div class="denoms">
+      ${rows}
+      <div class="den-foot"><span>合計</span><b>${U.yen(total)}</b><span class="muted">${count}枚</span>
+        ${count ? `<button class="link-btn" data-act="cashClear">${U.icon('x', 'sm')}全部消す</button>` : ''}</div>
+      <p class="muted small">枚数を入れておくと、支払いのときに「どの金種で出すか」を出します。記録するときに「財布の中身から引く」を押せば、おつりまで含めて自動で減らします。</p>
+    </div>`;
   };
 
   // ------------------------------------------------------------------ 当日（ナビ）
@@ -205,6 +231,20 @@
       </button></li>`;
   };
 
+  /** 並んでいる間に用意しておく金種（当日カード）。金種を入れていないときは何も出さない */
+  V.payReady = (amount) => {
+    const s = S();
+    if (!s.hasCashBreak() || !(amount > 0) || amount > 200000) return '';
+    const plan = s.payPlan(amount);
+    if (!plan) return '';
+    if (plan.short) return `<div class="pay-ready short">${U.icon('warn', 'sm')}現金があと ${U.yen(amount - s.cashTotal())} 足りません</div>`;
+    const b = plan.best;
+    const coins = s.DENOMS.filter((d) => b.use[d]).map((d) => `<span>${U.num(d)}<small>×${b.use[d]}</small></span>`).join('');
+    return `<div class="pay-ready">${U.icon('wallet', 'sm')}<span class="pr-l">用意する現金</span>
+      <div class="ph-coins">${coins}</div>
+      <b>${b.exact ? 'ちょうど' : `おつり ${U.yen(b.change)}`}</b></div>`;
+  };
+
   V.currentCard = (cid, q) => {
     const s = S();
     const d = s.d();
@@ -247,6 +287,7 @@
           return `<button class="near-chip" data-act="openCircle" data-cid="${x.cid}">${V.space(nc)}<span>${esc(nc.name)}</span></button>`;
         }).join('')}</div>` : ''}
       <button class="cur-memo-add" data-act="editMemo" data-cid="${cid}">${U.icon('note', 'sm')}${e.memo ? 'メモを書き直す' : 'その場でメモ'}</button>
+      ${V.payReady(planned - spent)}
       <div class="cur-sum"><span>予定 ${U.yen(planned)}</span><span>支払 <b>${U.yen(spent)}</b></span></div>
       ${hasTodo || !e.items.length
         ? `<button class="btn primary xl block" data-act="completeAll" data-cid="${cid}">${U.icon('check')}${e.items.length ? `全部買えた${U.icon('right', 'sm')}次へ` : '金額を入れて完了'}</button>`
@@ -365,6 +406,29 @@
       </table>
       <p class="muted small">${notes.join(' ')}</p>
     </section>`;
+  };
+
+  /** 地図の区間ナビ（◀ 3/12 G23 → G24 ▶）。inst.segIndex が null なら隠す */
+  V.mapSeg = () => {
+    const el = U.$('#mapseg');
+    if (!el) return;
+    const inst = V.map.inst;
+    if (!inst || inst.segIndex == null) { el.hidden = true; return; }
+    const legs = inst.legs();
+    if (!legs.length) { el.hidden = true; return; }
+    const i = Math.min(inst.segIndex, legs.length - 1);
+    const leg = legs[i];
+    const e = S().entry(leg.cid);
+    el.hidden = false;
+    el.innerHTML = `
+      <button class="icon-btn solid" data-act="mapSegMove" data-d="-1" aria-label="前の区間"${i === 0 ? ' disabled' : ''}>${U.icon('up')}</button>
+      <button class="seg-body" data-act="openCircle" data-cid="${esc(leg.cid)}">
+        <span class="seg-no">${i + 1}/${legs.length}</span>
+        <span class="seg-route">${esc(leg.fromName || 'スタート')} ${U.icon('right', 'sm')} <b>${esc(leg.toName)}</b></span>
+        <span class="seg-name">${esc(leg.toCircle.name)}${e ? ' ' + V.pri(e.pri) : ''}</span>
+      </button>
+      <button class="icon-btn solid" data-act="mapSegMove" data-d="1" aria-label="次の区間"${i === legs.length - 1 ? ' disabled' : ''}>${U.icon('down')}</button>
+      <button class="icon-btn solid" data-act="mapSegOff" aria-label="全体を見る">${U.icon('fit')}</button>`;
   };
 
   V.prow = (cid, n, canDrag) => {
@@ -575,10 +639,12 @@
             <button class="icon-btn solid" data-act="mapZoom" data-k="1.6" title="拡大">${U.icon('plus')}</button>
             <button class="icon-btn solid" data-act="mapZoom" data-k="0.625" title="縮小"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
             <button class="icon-btn solid" data-act="mapFit" title="全体">${U.icon('fit')}</button>
+            <button class="icon-btn solid" data-act="mapSeg" title="区間ごとに見る">${U.icon('right')}</button>
             <button class="icon-btn solid" data-act="mapRoute" title="ルート線">${U.icon('route')}</button>
             <button class="icon-btn solid" data-act="mapImage" title="公式配置図に切替">${U.icon('image')}</button>
           </div>
           <div class="map-legend"><span class="lg p1">必須</span><span class="lg p2">優先</span><span class="lg p3">通常</span><span class="lg p4">余裕</span><span class="lg done">済</span><span class="lg next">次</span></div>
+          <div class="map-seg" id="mapseg" hidden></div>
           <div class="map-card" id="mapcard" hidden></div>
         </div>`;
         this.inst = HC.map.mount(U.$('#mapbox', el), {
@@ -659,9 +725,10 @@
           <div class="grid2">
             <label class="field"><span>予算（総額）</span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" data-f="budget" value="${d.budget || ''}" placeholder="30000"></div></label>
             <label class="field"><span>別枠（交通・食費など）</span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" data-f="reserve" value="${d.reserve || ''}" placeholder="0"></div></label>
-            <label class="field"><span>持っていく現金 <small>任意</small></span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" data-f="cash" value="${d.cash || ''}" placeholder="財布の残りを表示"></div></label>
+            <label class="field"><span>持っていく現金 <small>${S().hasCashBreak() ? '金種から自動計算' : '任意'}</small></span><div class="yen-input"><span>¥</span><input class="input" inputmode="numeric" data-f="cash" value="${d.cash || ''}" placeholder="財布の残りを表示" ${S().hasCashBreak() ? 'readonly' : ''}></div></label>
             <div class="field"><span>支払いの初期値</span>${seg('defaultPay', [['cash', '現金'], ['card', 'キャッシュレス']])}</div>
           </div>
+          <div class="field wallet-field"><span>財布の中身（金種ごとの枚数）</span>${V.cashEditor()}</div>
         </section>
 
         <section class="card">
@@ -672,6 +739,7 @@
             <input class="input" data-f="startSid" placeholder="またはスペース番号（例：G23）" value="">
           </div>
           <div class="field"><span>自動ルートの組み方</span>${seg('routeMode', [['must', '必須→残り'], ['tier', '優先度順'], ['short', '最短のみ']])}</div>
+          ${toggle('wallFirst', '壁サークルを先に回る', '列が長くなりやすいので早めに')}
           <p class="muted small">「必須→残り」は必須サークルを最短で回り切ってから、残りを最短で回ります。</p>
         </section>
 
@@ -775,6 +843,7 @@
           <h3>${U.icon('check')}バージョン <small>この端末で動いているのは v${HC.VERSION}</small></h3>
           <p class="muted small">更新してもデータは消えません（計画・記録はこの端末のブラウザ内に残ります）。
             入力の途中なら、入力欄から指を離してから更新してください。</p>
+          <p class="ver-state muted small" id="ver-state"></p>
           <div class="btn-row wrap">
             <button class="btn" data-act="checkUpdate">${U.icon('download')}更新を確認</button>
             <button class="btn ghost" data-act="reloadApp">${U.icon('undo')}読み込み直す</button>

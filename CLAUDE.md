@@ -33,6 +33,7 @@ js/app.js             HC.app / HC.actions : 起動、画面切替、data-act の
 sw.js                 オフラインキャッシュ（リリース時は CACHE のバージョンを上げる）
                       画面から 'status' / 'refresh' を postMessage で問い合わせできる（設定のオフライン欄）
 tools/serve.ps1       ローカル確認用サーバー (http://localhost:7827/)
+tools/cacheserve.js   更新の確認用サーバー（GitHub Pages と同じ max-age=600 を返す。/__ver?v=X で版を切り替え）
 tools/gas/コード.gs    同期用の Google Apps Script（貼り付けてウェブアプリとしてデプロイする。手順は先頭のコメント）
 ```
 
@@ -46,9 +47,10 @@ tools/gas/コード.gs    同期用の Google Apps Script（貼り付けてウ�
   data: { [eventId]: EventData },      // イベントごとの利用者データ
   favorites: { 'tw:<id小文字>' | 'nm:<正規化名>': { name, tw, t } },   // イベントをまたいで有効
   layouts: { [eventId]: layoutSpec },  // 配置図エディタで作ったもの（同梱の配置図より優先）
-  settings: { theme, font, haptics, wakeLock, mapMode:'simple'|'image', mapOrient, routeMode:'must'|'tier'|'short', showRoute, defaultPay:'cash'|'card' },
+  settings: { theme, font, haptics, wakeLock, mapMode:'simple'|'image', mapOrient, routeMode:'must'|'tier'|'short', wallFirst(壁を先に回る), showRoute, defaultPay:'cash'|'card' },
 }
-EventData = { budget, cash, reserve, order: [cid], entries: {[cid]: Entry}, extras: [Extra],
+EventData = { budget, cash（財布の現金。cashBreak があるとその合計で上書きされる）, cashBreak: {[金種]: 枚数}, reserve,
+              order: [cid], entries: {[cid]: Entry}, extras: [Extra],
               addCircles: [Circle], start: 'door-r'|sid, focus: cid|null, date, updated,
               openAt: 'HH:MM'（自分の入場時刻）, endAt: 'HH:MM'（終了）, startedAt: ms（「いま開始」の時刻）}
 // 同梱イベント側の openAt/endAt/schedule が既定値。EventData の値が空ならそちらを使う（S.times()）
@@ -79,6 +81,11 @@ Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv�
 - 画面テキストの `innerHTML` は必ず `U.esc()` を通す
 - **お品書き待ち**（`S.isPending(e)`）＝買うものが1件も入っていないエントリ。entry の `noItems: true` で「入れないと決めた」印にすると対象から外れる。
   リストの上部カード・行の印・絞り込み「待ち」・試算表の注記で目立たせている（お品書きが後から出るサークル向け）
+- **現金の金種**（`EventData.cashBreak`）：設定の予算カードと当日タブの「金種」ボタン（`A.wallet`）から枚数を入れる。
+  `S.payPlan(金額)` が手持ちの枚数の範囲で「ちょうど出せる出し方（枚数が最小）」と「小銭を減らす出し方」を返し、
+  テンキーの `opt.hint` に出す（現金のときだけ）。OKで「財布の中身から引く」が入っていれば `S.applyPay` が
+  出した分を引き、**おつりを金種に戻して**足す。計算は金種ごとの個数制限つきDP（`planFor`）で、手持ちを超える案は出ない。
+  枚数を入れている間は `cash`（財布の現金）は自動計算になる（入力欄は readonly）
 - 指で押す前提のため、**操作系は最低でも36〜40px**の当たり判定にする（`.chip` 38 / `.seg.sm button` 36 / `.icon-btn.sm` 38 / `.link-btn` 38）。
   トーストは `pointer-events: none`（中のボタンだけ `auto`）にして、下のボタンを塞がないようにしてある
 - 品目入力は**入力回数を減らす**方向で作る：`S.priceHint(品名)` が過去に入れた金額の多数決を返し、プリセットのチップに出す／追加時に自動で入れる。
@@ -151,6 +158,11 @@ holokle.info 経由の壊れた pixiv/Web リンクは捨て、数字IDだけ拾
 `Lay.route`：始点固定の最近傍法＋2-opt。`S.optimize(mode, fromCurrent)` が未完了分だけ並べ替え（完了分は先頭に固定）。
 mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと / `short`=全部まとめて最短。
 
+- `settings.wallFirst`（既定 ON）：壁サークル（`S.isWall`＝配置図の `type:'wall'` に席がある）を先頭グループにまとめる。
+  壁は列が長くなりやすいので、必須の壁 → 残りの壁 → ふつうの島、の順で回る
+- **区間ナビ**：`V.map.inst.legs()` が「入口→A、A→B…」の区間一覧を返し、`showLeg(i)` でその区間だけ太く描いて拡大する
+  （ほかの線は薄く残す）。`clearLeg()` で全体表示に戻る。画面側は `V.mapSeg()` の `◀ 1/7 ▶ 全体` バー
+
 ## 共有・入出力
 
 - 計画: `{app:'kurunavi', kind:'plan', eventId, event(作成イベントなら一覧ごと), data, favorites}`
@@ -187,11 +199,27 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## オフライン
 
-- https で一度開けば SW が本体一式（現在21ファイル）をキャッシュし、圏外でも計画・記録・地図・お品書き画像はそのまま使える
+- https で一度開けば SW が本体一式（現在22ファイル）をキャッシュし、圏外でも計画・記録・地図・お品書き画像はそのまま使える
 - 設定の「オフライン」欄から、保存済みファイル数の確認と取り込み直し（SW への `refresh` メッセージ）ができる
 - 外部リンク（X・pixiv・お品書きURL）だけは電波が必要。圏外では薄く表示し、押してもトーストで知らせるだけにしている
 - **localhost では SW を無効化＆自動で unregister する**ので、ローカル検証でキャッシュに悩まされない
   （逆に SW 自体を試すときは、ページから手動で `navigator.serviceWorker.register('sw.js')` すればよい）
+
+## 版の更新（ここを間違えると「いつまでも古い版のまま」になる）
+
+- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.1.0）
+- **SW の install はブラウザのHTTPキャッシュを避けて取り込む**（`freshRequests()`＝`cache:'reload'` ＋ `?v=CACHE`）。
+  GitHub Pages は `Cache-Control: max-age=600` を返すので、ふつうに `cache.addAll(ASSETS)` すると
+  **新しい版のキャッシュに古いファイルが入り**、プッシュしても画面がいつまでも古いままになる。2026-09-24 に実際にこれで詰まった
+- 本体（ASSETS）は fetch でも裏更新しない。1ファイルずつ差し替えると「古いJSと新しいJS」が混ざるため、差し替えは install にまかせる
+- `skipWaiting()` を使っているので `reg.waiting` では判定できない。**画面の `HC.VERSION` と、SWに聞いたキャッシュ名（`status`）を突き合わせる**
+  （`storedVersion()`）。設定の「バージョン」欄（`app.paintVersion`）に
+  「保存されている版も v1.1.0。いま動いているのは最新です」／「保存されている版は v2.0.0（画面は v1.1.0）」と出るので、
+  更新が効いたかどうかが画面で分かる。更新は必ず本人の操作で（入力中に勝手に読み込み直さない）
+- 確認手順：`node tools/cacheserve.js <プロジェクトの絶対パス> 7828` で
+  **GitHub Pages と同じ `max-age=600`** を返すサーバーを立て、`/__ver?v=2.0.0` で「デプロイ」を切り替える。
+  SWを入れる → 版を切り替える → `reg.update()` → キャッシュの中の `js/app.js` の版を見る、で再現・確認できる
+  （ブラウザのプロファイル `%TEMP%\kuru-cdp-prof` は消してから始めると素直）
 
 ## 動作確認
 
@@ -225,6 +253,10 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 - [x] 配置図を公式PDFから作り直し（600席すべて実測。最大15pxあったズレを解消）＋タイムテーブル（12:00開始／13:00当日券／16:00終了）
 - [x] 開催日を基準にした時刻表示（別の日に開いても「終了」と出ない。state: before/live/after/none）
 - [x] オフライン対応（SWキャッシュ＋オフライン表示・外部リンク抑止・設定から取り込み直し）
+- [x] 区間ごとのルート表示（`◀ 1/7 ▶ 全体`。線が重なって分かりにくい問題への対処。1.1.0）
+- [x] 現金の金種と最適な出し方（`cashBreak` / `S.payPlan` / テンキーのヒント／おつりも戻す。1.1.0）
+- [x] 壁サークルを先に回る（`settings.wallFirst`。列が長くなりやすいため。1.1.0）
+- [x] 更新が効いたかどうかの表示（画面の版とキャッシュの版を並べて出す。1.1.0。→「版の更新」の節）
 - [ ] サークル画像の取り込み：URLをもらってから。**目的のサークルのみ**・**アプリに同梱**（`data/cuts/`）で本人合意済み（2026-09-24）。
       CORSのため端末側での直接取得は不可なので、こちらで取得→長辺800pxのWebPに縮小→同梱→一覧・詳細・当日カードに表示する
 - 運用方針（2026-09-24 本人確認）：スマホは **GitHub Pages に公開**して開く／当日の記録は**チェックだけ**が基本（予定額で自動計上、違ったときだけ金額を直す）

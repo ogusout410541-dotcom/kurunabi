@@ -1,6 +1,6 @@
 /* オフライン対応：アプリ本体をキャッシュ（会場は電波が弱い前提）
    ファイルを変更したら CACHE のバージョンを上げること */
-const CACHE = 'kurunavi-v1.0.2';
+const CACHE = 'kurunavi-v1.1.0';
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/util.js', 'js/parser.js', 'js/layout.js', 'js/qr.js', 'js/shots.js', 'js/store.js', 'js/ui.js', 'js/map.js', 'js/sync.js', 'js/editor.js', 'js/views.js', 'js/app.js',
@@ -8,8 +8,14 @@ const ASSETS = [
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 
+/* 取り込むときは必ずネットワークから取る。
+   ブラウザのHTTPキャッシュ（GitHub Pages は max-age=600）が残っていると、
+   新しい版のキャッシュに古いファイルが入り、いつまでも更新されない状態になる */
+const freshRequests = () =>
+  ASSETS.map((p) => new Request(p + (p.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(CACHE), { cache: 'reload' }));
+
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(freshRequests())).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -31,7 +37,7 @@ self.addEventListener('message', (e) => {
   } else if (e.data === 'refresh') {
     e.waitUntil(
       caches.open(CACHE)
-        .then((c) => c.addAll(ASSETS))
+        .then((c) => c.addAll(freshRequests()))
         .then(() => port && port.postMessage({ ok: true }))
         .catch((err) => port && port.postMessage({ ok: false, error: String(err && err.message || err) }))
     );
@@ -61,7 +67,7 @@ self.addEventListener('fetch', (e) => {
           if (res && res.ok) cache.put(req, res.clone());
           return res;
         } catch (_) {
-          return (await cache.match('index.html')) || Response.error();
+          return (await cache.match('index.html', { ignoreSearch: true })) || Response.error();
         }
       }
       // 本体以外（あとから足す画像など）は、キャッシュ優先＋裏で更新

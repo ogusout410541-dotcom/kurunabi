@@ -200,6 +200,7 @@
       unit: String(opt.amount || ''),
       qty: opt.qty || 1,
       pay: opt.pay || S.state.settings.defaultPay,
+      deduct: true,   // 支払いヒントの「財布の中身から引く」
       fresh: true, // 最初のキー入力で既存値を置き換える
     };
     const id = 'numpad';
@@ -210,6 +211,14 @@
       U.$('.np-qty-v', el).textContent = st.qty;
       U.$$('[data-pay]', el).forEach((b) => b.classList.toggle('on', b.dataset.pay === st.pay));
       U.$('[data-ok]', el).disabled = !(unit > 0 || opt.allowZero);
+      const hint = U.$('.np-hint', el);
+      if (hint) {
+        const html = (st.pay === 'cash' && opt.hint) ? opt.hint(unit * st.qty) : '';
+        hint.innerHTML = html || '';
+        hint.hidden = !html;
+        const cb = U.$('[data-deduct]', hint);
+        if (cb) cb.checked = st.deduct;   // 描き直しても選び直さなくていいように
+      }
     };
     UI.sheet({
       id,
@@ -220,6 +229,7 @@
         <input class="input np-name" type="text" placeholder="品名（任意）" value="${U.esc(st.name)}" enterkeyhint="done">
         <div class="chips np-chips">${S.ITEM_PRESETS.map((p) => `<button class="chip sm" data-nm="${U.esc(p)}">${U.esc(p)}</button>`).join('')}</div>` : ''}
         <div class="np-display"><span class="np-amount">¥0</span><span class="np-total"></span></div>
+        <div class="np-hint" hidden></div>
         <div class="np-presets">${S.PRICE_PRESETS.map((p) => `<button class="chip" data-preset="${p}">${U.num(p)}</button>`).join('')}</div>
         <div class="np-keys">
           ${['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', 'bs'].map((k) => `<button class="np-key" data-k="${k}">${k === 'bs' ? U.icon('backspace') : k}</button>`).join('')}
@@ -232,6 +242,7 @@
       onMount: (el) => {
         draw(el);
         const nameInp = U.$('.np-name', el);
+        el.addEventListener('change', (e) => { if (e.target.matches('[data-deduct]')) st.deduct = e.target.checked; });
         el.addEventListener('click', (e) => {
           const b = e.target.closest('button');
           if (!b) return;
@@ -254,8 +265,13 @@
             nameInp.value = b.dataset.nm;
           } else if (b.hasAttribute('data-ok')) {
             const unit = parseInt(st.unit || '0', 10);
+            const deduct = U.$('.np-hint [data-deduct]', el);   // 閉じる前に読む
             UI.close(id);
-            opt.onOk({ name: nameInp ? nameInp.value.trim() : st.name, unit, amount: unit * st.qty, qty: st.qty, pay: st.pay });
+            opt.onOk({
+              name: nameInp ? nameInp.value.trim() : st.name,
+              unit, amount: unit * st.qty, qty: st.qty, pay: st.pay,
+              deduct: !!(deduct && deduct.checked),
+            });
             return;
           } else return;
           draw(el);
