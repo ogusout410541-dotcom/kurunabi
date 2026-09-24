@@ -368,10 +368,15 @@
     return { exact: pay === amount, pay, change: pay - amount, use, coins: dp[pay] };
   };
 
+  // 同じ金額・同じ財布なら計算し直さない（当日タブは何度も描き直すため）
+  const payCache = new Map();
+
   /** 支払い案。ちょうど出せるときは「枚数が少ない案」と「小銭が減る案」を返す */
   S.payPlan = (amount, br = S.d().cashBreak) => {
     if (!amount || amount <= 0 || !S.cashCount(br)) return null;
     if (S.cashTotal(br) < amount) return { short: true };
+    const key = amount + '|' + S.DENOMS.map((d) => br[d] || 0).join(',');
+    if (payCache.has(key)) return payCache.get(key);
     const min = planFor(amount, br, false);
     if (!min) return null;
     const out = { best: min };
@@ -379,11 +384,17 @@
       const max = planFor(amount, br, true);
       if (max && max.exact && max.coins > min.coins && max.coins <= min.coins + 5) out.alt = max;   // 小銭を少し多めに出す案
     }
+    if (payCache.size > 40) payCache.clear();
+    payCache.set(key, out);
     return out;
   };
 
   /** 実際にその出し方で払ったとき、手持ちを更新する（釣りは受け取った体で足す） */
-  S.applyPay = (plan) =>
+  /**
+   * その出し方で払ったとして手持ちを更新する（釣りは受け取った体で足す）。
+   * cid を渡すと「このサークルでいくら財布から出したか」を控えておき、二重に引かないようにする
+   */
+  S.applyPay = (plan, cid) =>
     S.mutate('財布から支払う', (d) => {
       const br = { ...d.cashBreak };
       Object.entries(plan.use || {}).forEach(([den, n]) => { br[den] = Math.max(0, (br[den] || 0) - n); });
@@ -393,7 +404,17 @@
       });
       d.cashBreak = br;
       d.cash = S.cashTotal(br);
+      const e = cid && d.entries[cid];
+      if (e) e.cashPaid = (e.cashPaid || 0) + ((plan.pay || 0) - (plan.change || 0));
     });
+
+  /** そのサークルで、まだ財布から引いていない現金の額 */
+  S.cashUnpaid = (cid) => {
+    const e = S.entry(cid);
+    if (!e) return 0;
+    const cash = U.sum(e.items.filter((i) => i.status === 'bought' && (i.pay || S.state.settings.defaultPay) === 'cash'), S.itemCost);
+    return Math.max(0, cash - (e.cashPaid || 0));
+  };
 
   /** 壁サークル（配置図で壁に面した席＝列が伸びやすい）か */
   S.isWall = (cid) => {
@@ -1073,6 +1094,7 @@
         e.doneAt = null;
         e.items = e.items.filter((i) => i.planned !== false);
         e.items.forEach((i) => { i.status = 'todo'; i.paid = null; i.pay = null; i.t = null; });
+        e.cashPaid = 0;
       });
       d.extras = [];
       d.focus = null;

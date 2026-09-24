@@ -127,7 +127,7 @@
   UI.toast = (msg, opt = {}) => {
     const el = U.$('#toast');
     const undo = opt.undo && HC.store.canUndo();
-    el.className = `toast show ${opt.error ? 'error' : ''}`;
+    el.className = `toast show ${opt.error ? 'error' : ''} ${undo && opt.action ? 'two' : ''}`;   // ボタン2つのときは折り返す
     el.innerHTML = `<span class="toast-msg">${U.esc(msg)}</span>${undo ? `<button class="toast-btn" data-toast-undo>${U.icon('undo')}元に戻す</button>` : ''}${
       opt.action ? `<button class="toast-btn" data-toast-act>${U.esc(opt.action.label)}</button>` : ''}`;
     clearTimeout(toastTimer);

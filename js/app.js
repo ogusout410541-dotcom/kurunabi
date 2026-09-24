@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '1.1.1';
+  HC.VERSION = '1.1.2';
 
   const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -39,9 +39,16 @@
 
   app.refresh = () => {
     V.header();
+    if (app.noRender) {   // 金種の入力中：いま出ている画面は作り直さず、数字だけ差し替える
+      VIEWS.forEach((v) => app.dirty.add(v));
+      app.dirty.delete(app.view);
+      app.paintDenoms && app.paintDenoms();
+      return;
+    }
     VIEWS.forEach((v) => app.dirty.add(v));
     renderView(app.view);
     refreshCircleSheet();
+    app.paintDenoms && app.paintDenoms();   // 財布のシートを開いたまま変わったとき用
   };
 
   const refreshCircleSheet = () => {
@@ -115,7 +122,15 @@
     U.vibrate(18);
     const q = S.queue();
     const next = q.current ? S.circle(q.current) : null;
-    UI.toast(`${label}：${circleLabel(cid)}${next ? ` ／ 次は ${next.space}` : ''}`, { undo: true });
+    const msg = `${label}：${circleLabel(cid)}${next ? ` ／ 次は ${next.space}` : ''}`;
+    // 金種を入れている人には、チェックだけで終えたときも財布を合わせられるようにしておく
+    const amount = S.cashUnpaid(cid);
+    const plan = amount > 0 && S.hasCashBreak() ? S.payPlan(amount) : null;
+    if (plan && plan.best) {
+      UI.toast(msg, { undo: true, action: { label: `財布から ${U.yen(amount)} 引く`, fn: () => { S.applyPay(plan.best, cid); UI.toast(`財布は ${U.yen(S.cashTotal())} になりました`, { undo: true }); } } });
+    } else {
+      UI.toast(msg, { undo: true });
+    }
     if (app.view === 'go') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -136,10 +151,10 @@
   app.payHint = payHint;
 
   /** 「財布から引く」が押されていたら、手持ちの金種を更新する */
-  const deductIfAsked = (r) => {
+  const deductIfAsked = (r, cid) => {
     if (!r || !r.deduct || r.pay !== 'cash' || !S.hasCashBreak()) return;
     const plan = S.payPlan(r.amount);
-    if (plan && plan.best) S.applyPay(plan.best);
+    if (plan && plan.best) S.applyPay(plan.best, cid);
   };
   app.deductIfAsked = deductIfAsked;
 
@@ -155,7 +170,7 @@
       okLabel: '購入済にする',
       onOk: (r) => {
         S.recordPurchase(cid, { iid: it.id, amount: r.amount, qty: r.qty, pay: r.pay });
-        deductIfAsked(r);
+        deductIfAsked(r, cid);
         U.vibrate();
         checkAllChecked(cid);
       },
@@ -254,7 +269,7 @@
             en.doneAt = now;
             if (d.focus === cid) d.focus = null;
           });
-          deductIfAsked(r);
+          deductIfAsked(r, cid);
           afterFinish(cid, '完了');
         },
       });
@@ -283,7 +298,7 @@
             en.doneAt = now;
             if (d.focus === cid) d.focus = null;
           });
-          deductIfAsked(r);
+          deductIfAsked(r, cid);
           afterFinish(cid, '完了');
         },
       });
@@ -325,8 +340,8 @@
       hint: payHint,
       title: `${c.space} 追加購入`,
       onOk: (r) => {
-        deductIfAsked(r);
         S.recordPurchase(ds.cid, { name: r.name, amount: r.amount, qty: r.qty, pay: r.pay });
+        deductIfAsked(r, ds.cid);
         U.vibrate();
         UI.toast(`追加購入 ${U.yen(r.amount)} を記録`, { undo: true });
       },
@@ -524,10 +539,10 @@
       const items = e.items.map((it) => `${U.esc(it.name || '（無題）')}${it.qty > 1 ? ` ×${it.qty}` : ''}${it.price ? ` ${U.yen(it.price)}` : ''}`).join('、');
       return `<tr>
         <td class="n">${i + 1}</td>
-        <td class="sp">${U.esc(c.space)}</td>
+        <td class="sp">${U.esc(c.space)}${S.isWall(cid) ? ' <small>壁</small>' : ''}</td>
         <td>${U.esc(c.name)}${e.memo ? `<div class="mm">${U.esc(e.memo)}</div>` : ''}</td>
         <td class="pri">${S.PRI[e.pri].label}</td>
-        <td class="it">${items || '—'}</td>
+        <td class="it">${items || (S.isPending(e) ? '<i>お品書き待ち</i>' : '—')}</td>
         <td class="ck"></td>
       </tr>`;
     }).join('');
@@ -587,7 +602,7 @@
 
   /**
    * 設定の「バージョン」欄に、画面で動いている版と、端末に保存されている版の両方を出す。
-   * 更新したのに変わらない／更新が効いたのか分からない、を見て分かるようにするため
+   * 更新したのに変わらない／新しくなったのか分からない、を画面で確かめられるようにするため
    */
   app.paintVersion = async () => {
     const el = U.$('#ver-state');
@@ -799,9 +814,22 @@
     return t;
   };
 
+  /** 開催日を入れる（未設定だと「今日の時間帯」として扱われるので、当日タブからも直せるように） */
+  const setEventDate = async () => {
+    const cur = S.eventDate();
+    const v = await UI.prompt('開催日', { value: cur, type: 'date', ok: '決定' });
+    if (v == null) return;
+    const id = S.state.eventId;
+    if (S.state.customEvents[id]) S.updateCustomEvent(id, { date: v.trim() });
+    else S.mutate('開催日', (d) => { d.date = v.trim(); });
+    UI.toast(v.trim() ? `開催日を ${v.trim()} にしました` : '開催日を空にしました');
+  };
+
   A.clockMenu = () => {
     const T = S.times();
+    const date = S.eventDate();
     UI.menu('時刻の設定', [
+      { label: '開催日', icon: 'cal', hint: date ? `いま ${date}` : '未設定（今日として扱います）', act: setEventDate },
       { label: '開始（入場）の時刻', icon: 'cal', hint: T.openAt ? `いま ${T.openAt}` : '未設定', act: async () => {
         const t = await askTime('自分が入場する時刻', S.d().openAt, T.openAt || '12:00');
         if (t != null) S.mutate('開始時刻', (x) => { x.openAt = t; });
@@ -1015,7 +1043,7 @@
     renderView('more');
   };
 
-// ---- 財布（金種）
+  // ---- 財布（金種）
   /** 金種の表をシートで開く（当日タブから。設定タブには直接埋めてある） */
   A.wallet = () => {
     UI.sheet({
@@ -1025,24 +1053,67 @@
       html: `${V.cashEditor()}<div class="btn-row"><button class="btn block" data-close>閉じる</button></div>`,
     });
   };
-  /** 開いていれば中身だけ描き直す（同じ id で呼ぶと本文が入れ替わる） */
-  const repaintWallet = () => { if (document.querySelector('[data-sheet="wallet"]')) A.wallet(); };
+
+  /**
+   * 金種の欄は、押すたび・打つたびに画面を作り直さない。
+   * 作り直すと次に押そうとした＋ボタンや入力欄が一瞬で消えて、タップが空振りするため、
+   * 変わるところ（枚数・小計・合計・財布の現金）だけ書き換える
+   */
+  const paintDenoms = () => {
+    const d = S.d();
+    const br = d.cashBreak || {};
+    U.$$('.den-row').forEach((row) => {
+      const inp = U.$('[data-f="denom"]', row);
+      if (!inp) return;
+      const den = +inp.dataset.d;
+      const n = br[den] || 0;
+      if (document.activeElement !== inp) inp.value = n || '';
+      row.classList.toggle('has', !!n);
+      const sum = U.$('.den-sum', row);
+      if (sum) sum.textContent = n ? U.yen(den * n) : '';
+    });
+    const count = S.cashCount();
+    U.$$('.den-foot').forEach((foot) => {
+      const b = U.$('b', foot);
+      if (b) b.textContent = U.yen(S.cashTotal());
+      const c = U.$('.muted', foot);
+      if (c) c.textContent = count + '枚';
+      const clear = U.$('[data-act="cashClear"]', foot);
+      if (clear) clear.hidden = !count;
+    });
+    // 予算欄の「持っていく現金」と、当日タブの金種ボタン
+    const cash = U.$('[data-f="cash"]');
+    if (cash) {
+      cash.value = d.cash || '';
+      cash.readOnly = count > 0;
+      const note = cash.closest('.field') && U.$('span small', cash.closest('.field'));
+      if (note) note.textContent = count > 0 ? '下の金種から計算' : '任意';
+    }
+    const cashLeft = U.$('.w-cash');
+    if (cashLeft) {
+      const st = S.stats();
+      cashLeft.textContent = U.yen(st.cashLeft);
+      cashLeft.classList.toggle('neg', st.cashLeft < 0);
+    }
+    const btn = U.$('.w-wallet');
+    if (btn) btn.innerHTML = `${U.icon('wallet', 'sm')}${count ? `金種 ${count}枚` : '金種を入れる'}`;
+  };
+  app.paintDenoms = paintDenoms;
 
   A.denomStep = (ds) => {
     const den = Number(ds.d);
     const now = (S.d().cashBreak || {})[den] || 0;
-    S.setCashBreak(den, now + Number(ds.n));
+    app.noRender = true;
+    try { S.setCashBreak(den, now + Number(ds.n)); } finally { app.noRender = false; }
     U.vibrate(6);
-    repaintWallet();
+    paintDenoms();
   };
 
   A.cashClear = async () => {
     if (!(await UI.confirm('財布の金種の枚数を全部消しますか？', { ok: '消す' }))) return;
     S.mutate('金種の枚数', (d) => { d.cashBreak = {}; d.cash = 0; });
-    repaintWallet();
     UI.toast('消しました', { undo: true });
   };
-
 
   A.budgetEdit = () => {
     const d = S.d();
@@ -1324,7 +1395,8 @@
     if (!f) return;
     const ds = el.dataset;
     app.quiet = !!el.closest('[data-sheet="circle"]');
-    try { onFieldChange(f, el, ds); } finally { app.quiet = false; }
+    app.noRender = f === 'denom';   // 金種は打つたびに画面を作り直さない（次のタップが空振りするため）
+    try { onFieldChange(f, el, ds); } finally { app.quiet = false; app.noRender = false; }
   });
 
   const onFieldChange = (f, el, ds) => {
@@ -1341,7 +1413,7 @@
         break;
       case 'denom':
         S.setCashBreak(Number(ds.d), U.parseYen(el.value));
-        repaintWallet();
+        paintDenoms();
         break;
       case 'budget':
       case 'reserve':

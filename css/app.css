@@ -390,7 +390,7 @@ select.input { appearance: auto; }
 .fin summary::-webkit-details-marker { display: none; }
 .fin summary h3 { margin: 0; }
 .fin[open] summary h3 { margin-bottom: 6px; }
-.go-foot { display: flex; justify-content: center; margin: 4px 0 8px; }
+.go-foot { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 4px 0 8px; }
 
 /* ------------------------------------------------------------ リスト */
 .plan-sum { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; text-align: center; padding: 10px; }
@@ -637,6 +637,9 @@ select.input { appearance: auto; }
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: none; }
 .toast .toast-btn { pointer-events: auto; }
+.toast.two { flex-wrap: wrap; padding: 8px 8px 8px 12px; }
+.toast.two .toast-msg { flex: 1 1 100%; padding: 2px 2px 4px; }
+.toast.two .toast-btn { flex: 1 1 auto; justify-content: center; }
 .toast.error { background: var(--danger); }
 .toast-msg { padding: 6px 4px; }
 .toast-btn { display: inline-flex; align-items: center; gap: 4px; color: #7cc8ff; font-weight: 800; padding: 8px 10px; border-radius: 10px; white-space: nowrap; }
@@ -777,6 +780,7 @@ body.editing { overflow: hidden; }
   #printsheet td.pri { width: 14mm; }
   #printsheet td.ck { width: 12mm; }
   #printsheet td.it { width: 55mm; font-size: 9.5pt; }
+  #printsheet td.sp small { font-weight: 700; font-size: 8pt; border: 1px solid #000; border-radius: 2pt; padding: 0 .8mm; }
   #printsheet .mm { font-size: 8.5pt; color: #444; }
   #printsheet .foot { margin-top: 3mm; font-size: 8.5pt; color: #666; }
   #printsheet tr { break-inside: avoid; }

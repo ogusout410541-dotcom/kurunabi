@@ -76,7 +76,7 @@
       <div class="w-side">
         <div><span>残り予定</span><b>${U.yen(st.plannedLeft)}</b></div>
         <div><span>見込み残</span><b class="${st.projected < 0 ? 'neg' : 'pos'}">${U.yen(st.projected)}</b></div>
-        ${st.cashLeft != null ? `<div><span>財布の現金</span><b class="${st.cashLeft < 0 ? 'neg' : ''}">${U.yen(st.cashLeft)}</b></div>` : ''}
+        ${st.cashLeft != null ? `<div><span>財布の現金</span><b class="w-cash ${st.cashLeft < 0 ? 'neg' : ''}">${U.yen(st.cashLeft)}</b></div>` : ''}
         <button class="link-btn w-wallet" data-act="wallet">${U.icon('wallet', 'sm')}${S().hasCashBreak() ? `金種 ${S().cashCount()}枚` : '金種を入れる'}</button>
       </div>
       <div class="w-bar" aria-hidden="true"><i class="spent" style="width:${pSpent}%"></i><i class="plan" style="width:${pPlan}%"></i></div>
@@ -95,7 +95,7 @@
       return `<div class="den-row${n ? ' has' : ''}">
         <span class="den-label">${U.yen(den)}</span>
         <button class="icon-btn sm" data-act="denomStep" data-d="${den}" data-n="-1" aria-label="${U.yen(den)}を1枚減らす">${U.icon('minus', 'sm')}</button>
-        <input class="input den-n" inputmode="numeric" data-f="denom" data-d="${den}" value="${n || ''}" placeholder="0">
+        <input class="input den-n" inputmode="numeric" data-f="denom" data-d="${den}" value="${n || ''}" placeholder="0" aria-label="${U.yen(den)}の枚数">
         <button class="icon-btn sm" data-act="denomStep" data-d="${den}" data-n="1" aria-label="${U.yen(den)}を1枚増やす">${U.icon('plus', 'sm')}</button>
         <span class="den-sum">${n ? U.yen(den * n) : ''}</span>
       </div>`;
@@ -266,7 +266,7 @@
     return `<section class="card cur p${e.pri} st-${e.status}">
       <div class="cur-top">
         <span class="order">${idx >= 0 ? `残り${q.todo.length + q.later.length}件の${idx + 1}件目` : ''}</span>${V.pri(e.pri)}${V.status(e.status)}
-        ${c.block === 'A' ? '<span class="tag wall">壁</span>' : ''}
+        ${s.isWall(cid) ? '<span class="tag wall">壁</span>' : ''}
         <span class="grow"></span>
         <button class="icon-btn" data-act="showOnMap" data-cid="${cid}" aria-label="地図で見る">${U.icon('map')}</button>
         <button class="icon-btn" data-act="openCircle" data-cid="${cid}" aria-label="編集">${U.icon('edit')}</button>
@@ -413,10 +413,11 @@
     const el = U.$('#mapseg');
     if (!el) return;
     const inst = V.map.inst;
-    if (!inst || inst.segIndex == null) { el.hidden = true; return; }
+    if (!inst || inst.segIndex == null) { el.hidden = true; el.innerHTML = ''; return; }
     const legs = inst.legs();
-    if (!legs.length) { el.hidden = true; return; }
+    if (!legs.length) { el.hidden = true; el.innerHTML = ''; inst.segIndex = null; inst.paint(); return; }   // 全部回り終えたら区間表示はやめる
     const i = Math.min(inst.segIndex, legs.length - 1);
+    if (i !== inst.segIndex) { inst.segIndex = i; inst.paint(); }   // 完了で区間が減ったぶんを詰める
     const leg = legs[i];
     const e = S().entry(leg.cid);
     el.hidden = false;
@@ -534,7 +535,7 @@
       list.forEach((c) => {
         if (grouped && c.block !== last) {
           last = c.block;
-          out.push(`<div class="cgroup">${esc(c.block)}<small>${c.block === 'A' ? '壁' : ''}</small></div>`);
+          out.push(`<div class="cgroup">${esc(c.block)}<small>${s.isWall(c.id) ? '壁' : ''}</small></div>`);
         }
         const e = d.entries[c.id];
         const hist = s.historyOf(c);
@@ -661,6 +662,7 @@
         b.classList.toggle('on', s.state.settings.mapMode === 'image');
         b.hidden = !s.ev().layout.image;
       });
+      V.mapSeg();   // 回り終えたぶん区間が減っていることがあるので、ここでも合わせる
       this.renderCard();
     },
     select(cid) {
