@@ -37,7 +37,7 @@
   };
 
   const itemNames = (e) => e.items.map((i) => i.name || '（無題）').join('・');
-  const priceTxt = (i) => (i.price ? U.yen(i.price) : '<span class="unk">¥?</span>') + (i.qty > 1 ? `<small>×${i.qty}</small>` : '');
+  const priceTxt = (i) => (i.price ? U.yen(i.price) : S().isFree(i) ? '<span class="free">無料</span>' : '<span class="unk">¥?</span>') + (i.qty > 1 ? `<small>×${i.qty}</small>` : '');
 
   const emptyState = (icon, title, body, btn) =>
     `<div class="empty">${U.icon(icon)}<h3>${title}</h3><p>${body}</p>${btn || ''}</div>`;
@@ -127,6 +127,10 @@
         return;
       }
 
+      // 開催前（と、まだ1件も回っていない間）は準備の抜けを出す
+      const ck = s.clock();
+      if (ck.state === 'before' || ck.state === 'none' || !st.doneCount) html += V.prep(ck);
+
       const pct = st.total ? Math.round((st.doneCount / st.total) * 100) : 0;
       html += `<div class="progress-row">
         <div class="prog"><i style="width:${pct}%"></i></div>
@@ -168,6 +172,52 @@
       </div>`;
       el.innerHTML = `<div class="go">${html}</div>`;
     },
+  };
+
+  /**
+   * 当日までの準備。抜けているものだけボタン付きで出し、全部済んだら1行にたたむ。
+   * 当日の朝に電波のあるうちに見直す、という使い方を想定している
+   */
+  V.prep = (ck) => {
+    const s = S();
+    const d = s.d();
+    const active = d.order.filter((cid) => d.entries[cid] && ['todo', 'later'].includes(d.entries[cid].status));
+    const unknownCids = active.filter((cid) => d.entries[cid].items.some((i) => i.status === 'todo' && i.planned !== false && s.isUnknown(i)));
+    const pend = s.pendingCids().length;
+    const addedAfter = d.routedAt ? active.filter((cid) => (d.entries[cid].addedAt || 0) > d.routedAt).length : 0;
+    const sw = 'serviceWorker' in navigator && location.protocol === 'https:';
+    const sync = s.state.sync;
+    const rows = [
+      { ok: !!s.eventDate(), label: '開催日', note: s.eventDate() ? U.md(new Date(s.eventDate() + 'T00:00:00').getTime()) : '未設定だと「今日」として時刻を数えます', act: 'setEventDate', btn: '入れる' },
+      { ok: !!d.budget, label: '予算', note: d.budget ? U.yen(d.budget) : '残りと見込みが出せません', act: 'budgetEdit', btn: '入れる' },
+      { ok: !pend, label: 'お品書き待ち', note: pend ? `${pend}サークル。買うものが入っていません` : 'すべて入力済み', act: 'nav', data: 'data-view="list" data-scroll="pend"', btn: '見る' },
+      { ok: !unknownCids.length, label: '価格未定', note: unknownCids.length ? `${unknownCids.length}サークルに ¥? の品物があります` : 'すべて金額あり', act: 'openCircle', data: `data-cid="${esc(unknownCids[0] || '')}"`, btn: '入れる' },
+      { ok: !!d.routedAt && !addedAfter, label: 'ルート', note: !d.routedAt ? 'まだ作っていません' : addedAfter ? `作ったあとに${addedAfter}件追加しました` : `${U.md(d.routedAt)} ${U.time(d.routedAt)} に作成`, act: 'routeMenu', btn: '作る' },
+      { ok: s.hasCashBreak(), label: '財布の中身', note: s.hasCashBreak() ? `${U.yen(s.cashTotal())}（${s.cashCount()}枚）` : '金種を入れると出す硬貨・お札を案内します', act: 'wallet', btn: '入れる', optional: true },
+      sw ? { ok: !!navigator.serviceWorker.controller, label: 'オフライン保存', note: navigator.serviceWorker.controller ? '圏外でも開けます' : 'まだ保存されていません', act: 'offlineRefresh', btn: '保存' } : null,
+      sync.url && sync.phrase ? { ok: !sync.dirty, label: '同期', note: sync.dirty ? 'まだ送っていない変更があります' : '送信済み', act: 'syncNow', btn: '送る' } : null,
+      sync.url && sync.phrase && HC.shots && HC.shots.ready && HC.shots.unsent().length
+        ? { ok: false, label: 'お品書き画像', note: `${HC.shots.unsent().length}枚をまだ送っていません`, act: 'shotsPush', btn: '送る' } : null,
+      sync.url && sync.phrase && HC.shots && HC.shots.ready && !HC.shots.unsent().length
+        ? { ok: false, optional: true, label: 'お品書き画像', note: `この端末 ${HC.shots.all().length}枚${sync.shotsAt ? ` ・ 最終の受け渡し ${U.md(sync.shotsAt)} ${U.time(sync.shotsAt)}` : ' ・ ほかの端末の画像は「受け取る」で'}`, act: 'shotsPull', btn: '受け取る' } : null,
+      HC.app.updateReady ? { ok: false, label: '新しい版', note: '更新してから出かけると安心です', act: 'applyUpdate', btn: '更新' } : null,
+    ].filter(Boolean);
+    const left = rows.filter((r) => !r.ok && !r.optional).length;
+    const live = ck.state === 'live' || ck.state === 'after';
+    if (live && !left) return '';   // 始まってからは、抜けがあるときだけ出す
+    const when = ck.state === 'before' && ck.days >= 1 ? `あと${ck.days}日` : ck.state === 'before' ? '今日' : '';
+    // 開け閉めは本人の操作を覚えておく（描き直すたびに開き直さないように）
+    // 始まってからは当日カードを押し下げないよう、たたんで出す
+    const open = V.prepOpen != null ? V.prepOpen : left > 0 && !live;
+    return `<details class="card prep${left ? ' todo' : ''}" id="sec-prep"${open ? ' open' : ''}>
+      <summary><h3>${U.icon(left ? 'warn' : 'check')}当日までの準備 <small>${when ? when + ' ・ ' : ''}${left ? `残り${left}件` : 'できています'}</small></h3></summary>
+      <ul class="prep-list">${rows.map((r) => `<li class="${r.ok ? 'ok' : r.optional ? 'opt' : 'ng'}">
+        <span class="pk">${U.icon(r.ok ? 'check' : r.optional ? 'minus' : 'warn', 'sm')}</span>
+        <span class="pl"><b>${esc(r.label)}</b><small>${esc(r.note)}</small></span>
+        ${r.ok ? '' : `<button class="btn sm" data-act="${r.act}" ${r.data || ''}>${esc(r.btn)}</button>`}
+      </li>`).join('')}</ul>
+      ${sw ? '<p class="muted small">当日の朝、電波のあるうちに一度開いておくと確実です。</p>' : ''}
+    </details>`;
   };
 
   /**
@@ -263,7 +313,9 @@
         </button>
         <button class="icon-btn" data-act="itemMenu" data-cid="${cid}" data-iid="${i.id}" aria-label="この品物の操作">${U.icon('more')}</button>
       </li>`).join('');
-    return `<section class="card cur p${e.pri} st-${e.status}">
+    // 直前に完了して切り替わったところなら、しばらく押せないようにする（連打の保険）
+    const enter = HC.app.curGuard && Date.now() < HC.app.curGuard ? ' enter' : '';
+    return `<section class="card cur p${e.pri} st-${e.status}${enter}">
       <div class="cur-top">
         <span class="order">${idx >= 0 ? `残り${q.todo.length + q.later.length}件の${idx + 1}件目` : ''}</span>${V.pri(e.pri)}${V.status(e.status)}
         ${s.isWall(cid) ? '<span class="tag wall">壁</span>' : ''}
@@ -437,7 +489,7 @@
     const e = s.entry(cid);
     const c = s.circle(cid) || e.snap;
     const planned = s.entryPlanned(e), spent = s.entrySpent(e);
-    const unknown = e.items.filter((i) => !i.price && i.status === 'todo').length;
+    const unknown = e.items.filter((i) => S().isUnknown(i) && i.status === 'todo').length;
     const money = e.status === 'done' || spent ? `<b>${U.yen(spent)}</b>${planned && planned !== spent ? `<small>/${U.yen(planned)}</small>` : ''}` : `${U.yen(planned)}${unknown ? '<small>+?</small>' : ''}`;
     return `<li class="prow p${e.pri} st-${e.status}" data-cid="${cid}">
       ${canDrag ? `<span class="drag" aria-label="ドラッグして並べ替え">${U.icon('grip')}</span>` : ''}
@@ -611,8 +663,9 @@
         <textarea class="input" rows="2" data-f="memo" data-cid="${cid}" placeholder="例：新刊は午前中に完売しがち／セット特典あり">${esc(e.memo)}</textarea></div>
       <div class="field"><label>お品書きURL</label>
         <input class="input" type="url" data-f="menu" data-cid="${cid}" value="${esc(e.menu)}" placeholder="https://x.com/..."></div>
-      ${HC.shots && HC.shots.ready ? `<div class="field"><label>お品書きの画像 <small>（この端末だけに保存。当日オフラインでも見られます）</small></label>
-        ${V.shots(cid, { add: true })}</div>` : ''}
+      ${HC.shots && HC.shots.ready ? `<div class="field"><label>お品書きの画像 <small>（端末に保存。当日オフラインでも見られます）</small></label>
+        ${V.shots(cid, { add: true })}
+        <p class="shot-tip muted small">${U.icon('image', 'sm')}画像をコピーして <kbd>Ctrl</kbd>+<kbd>V</kbd>、またはファイルをここへドロップしても入ります${HC.sync.configured() ? '。スマホへは「設定 → 同期 → 画像を送る」' : ''}</p></div>` : ''}
       <div class="field"><label>当日の状態</label>
         <div class="seg st-seg">${['todo', 'later', 'done', 'soldout', 'skip'].map((k) => `<button class="${e.status === k ? 'on' : ''}" data-act="setStatus" data-st="${k}" data-cid="${cid}" data-keep="1">${s.STATUS[k].label}</button>`).join('')}</div></div>
       <div class="cd-actions">
@@ -796,7 +849,18 @@
                 <button class="btn" data-act="syncQr">${U.icon('share')}設定をスマホへ（QR）</button>
                 <button class="btn ghost" data-act="syncSetup">${U.icon('edit')}URL・合言葉を変える</button>
               </div>
-              <p class="muted small">送るのは計画・購入記録・お気に入り・自作の配置図です。テーマなどの画面設定と、お品書きの写真は端末ごとに残ります。</p>
+              <p class="muted small">自動で送るのは計画・購入記録・お気に入り・自作の配置図です。テーマなどの画面設定は端末ごとに残ります。</p>
+              ${HC.shots && HC.shots.ready ? (() => {
+                const Sh = HC.shots;
+                const all = Sh.all(), unsent = Sh.unsent().length, got = all.filter((m) => m.remote).length;
+                return `<div class="shot-sync">
+                  <h4>${U.icon('image', 'sm')}お品書き画像 <small>この端末 ${all.length}枚（受け取った ${got}枚）${c.shotsAt ? ` ・ 最終 ${esc(U.md(c.shotsAt))} ${esc(U.time(c.shotsAt))}` : ''}</small></h4>
+                  <p class="muted small">画像は重いので、自動では送りません。PCで入れたら「画像を送る」、スマホで「画像を受け取る」を押すと、まだ無い分だけ移ります（電波のあるうちに）。</p>
+                  <div class="btn-grid2">
+                    <button class="btn${unsent ? ' primary' : ''}" data-act="shotsPush">${U.icon('upload')}画像を送る${unsent ? ` <small>${unsent}枚</small>` : ''}</button>
+                    <button class="btn" data-act="shotsPull">${U.icon('download')}画像を受け取る</button>
+                  </div></div>`;
+              })() : ''}
               <button class="btn danger ghost block" data-act="syncOff">${U.icon('x')}同期をやめる</button>
             ` : `
               <p class="muted small">Google Apps Script に置いた自分用の保管場所を通して、PCとスマホで計画・記録を行き来させます。費用はかかりません。用意のしかたは <code>tools/gas/コード.gs</code> の先頭に書いてあります。</p>
@@ -827,7 +891,7 @@
           const u = HC.shots.usage(s.state.eventId);
           return `<section class="card" id="sec-shots">
             <h3>${U.icon('image')}お品書きの画像 <small>${u.n}枚 ・ ${(u.bytes / 1048576).toFixed(1)}MB</small></h3>
-            <p class="muted small">サークル詳細から追加できます。画像はこの端末だけに保存され、共有リンクやバックアップには含まれません（機種変更時は入れ直しになります）。</p>
+            <p class="muted small">サークル詳細から追加できます（PCは貼り付け・ドロップも可）。共有リンクやバックアップには含まれません。別の端末へは「同期 → 画像を送る／受け取る」で移せます。</p>
             ${u.n ? `<div class="btn-row wrap"><button class="btn danger ghost" data-act="clearShots">${U.icon('trash')}このイベントの画像を全部削除</button></div>` : ''}
           </section>`;
         })() : ''}

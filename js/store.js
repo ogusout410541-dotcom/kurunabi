@@ -77,6 +77,9 @@
     endAt: '',      // 終了時刻 'HH:MM'（空ならイベント側の既定値）
     startedAt: 0,   // 「いま開始」で押した時刻。openAt が無いときの基準
     cashBreak: {},  // 持っている現金の内訳 { 1000: 5, 500: 2, ... }
+    cashSettled: 0, // 現金の支出のうち、すでに金種（財布の中身）に反映したぶん。二重に引かないため
+    cashStart: null, // 買い物を始める前の金種。「当日の記録だけリセット」で戻す
+    routedAt: 0,    // 最後にルートを作った時刻（そのあと追加したサークルがあれば準備欄で知らせる）
     updated: Date.now(),
   });
 
@@ -101,8 +104,20 @@
     out.favorites = st.favorites || {};
     out.layouts = st.layouts || {};
     out.sync = { ...defaultSync(), ...(st.sync || {}) };
-    Object.keys(out.data).forEach((k) => (out.data[k] = { ...defaultData(), ...out.data[k] }));
+    out.data = S.migrateData(out.data);
     out.v = VERSION;
+    return out;
+  };
+
+  /** イベントごとの利用者データに、足りない項目を補う（同期で古い版のデータが来たときにも使う） */
+  S.migrateData = (all) => {
+    const out = {};
+    Object.keys(all || {}).forEach((k) => {
+      const raw = all[k] || {};
+      out[k] = { ...defaultData(), ...raw };
+      // 1.1.2 以前：財布から引いた額はサークルごとの cashPaid にしか残っていない
+      if (!('cashSettled' in raw)) out[k].cashSettled = U.sum(Object.values(raw.entries || {}), (e) => e.cashPaid || 0);
+    });
     return out;
   };
 
@@ -320,10 +335,41 @@
   S.cashCount = (br = S.d().cashBreak) => U.sum(S.DENOMS, (d) => br[d] || 0);
   S.hasCashBreak = () => S.cashCount() > 0;
 
+  /** 現金で払った合計（購入済みの品物＋サークル外の支出） */
+  const cashSpentOf = (d) => {
+    const pay = S.state.settings.defaultPay;
+    let sum = 0;
+    Object.values(d.entries).forEach((e) => e.items.forEach((i) => {
+      if (i.status === 'bought' && (i.pay || pay) === 'cash') sum += S.itemCost(i);
+    }));
+    d.extras.forEach((x) => { if ((x.pay || pay) === 'cash') sum += x.cost || 0; });
+    return sum;
+  };
+
+  /**
+   * 金種を手で入れ直した＝いまの財布の中身そのもの。
+   * それまでの現金の支出は財布に反映済みとみなす（数え直したあとに、もう一度引かないように）
+   */
+  const markCounted = (d) => {
+    d.cash = S.cashTotal(d.cashBreak);   // 財布の残り表示と合わせる
+    const spent = cashSpentOf(d);
+    d.cashSettled = spent;
+    // サークルごとの「引いた額」も合わせる（完了トーストの「財布から引く」をもう出さない）
+    Object.values(d.entries).forEach((e) => { e.cashPaid = U.sum(e.items.filter((i) => i.status === 'bought' && (i.pay || S.state.settings.defaultPay) === 'cash'), S.itemCost); });
+    // まだ何も買っていないうちの中身を「始める前の財布」として覚えておく（リハーサル後のリセット用）
+    if (!spent) d.cashStart = { ...d.cashBreak };
+  };
+
   S.setCashBreak = (denom, n) =>
     S.mutate('金種の枚数', (d) => {
       d.cashBreak = { ...d.cashBreak, [denom]: Math.max(0, Math.min(999, Math.round(n) || 0)) };
-      d.cash = S.cashTotal(d.cashBreak);   // 財布の残り表示と合わせる
+      markCounted(d);
+    });
+
+  S.clearCashBreak = () =>
+    S.mutate('金種の枚数', (d) => {
+      d.cashBreak = {};
+      markCounted(d);
     });
 
   /**
@@ -404,8 +450,10 @@
       });
       d.cashBreak = br;
       d.cash = S.cashTotal(br);
+      const paid = (plan.pay || 0) - (plan.change || 0);
+      d.cashSettled = (d.cashSettled || 0) + paid;   // この支払いは財布に反映した
       const e = cid && d.entries[cid];
-      if (e) e.cashPaid = (e.cashPaid || 0) + ((plan.pay || 0) - (plan.change || 0));
+      if (e) e.cashPaid = (e.cashPaid || 0) + paid;
     });
 
   /** そのサークルで、まだ財布から引いていない現金の額 */
@@ -430,6 +478,11 @@
     const d = S.d(id);
     return d.order.filter((cid) => S.isPending(d.entries[cid]));
   };
+
+  /** 無料配布（価格0でも「未定」ではない品物）。品名で見分ける */
+  S.isFree = (it) => !it.price && /無料|フリー|free/i.test(U.toHalf(it.name || ''));
+  /** 価格未定（0円で、無料配布でもない） */
+  S.isUnknown = (it) => !it.price && !S.isFree(it);
 
   S.itemCost = (it) => (it.paid != null ? it.paid : (it.price || 0) * (it.qty || 1));
   S.entryPlanned = (e) => U.sum(e.items.filter((i) => i.planned !== false), (i) => (i.price || 0) * (i.qty || 1));
@@ -462,11 +515,15 @@
         e.doneAt = now;
       } else if (status === 'soldout') {
         e.doneAt = now;
-        e.items.forEach((i) => { if (i.status === 'todo') i.status = 'soldout'; });
+        // サークルごと売切にした印（byEntry）を付けておき、未購入に戻したときに品物も戻す
+        e.items.forEach((i) => { if (i.status === 'todo') { i.status = 'soldout'; i.byEntry = 1; } });
       } else if (status === 'skip') {
         e.doneAt = now;
       } else if (status === 'todo') {
         e.doneAt = null;
+      }
+      if (status === 'todo' || status === 'later') {
+        e.items.forEach((i) => { if (i.byEntry) { if (i.status === 'soldout') i.status = 'todo'; delete i.byEntry; } });
       }
       if (status !== 'todo' && d.focus === cid) d.focus = null;
       if (status === 'later') {
@@ -539,6 +596,7 @@
     S.mutate('並べ替え', (d) => {
       const set = new Set(ids);
       d.order = ids.concat(d.order.filter((x) => !set.has(x)));
+      d.routedAt = Date.now();   // 手で並べた順番もルートとして扱う
     });
 
   S.move = (cid, delta) =>
@@ -589,7 +647,7 @@
         } else if (i.status === 'todo' && active) {
           plannedLeft += planned;
           if (e.pri === 1) mustLeft += planned;
-          if (!i.price) unknown++;
+          if (S.isUnknown(i)) unknown++;
         }
       });
       if (active && !e.items.some((i) => i.status === 'todo')) unknown++;
@@ -599,6 +657,11 @@
       if ((x.pay || pay) === 'cash') cashSpent += x.cost || 0;
     });
     const usable = (d.budget || 0) - (d.reserve || 0);
+    // 財布の現金：金種を入れているなら「いまの中身 − まだ財布に反映していない現金の支出」。
+    // 入れていなければ「持っていく現金 − 現金の支出」
+    const cashLeft = S.cashCount(d.cashBreak)
+      ? S.cashTotal(d.cashBreak) - Math.max(0, cashSpent - (d.cashSettled || 0))
+      : (d.cash ? d.cash - cashSpent : null);
     return {
       budget: d.budget || 0,
       reserve: d.reserve || 0,
@@ -611,7 +674,7 @@
       plannedTotal,
       projected: usable - spent - plannedLeft,
       cash: d.cash || 0,
-      cashLeft: d.cash ? d.cash - cashSpent : null,
+      cashLeft,
       unknown,
       doneCount,
       activeCount,
@@ -645,7 +708,7 @@
         e.items.forEach((i) => {
           if (i.status !== 'todo') return;
           if (i.price) add += i.price * (i.qty || 1);
-          else unknown++;
+          else if (S.isUnknown(i)) unknown++;
         });
       });
       cum += add; cumCount += count; cumUnknown += unknown;
@@ -659,7 +722,7 @@
         cum,
         total,
         budgetLeft: st.usable ? st.usable - total : null,
-        cashLeft: d.cash ? d.cash - (st.cashSpent + (pay === 'cash' ? cum : 0)) : null,
+        cashLeft: st.cashLeft != null ? st.cashLeft - (pay === 'cash' ? cum : 0) : null,
         unknown: cumUnknown,
         unknownEst: cumUnknown * avg,
       };
@@ -667,7 +730,7 @@
     // 予算に収まる一番深いところ
     // 1件も無い段は見出しとして意味がないので、収まる段の判定から外す
     const fits = st.usable ? [...rows].reverse().find((r) => r.budgetLeft >= 0 && (r.count > 0 || r.tier === 1)) : null;
-    return { rows, spent: st.spent, extras, usable: st.usable, cash: d.cash || 0, avg, fitTier: fits ? fits.tier : 0 };
+    return { rows, spent: st.spent, extras, usable: st.usable, cash: st.cashLeft != null ? (d.cash || S.cashTotal(d.cashBreak)) : 0, avg, fitTier: fits ? fits.tier : 0 };
   };
 
   /**
@@ -852,6 +915,7 @@
       });
       d.order = [...fixed, ...seq];
       d.focus = null;
+      d.routedAt = Date.now();
     });
 
   S.startPoint = () => {
@@ -1008,8 +1072,9 @@
           ...(d.start ? { start: d.start } : {}),
           ...(d.openAt ? { openAt: d.openAt } : {}),
           ...(d.endAt ? { endAt: d.endAt } : {}),
-          ...(d.openAt ? { openAt: d.openAt } : {}),
-          ...(d.endAt ? { endAt: d.endAt } : {}),
+          ...(d.date ? { date: d.date } : {}),
+          ...(S.cashCount(d.cashBreak) ? { cashBreak: d.cashBreak, cashSettled: d.cashSettled || 0, ...(d.cashStart ? { cashStart: d.cashStart } : {}) } : {}),
+          ...(d.routedAt ? { routedAt: d.routedAt } : {}),
           ...(d.extras && d.extras.length ? { extras: d.extras } : {}),
           ...(d.addCircles && d.addCircles.length ? { addCircles: d.addCircles } : {}),
           order: d.order.filter((cid) => d.entries[cid]),
@@ -1098,6 +1163,9 @@
       });
       d.extras = [];
       d.focus = null;
+      // 試しに財布から引いたぶんも、買い物を始める前の中身に戻す
+      if (d.cashStart) { d.cashBreak = { ...d.cashStart }; d.cash = S.cashTotal(d.cashBreak); }
+      d.cashSettled = 0;
     });
 
   S.clearEventData = () => S.mutate('計画を全消去', (d) => { Object.assign(d, defaultData(), { budget: d.budget, cash: d.cash, reserve: d.reserve, start: d.start }); });

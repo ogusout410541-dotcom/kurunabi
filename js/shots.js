@@ -147,6 +147,82 @@
     }
   };
 
+  // ---- 端末間の受け渡し（js/sync.js の「画像を送る／受け取る」から使う）
+  // meta.remote = 別の端末から受け取った画像 / meta.sent = この端末から送信済み
+
+  /** すべての画像メタ（イベント横断） */
+  Sh.all = () => {
+    const out = [];
+    index.forEach((arr) => arr.forEach((m) => out.push(m)));
+    return out;
+  };
+  /** まだ送っていない、この端末で入れた画像 */
+  Sh.unsent = () => Sh.all().filter((m) => !m.remote && !m.sent);
+
+  /** 画像本体（Blob） */
+  Sh.blob = async (id) => {
+    const [t, b] = await tx([BLOB], 'readonly');
+    const rec = await reqP(b.get(id));
+    await done(t);
+    return rec ? rec.blob : null;
+  };
+
+  /** メタの一部を書き換える（送信済みの印など） */
+  Sh.mark = async (id, patch) => {
+    const m = Sh.meta(id);
+    if (!m) return;
+    Object.assign(m, patch);
+    const [t, s] = await tx([META], 'readwrite');
+    s.put(m);
+    await done(t);
+  };
+
+  /** 受け取った画像を、送り元と同じIDで保存する（サムネはこちらで作る） */
+  Sh.addReceived = async (info, blob) => {
+    const { img, url } = await loadImage(blob);
+    try {
+      const small = draw(img, THUMB);
+      const meta = {
+        id: info.id, ev: info.ev, cid: info.cid,
+        thumb: small.cv.toDataURL('image/jpeg', 0.7),
+        w: info.w || img.naturalWidth, h: info.h || img.naturalHeight,
+        size: blob.size, t: info.t || Date.now(), remote: true,
+      };
+      const [t, m, b] = await tx([META, BLOB], 'readwrite');
+      m.put(meta);
+      b.put({ id: meta.id, blob });
+      await done(t);
+      Sh.forget(meta.id);
+      put(meta);
+      // 表示は新しい順
+      const arr = index.get(key(meta.ev, meta.cid));
+      arr.sort((a, b2) => b2.t - a.t);
+      return meta;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+  /** メモリ上の一覧からだけ外す（入れ直すとき用） */
+  Sh.forget = (id) => {
+    index.forEach((arr, k) => {
+      const i = arr.findIndex((x) => x.id === id);
+      if (i >= 0) arr.splice(i, 1);
+      if (!arr.length) index.delete(k);
+    });
+  };
+
+  // 受け取った画像をこの端末で消したら、次に受け取るときにまた入れないよう覚えておく
+  const SKIP_KEY = 'kurunavi.shotSkip';
+  Sh.skipped = () => {
+    try { return new Set(JSON.parse(localStorage.getItem(SKIP_KEY) || '[]')); } catch (_) { return new Set(); }
+  };
+  const addSkip = (ids) => {
+    if (!ids.length) return;
+    const s = Sh.skipped();
+    ids.forEach((id) => s.add(id));
+    try { localStorage.setItem(SKIP_KEY, JSON.stringify([...s].slice(-2000))); } catch (_) { /* noop */ }
+  };
+
   /** 表示用の Blob URL（使い終わったら revoke すること） */
   Sh.url = async (id) => {
     const [t, b] = await tx([BLOB], 'readonly');
@@ -155,23 +231,23 @@
     return rec && rec.blob ? URL.createObjectURL(rec.blob) : null;
   };
 
-  Sh.remove = async (id) => {
+  /** 1枚消す。opt.sync=true は受け取りの片付け（送り元で消えたもの）で、覚えておく必要がない */
+  Sh.remove = async (id, opt = {}) => {
+    const meta = Sh.meta(id);
     const [t, m, b] = await tx([META, BLOB], 'readwrite');
     m.delete(id);
     b.delete(id);
     await done(t);
-    index.forEach((arr, k) => {
-      const i = arr.findIndex((x) => x.id === id);
-      if (i >= 0) arr.splice(i, 1);
-      if (!arr.length) index.delete(k);
-    });
+    Sh.forget(id);
+    if (meta && meta.remote && !opt.sync) addSkip([id]);
   };
 
   /** イベント単位で全部消す（イベント削除時など）。ev 省略で全消去 */
   Sh.clear = async (ev) => {
-    const ids = [];
-    index.forEach((arr, k) => { if (!ev || k.startsWith(ev + ':')) arr.forEach((m) => ids.push(m.id)); });
+    const ids = [], remote = [];
+    index.forEach((arr, k) => { if (!ev || k.startsWith(ev + ':')) arr.forEach((m) => { ids.push(m.id); if (m.remote) remote.push(m.id); }); });
     if (!ids.length) return 0;
+    addSkip(remote);
     const [t, m, b] = await tx([META, BLOB], 'readwrite');
     ids.forEach((id) => { m.delete(id); b.delete(id); });
     await done(t);

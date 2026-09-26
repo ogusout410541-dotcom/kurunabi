@@ -342,6 +342,10 @@ select.input { appearance: auto; }
 
 /* ------------------------------------------------------------ 現在の目的地カード */
 .cur { border-left: 6px solid var(--p3); padding-top: 10px; }
+/* 次のサークルに切り替わった直後（連打で次まで完了しないよう、少しの間は押せない） */
+.cur.enter { animation: cur-in .7s ease-out; }
+.cur.enter .btn { pointer-events: none; }
+@keyframes cur-in { 0% { opacity: .35; transform: translateX(14px); } 45% { opacity: 1; transform: none; } }
 .cur.p1 { border-left-color: var(--p1); } .cur.p2 { border-left-color: var(--p2); } .cur.p4 { border-left-color: var(--p4); }
 .cur-top { display: flex; align-items: center; gap: 6px; }
 .cur-top .order { font-size: .8rem; color: var(--muted); font-weight: 700; }
@@ -366,6 +370,7 @@ select.input { appearance: auto; }
 .item.it-soldout .cb, .item.it-skip .cb { background: var(--p4); border-color: var(--p4); }
 .item.it-soldout .nm, .item.it-skip .nm { text-decoration: line-through; color: var(--muted); }
 .unk { color: var(--p2); }
+.free { color: var(--muted); font-size: .9em; }
 .add-extra { display: flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 650; font-size: .9rem; min-height: 44px; }
 .cur-sum { display: flex; justify-content: space-between; font-size: .85rem; color: var(--muted); margin: 2px 0 10px; }
 .cur-sum b { color: var(--text); font-size: 1.05rem; }
@@ -386,6 +391,24 @@ select.input { appearance: auto; }
 .qname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .qcost { font-size: .85rem; color: var(--muted); font-weight: 650; }
 .fin .qn { background: var(--ok-soft) !important; color: var(--ok) !important; width: auto; padding: 0 6px; border-radius: 6px; }
+/* 当日までの準備 */
+.prep summary { list-style: none; cursor: pointer; min-height: 36px; display: flex; align-items: center; }
+.prep summary::-webkit-details-marker { display: none; }
+.prep summary h3 { margin: 0; }
+.prep summary h3 .ic { color: var(--ok); }
+.prep.todo { border-color: color-mix(in srgb, var(--p2) 45%, var(--line)); }
+.prep.todo summary h3 .ic { color: var(--p2); }
+.prep-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.prep-list li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); }
+.prep-list .pk { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; }
+.prep-list .ok .pk { background: var(--ok-soft); color: var(--ok); }
+.prep-list .ng .pk { background: var(--warn-bg); color: var(--warn-ink); }
+.prep-list .opt .pk { background: var(--surface2); color: var(--muted); }
+.prep-list .pl { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.prep-list .pl b { font-size: .9rem; }
+.prep-list .pl small { color: var(--muted); font-size: .76rem; }
+.prep-list .ok .pl b { color: var(--muted); font-weight: 600; }
+.prep-list .btn { flex: none; }
 .fin summary { list-style: none; cursor: pointer; }
 .fin summary::-webkit-details-marker { display: none; }
 .fin summary h3 { margin: 0; }
@@ -828,6 +851,18 @@ body.offline .link-chip.x, body.offline .link-chip.px, body.offline .link-chip.w
 .sim .muted.small { margin: 10px 0 0; line-height: 1.7; }
 
 /* ------------------------------------------------------------ 同期 */
+/* お品書き画像の送る・受け取る（同期欄の中） */
+.shot-sync { margin: 12px 0; padding-top: 12px; border-top: 1px dashed var(--line); }
+.shot-sync h4 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 4px; font-size: .92rem; }
+.shot-sync h4 small { color: var(--muted); font-weight: 500; font-size: .76rem; }
+.shot-sync .btn small { font-weight: 500; opacity: .85; }
+/* PCでの貼り付け・ドロップの案内（指の端末では出さない） */
+.shot-tip { margin: 6px 0 0; line-height: 1.8; }
+.shot-tip .ic { vertical-align: -3px; margin-right: 3px; }
+.shot-tip kbd { font: inherit; font-size: .72rem; padding: 1px 5px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface2); }
+@media (pointer: coarse) { .shot-tip { display: none; } }
+/* ファイルを落とせる場所 */
+.drop-on { outline: 3px dashed var(--accent); outline-offset: -3px; background: var(--accent-soft) !important; }
 .sync-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .85rem; margin-bottom: 8px; }
 .sync-row span { display: inline-flex; align-items: center; gap: 5px; }
 .sync-row small { color: var(--muted); margin-left: auto; }

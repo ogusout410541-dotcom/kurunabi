@@ -52,7 +52,8 @@ tools/gas/コード.gs    同期用の Google Apps Script（貼り付けてウ�
 EventData = { budget, cash（財布の現金。cashBreak があるとその合計で上書きされる）, cashBreak: {[金種]: 枚数}, reserve,
               order: [cid], entries: {[cid]: Entry}, extras: [Extra],
               addCircles: [Circle], start: 'door-r'|sid, focus: cid|null, date, updated,
-              openAt: 'HH:MM'（自分の入場時刻）, endAt: 'HH:MM'（終了）, startedAt: ms（「いま開始」の時刻）}
+              openAt: 'HH:MM'（自分の入場時刻）, endAt: 'HH:MM'（終了）, startedAt: ms（「いま開始」の時刻）,
+              cashSettled: 現金の支出のうち金種に反映済みの額, cashStart: 買い物前の金種（リセットで戻す）, routedAt: 最後にルートを作った時刻}
 // 同梱イベント側の openAt/endAt/schedule が既定値。EventData の値が空ならそちらを使う（S.times()）
 Entry = { cid, pri: 1必須|2優先|3通常|4余裕, items: [Item], memo, menu(お品書きURL),
           status: 'todo'|'later'|'done'|'soldout'|'skip', doneAt, snap: {name, tw, space}, addedAt,
@@ -66,7 +67,7 @@ Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv�
 - サークル ID は「ブロック＋先頭番号2桁」（`A01-02` → `A01`）。イベントが変わると別物なので、イベント横断の照合は `snap`/`favorites` のキー（X ID か正規化名）で行う（`S.keysOf`, `S.historyOf`）
 - 金額: 使用額 = bought の `paid ?? price*qty` ＋ extras。残り予定 = 未完了エントリの todo アイテム。`S.stats()` に集約
 - **お品書き画像だけは `HC.store` の外**（IndexedDB `kurunavi` / `shotMeta`＋`shotBlob`）。undo の対象外で、共有リンクにもJSON書き出しにも入らない。
-  `shotMeta = {id, ev, cid, thumb(dataURL・最大180px), w, h, size, t}`／`shotBlob = {id, blob}`。保存時に長辺1600pxのJPEGへ縮小する。
+  `shotMeta = {id, ev, cid, thumb(dataURL・最大180px), w, h, size, t, remote(別の端末から受け取った), sent(この端末から送信済み)}`／`shotBlob = {id, blob}`。保存時に長辺1600pxのJPEGへ縮小する。
   起動時に `HC.shots.load()` がメタだけメモリに読み込むので、`HC.shots.list(ev, cid)` は同期で呼べる（描画から直接使ってよい）。
   IndexedDB が使えない環境では `HC.shots.ready === false` になるので、**画像まわりのUIは必ず `ready` で出し分ける**
 
@@ -89,12 +90,22 @@ Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv�
   枚数を入れている間は `cash`（財布の現金）は自動計算になる（入力欄は readonly）。
   テンキーを通さず「チェックだけ」で終えたときは、完了のトーストに「財布から ¥N 引く」が出る（`S.cashUnpaid(cid)`＝
   現金で買った額 − すでに引いた額。押すと `S.applyPay(plan, cid)` が `entry.cashPaid` に控えるので二重には引かれない）。
+  **財布の現金の表示**（`stats().cashLeft`）は、金種があれば「金種の合計 −（現金の支出 − `cashSettled`）」。`applyPay` で引いた額と、
+  金種を手で入れ直したとき（`markCounted`＝数え直した中身が正）に `cashSettled` が進むので、二重には引かれない（1.1.2 までは二重に引いていた）。
+  まだ何も買っていないときの金種は `cashStart` に控え、「当日の記録だけリセット」で戻す（リハーサルで引いた分も戻る）。
   金種の欄は打つ・押すたびに画面を作り直さず `app.paintDenoms()` で数字だけ差し替える（作り直すと次のタップが空振りするため）
 - 指で押す前提のため、**操作系は最低でも36〜40px**の当たり判定にする（`.chip` 38 / `.seg.sm button` 36 / `.icon-btn.sm` 38 / `.link-btn` 38）。
   トーストは `pointer-events: none`（中のボタンだけ `auto`）にして、下のボタンを塞がないようにしてある
 - 品目入力は**入力回数を減らす**方向で作る：`S.priceHint(品名)` が過去に入れた金額の多数決を返し、プリセットのチップに出す／追加時に自動で入れる。
   同じ品名をもう一度押したら行を増やさず数量+1（トーストから「別の行にする」で戻せる）。
   指の端末（`matchMedia('(pointer: coarse)')`）では価格欄をタップするとアプリのテンキー、マウスならそのままキーボード入力
+- **無料配布**：価格0で品名に「無料」などを含む品物は `S.isFree`＝未定ではない。価格未定の判定は必ず `S.isUnknown` を使う
+  （`!i.price` で判定すると無料配布がテンキー必須になり、0円ではOKが押せず詰まる）。記録用のテンキーは0円も通す
+- **売切を戻す**：サークルごと売切にすると品物に `byEntry` の印が付き、未購入／あとでに戻すとその品物も未購入に戻る
+- **連打の保険**：完了して次のカードに切り替わった直後の 0.7 秒は、当日カードのボタンを押しても反応しない（`app.curGuard` と `.cur.enter`）
+- **当日までの準備**（`V.prep`）：開催前（と、まだ1件も回っていない間）の当日タブに、開催日・予算・お品書き待ち・価格未定・ルート・
+  財布・オフライン保存・同期・新しい版の抜けを出す。始まってからは抜けがあるときだけ、たたんで出す。開け閉めは `V.prepOpen` に覚える。
+  ルートは `routedAt`（自動ルート・ドラッグ並べ替え・スペース順で更新）より後に追加したサークルがあると「作り直し」を促す
 - 当日タブの時計は1秒ごとに `V.tickClock()` が**文字だけ**差し替える（画面ごと作り直さない）。`app.clockTick()` が表示中タブと可視状態を見てタイマーを止め／動かしする
 - `S.clock()` は**開催日（`S.eventDate()`）を基準に**時刻を組む。日付が入っていれば別の日に開いても「終了」にならず、
   `state: 'before' | 'live' | 'after' | 'none'` と `days`（開催前の残り日数）を返す。日付が無いときだけ「今日の HH:MM」として扱う
@@ -171,6 +182,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 - 計画: `{app:'kurunavi', kind:'plan', eventId, event(作成イベントなら一覧ごと), data, favorites}`
 - 全体: `{app:'kurunavi', kind:'backup', state}`
+- スリム形式には開催日（`date`）・金種（`cashBreak`/`cashSettled`/`cashStart`）・`routedAt` も載せる（1.2.0）
 - 共有リンク: `#import=` ＋ deflate-raw 圧縮 base64url（`U.pack/unpack`）。起動時に検出して確認後に読み込み
 - **スリム形式**（`S.exportPlan(id, {slim:true})`、共有リンク／QR専用）: 既定値・タイムスタンプ・アイテムID・`snap` を落として1文字キーにしたもの
   （entry: `{c:cid, r:pri, i:[items], m:memo, u:menu, s:status, k:[name,tw,space]}` / item: `{n,p,q,s,a(paid),y(pay),x(追加購入)}`）。
@@ -194,10 +206,23 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 - 合言葉はサーバーに送らず、`SHA-256('kurunavi:' + phrase)` の先頭16バイトを置き場所のキー `k` にする
 - POST は `Content-Type: text/plain` で送る（preflight を起こさないため。GAS は CORS の事前確認に応答できない）
 - 送るのは **data / customEvents / favorites / layouts / eventId** だけ。`settings`（テーマ・地図の向きなど）と
-  IndexedDB のお品書き画像は端末ごとに残す
+  IndexedDB のお品書き画像は自動では送らない（下の「お品書き画像の受け渡し」）
 - **競合は base（最後に見たサーバーの更新時刻）で検出**。食い違えばサーバーの内容を返し、画面で「向こうを取り込む／こちらで上書き」を選ばせる
 - オフライン時は `dirty` を立てて送らない。`online` イベントで再開。当日の会場で通信が切れても普段どおり使える
 - 設定はQRで渡せる（`kind:'sync'` の共有リンク）。**合言葉が入っているので人に見せない**
+- **お品書き画像の受け渡し**（1.2.0。PCで入れて、スマホは会場で見るだけ、という使い方のため）：
+  画像は重いので自動同期には混ぜず、「設定 → 同期 → 画像を送る／受け取る」を押したときだけ動く（`Sy.shotsPush` / `Sy.shotsPull`）。
+  GAS 側は画像を1枚ずつ `kurunavi_<k>_<id>.jpg`、一覧を `kurunavi_<k>_shots.json`（id・ev・cid・w・h・t・dev）で持つ
+  （`?op=shots` / `?op=shot&id=` の GET、`op:'shotPut'` / `op:'shotDel'` の POST）。
+  送る＝この端末で入れた画像のうちサーバーに無いもの。**この端末から送ったあと消したもの（dev が自分）はサーバーからも消す**。
+  受け取る＝サーバーにあって手元に無いもの（同じIDで保存し `remote:true`）。送り元で消えた remote 画像は手元からも消す。
+  受け取った画像を手元で消したら `localStorage['kurunavi.shotSkip']` に覚え、次から受け取らない。
+  起動時に `Sy.shotsCheck()` が受け取れる枚数だけ見て、あればトーストで「受け取る」を出す（本体は落とさない）。
+  **1.1.x の GAS は op を知らず、POST をそのまま計画の保存として扱ってしまう**ので、①先に `op=shots` の GET で `shots:1` を確かめる
+  ②画像の POST には `base:-1` を付けて、古い GAS なら必ず競合で弾かれるようにしてある。GAS を更新したら「新しいバージョン」で再デプロイ。
+  確認はモック（GAS と同じ受け答えをする node のサーバー）＋ Chrome 2つ（PC役・スマホ役）で行った
+- PC では、サークル詳細を開いて Ctrl+V（`paste`）か、画像ファイルをサークル詳細／リストの行／一覧の行へドロップで画像を入れられる
+  （ブラウザの画像を直接ドラッグしたときは URL から取りに行き、だめなら「画像をコピー→貼り付け」を案内する）
 - 取り込みは「起動時」と「画面に戻ってきたとき（visibilitychange / focus、前回から15秒以上あいていれば）」。
   端末を持ち替えたら自動で最新になるが、**両方を同時に開いて編集すると競合**する（片方だけが残る）
 
@@ -211,7 +236,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## 版の更新（ここを間違えると「いつまでも古い版のまま」になる）
 
-- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.1.2）
+- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.2.0）
 - **SW の install はブラウザのHTTPキャッシュを避けて取り込む**（`freshRequests()`＝`cache:'reload'` ＋ `?v=CACHE`）。
   GitHub Pages は `Cache-Control: max-age=600` を返すので、ふつうに `cache.addAll(ASSETS)` すると
   **新しい版のキャッシュに古いファイルが入り**、プッシュしても画面がいつまでも古いままになる。2026-09-24 に実際にこれで詰まった
@@ -263,6 +288,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 - [x] 更新したあと新しい版になったかの表示（画面の版とキャッシュの版を並べて出す。1.1.0。→「版の更新」の節）
 - [x] 当日タブの「時刻」から開催日を直せる（未設定だと「今日の時間帯」として扱われるため。1.1.2）
 - [x] 巡回表（印刷）に壁とお品書き待ちの印（1.1.2）
+- [x] 財布の現金の二重引きを修正・無料配布をタップで記録・売切を戻すと品物も戻る・連打の保険・当日までの準備欄・お品書き画像をPCからスマホへ（GAS経由の差分転送、貼り付け・ドロップ）（1.2.0）
 - [ ] サークル画像の取り込み：URLをもらってから。**目的のサークルのみ**・**アプリに同梱**（`data/cuts/`）で本人合意済み（2026-09-24）。
       CORSのため端末側での直接取得は不可なので、こちらで取得→長辺800pxのWebPに縮小→同梱→一覧・詳細・当日カードに表示する
 - 運用方針（2026-09-24 本人確認）：スマホは **GitHub Pages に公開**して開く／当日の記録は**チェックだけ**が基本（予定額で自動計上、違ったときだけ金額を直す）

@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '1.1.2';
+  HC.VERSION = '1.2.0';
 
   const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -120,6 +120,9 @@
 
   const afterFinish = (cid, label) => {
     U.vibrate(18);
+    app.curGuard = Date.now() + 700;   // 次のカードのボタンを連打で押してしまわないように
+    if (app.view === 'go') renderView('go');
+    setTimeout(() => U.$$('.card.cur.enter').forEach((x) => x.classList.remove('enter')), 720);
     const q = S.queue();
     const next = q.current ? S.circle(q.current) : null;
     const msg = `${label}：${circleLabel(cid)}${next ? ` ／ 次は ${next.space}` : ''}`;
@@ -168,6 +171,7 @@
       qty: it.qty,
       pay: it.pay,
       okLabel: '購入済にする',
+      allowZero: true,   // 無料でもらったものは 0 円で記録できる
       onOk: (r) => {
         S.recordPurchase(cid, { iid: it.id, amount: r.amount, qty: r.qty, pay: r.pay });
         deductIfAsked(r, cid);
@@ -260,6 +264,7 @@
         title: `${c.space} ${c.name} の支払額`,
         name: '',
         okLabel: '記録して完了',
+        allowZero: true,
         onOk: (r) => {
           S.mutate('購入完了', (d) => {
             const en = d.entries[cid];
@@ -275,13 +280,14 @@
       });
       return;
     }
-    const unknown = e.items.filter((i) => i.status === 'todo' && !i.price);
+    const unknown = e.items.filter((i) => i.status === 'todo' && S.isUnknown(i));
     if (unknown.length) {
       UI.numpad({
         hint: payHint,
         title: `価格未定「${unknown.map((i) => i.name || '無題').join('・')}」の支払額`,
         showName: false,
         okLabel: '記録して完了',
+        allowZero: true,
         onOk: (r) => {
           S.mutate('購入完了', (d) => {
             const en = d.entries[cid];
@@ -312,7 +318,7 @@
     const e = S.entry(ds.cid);
     const it = e && e.items.find((i) => i.id === ds.iid);
     if (!it) return;
-    if (it.status === 'todo' && !it.price) return numpadForItem(ds.cid, it);
+    if (it.status === 'todo' && S.isUnknown(it)) return numpadForItem(ds.cid, it);
     if (it.status === 'soldout' || it.status === 'skip') { S.setItemStatus(ds.cid, ds.iid, 'todo'); return; }
     S.toggleItem(ds.cid, ds.iid);
     U.vibrate(8);
@@ -743,7 +749,100 @@
     UI.toast('同期をやめました');
   };
 
+  // ---- お品書き画像の受け渡し（PCで入れて、スマホで受け取る）
+  const shotStep = (verb) => (i, n) => { if (n) UI.toast(`画像を${verb}います… ${i}/${n}`, { ms: 120000 }); };
+
+  A.shotsPush = async () => {
+    if (!HC.sync.configured()) return A.syncSetup();
+    UI.toast('サーバーの画像を確認しています…', { ms: 60000 });
+    const r = await HC.sync.shotsPush(shotStep('送って'));
+    if (r.error) UI.toast((r.sent ? `${r.sent}枚送ったところで止まりました：` : '送れませんでした：') + r.error, { error: true, ms: 8000 });
+    else UI.toast(r.sent || r.removed ? `${r.sent}枚送りました${r.removed ? `（消した${r.removed}枚はサーバーからも削除）` : ''}。スマホで「画像を受け取る」を押してください` : '送る画像はありません（すべて送信済み）', { ms: 6000 });
+    app.refresh();
+  };
+
+  A.shotsPull = async () => {
+    if (!HC.sync.configured()) return A.syncSetup();
+    UI.toast('サーバーの画像を確認しています…', { ms: 60000 });
+    const r = await HC.sync.shotsPull(shotStep('受け取って'));
+    if (r.error) UI.toast((r.got ? `${r.got}枚受け取ったところで止まりました：` : '受け取れませんでした：') + r.error, { error: true, ms: 8000 });
+    else UI.toast(r.got || r.removed ? `${r.got}枚受け取りました${r.removed ? `（送り元で消えた${r.removed}枚を削除）` : ''}。圏外でも見られます` : '新しい画像はありません', { ms: 5000 });
+    app.refresh();
+  };
+
+  /** 画像ファイルをサークルに入れる（貼り付け・ドロップ・ファイル選択の共通） */
+  const addShotFiles = async (cid, files) => {
+    const imgs = files.filter((f) => /^image\//.test(f.type || ''));
+    if (!imgs.length) return UI.toast('画像ではありませんでした', { error: true });
+    if (!HC.shots || !HC.shots.ready) return UI.toast('この開き方では画像を保存できません（公開URLかlocalhostで開いてください）', { error: true });
+    let n = 0, err = '';
+    for (const f of imgs) {
+      try { await HC.shots.add(S.state.eventId, cid, f); n++; } catch (e) { err = (e && e.message) || String(e); }
+    }
+    if (n) {
+      UI.toast(`お品書きを${n}枚 追加しました：${circleLabel(cid)}`, HC.sync.configured() ? { action: { label: 'スマホへ送る', fn: () => A.shotsPush() } } : {});
+      app.refresh();
+    }
+    if (err) UI.toast('保存できませんでした：' + err, { error: true });
+  };
+
+  // 貼り付け（Ctrl+V）：サークル詳細を開いているとき、そのサークルに入れる
+  document.addEventListener('paste', (e) => {
+    const files = Array.from((e.clipboardData && e.clipboardData.items) || [])
+      .filter((it) => it.kind === 'file' && /^image\//.test(it.type)).map((it) => it.getAsFile()).filter(Boolean);
+    if (!files.length) return;   // 文字の貼り付けはそのまま
+    e.preventDefault();
+    if (!UI.isOpen('circle') || !app.sheetCid) return UI.toast('サークル詳細を開いてから貼り付けると、そのサークルのお品書きになります');
+    addShotFiles(app.sheetCid, files);
+  });
+
+  // ドラッグ＆ドロップ：サークル詳細・リストの行・サークル一覧の行に落とすと、そのサークルに入れる
+  const dropTarget = (el) => {
+    const sheet = el.closest && el.closest('[data-sheet="circle"]');
+    if (sheet) return app.sheetCid ? { el: U.$('.sheet', sheet), cid: app.sheetCid } : null;
+    const row = el.closest && el.closest('.prow[data-cid], .crow');
+    if (!row) return null;
+    const cid = row.dataset.cid || U.$('[data-cid]', row)?.dataset.cid;
+    return cid ? { el: row, cid } : null;
+  };
+  const hasFiles = (e) => Array.from((e.dataTransfer && e.dataTransfer.types) || []).some((t) => t === 'Files' || t === 'text/uri-list');
+  let dropOn = null;
+  const markDrop = (el) => {
+    if (dropOn === el) return;
+    if (dropOn) dropOn.classList.remove('drop-on');
+    dropOn = el;
+    if (el) el.classList.add('drop-on');
+  };
+  document.addEventListener('dragover', (e) => {
+    if (!hasFiles(e) || e.target.closest?.('.plist.draggable .drag')) return;
+    e.preventDefault();   // 落としたときにブラウザが画像を開いてしまわないように
+    const t = dropTarget(e.target);
+    e.dataTransfer.dropEffect = t ? 'copy' : 'none';
+    markDrop(t ? t.el : null);
+  });
+  document.addEventListener('dragleave', (e) => { if (!e.relatedTarget) markDrop(null); });
+  document.addEventListener('drop', async (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    markDrop(null);
+    const t = dropTarget(e.target);
+    if (!t) return UI.toast('サークル詳細か、リスト・一覧の行の上に落としてください');
+    let files = Array.from(e.dataTransfer.files || []);
+    if (!files.length) {
+      // ブラウザの画像を直接ドラッグしたとき（ファイルが付いてこない）はURLから取りに行く
+      const url = (e.dataTransfer.getData('text/uri-list') || '').split('\n')[0].trim();
+      try {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        if (/^image\//.test(blob.type)) files = [new File([blob], 'menu', { type: blob.type })];
+      } catch (_) { /* 読めないサイト */ }
+      if (!files.length) return UI.toast('その画像は直接取り込めませんでした。右クリック→「画像をコピー」してから Ctrl+V で貼り付けてください', { ms: 6000 });
+    }
+    addShotFiles(t.cid, files);
+  });
+
   U.on('sync', (m) => {
+    if (m && m.shotsNew) UI.toast(`ほかの端末で入れたお品書き画像が ${m.shotsNew}枚あります`, { ms: 10000, action: { label: '受け取る', fn: () => A.shotsPull() } });
     if (m && m.conflict) askConflict(m.conflict);
     if (m && m.pulledNew) UI.toast(`別の端末${m.device ? `（${U.esc(m.device)}）` : ''}の変更を取り込みました`);
     app.dirty.add('more');
@@ -825,6 +924,8 @@
     UI.toast(v.trim() ? `開催日を ${v.trim()} にしました` : '開催日を空にしました');
   };
 
+  A.setEventDate = () => setEventDate();
+
   A.clockMenu = () => {
     const T = S.times();
     const date = S.eventDate();
@@ -898,13 +999,7 @@
 
   A.addShot = async (ds) => {
     const files = await pickImages();
-    if (!files.length) return;
-    let n = 0, err = '';
-    for (const f of files) {
-      try { await HC.shots.add(S.state.eventId, ds.cid, f); n++; } catch (e) { err = (e && e.message) || String(e); }
-    }
-    if (n) { UI.toast(`お品書きを${n}枚 追加しました`); app.refresh(); }
-    if (err) UI.toast('保存できませんでした：' + err, { error: true });
+    if (files.length) addShotFiles(ds.cid, files);
   };
 
   A.viewShot = async (ds) => {
@@ -963,6 +1058,7 @@
     const fixed = d.order.filter((cid) => !active.includes(cid));
     active.sort((a, b) => { const x = circ(a), y = circ(b); return x.block === y.block ? x.nums[0] - y.nums[0] : x.block < y.block ? -1 : 1; });
     d.order = [...fixed, ...active];
+    d.routedAt = Date.now();
   });
   A.reroute = () => runRoute(S.state.settings.routeMode, true);
 
@@ -1111,7 +1207,7 @@
 
   A.cashClear = async () => {
     if (!(await UI.confirm('財布の金種の枚数を全部消しますか？', { ok: '消す' }))) return;
-    S.mutate('金種の枚数', (d) => { d.cashBreak = {}; d.cash = 0; });
+    S.clearCashBreak();
     UI.toast('消しました', { undo: true });
   };
 
@@ -1383,6 +1479,8 @@
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-act]');
     if (!el || el.disabled) return;
+    // 切り替わった直後の当日カードは押しても反応させない（CSS でも止めているが、念のため）
+    if (app.curGuard && Date.now() < app.curGuard && el.closest('.card.cur')) { e.preventDefault(); return; }
     const fn = A[el.dataset.act];
     if (!fn) return;
     e.preventDefault();
@@ -1484,6 +1582,11 @@
     e.preventDefault();
     openPriPick(b.dataset.cid);
   });
+
+  // 当日までの準備欄の開け閉めを覚えておく
+  document.addEventListener('toggle', (e) => {
+    if (e.target && e.target.id === 'sec-prep') V.prepOpen = e.target.open;
+  }, true);
 
   // 横スクロールする帯は、マウスホイールでも横に動かせるようにする
   document.addEventListener('wheel', (e) => {

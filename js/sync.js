@@ -49,8 +49,8 @@
   };
 
   // ---- 通信 ------------------------------------------------------------
-  const get = async (k) => {
-    const url = `${conf().url}?k=${encodeURIComponent(k)}&t=${Date.now()}`;
+  const get = async (k, q = '') => {
+    const url = `${conf().url}?k=${encodeURIComponent(k)}${q}&t=${Date.now()}`;
     const res = await fetch(url, { method: 'GET', redirect: 'follow' });
     if (!res.ok) throw new Error('サーバーの応答が ' + res.status);
     return res.json();
@@ -77,7 +77,7 @@
   const apply = (obj) => {
     const st = S().state;
     if (!obj || typeof obj !== 'object') throw new Error('中身を読めません');
-    st.data = obj.data || {};
+    st.data = S().migrateData(obj.data || {});
     st.customEvents = obj.customEvents || {};
     st.favorites = obj.favorites || {};
     st.layouts = obj.layouts || {};
@@ -199,6 +199,143 @@
     lastPullAt = Date.now();
     const r = await Sy.pull();
     if (r && r.conflict) U.emit('sync', { conflict: r.server });
+    // ほかの端末が置いたお品書き画像があれば知らせる（受け取るかは本人が決める）
+    const n = await Sy.shotsCheck();
+    if (n) U.emit('sync', { shotsNew: n });
+  };
+
+  // ---- お品書き画像（送る／受け取る） -----------------------------------
+  // 計画の同期とは別に、押したときだけ動かす（画像は重いので自動では送らない）。
+  // サーバーには画像を1枚ずつ置き、一覧（id・イベント・サークル・送った端末）で差分を見る
+
+  const OLD_GAS = 'GASのコードが古く、画像を置けません。tools/gas/コード.gs を貼り直して「新しいバージョン」でデプロイしてください';
+
+  /** サーバーにある画像の一覧 */
+  const shotIndex = async (k) => {
+    const r = await get(k, '&op=shots');
+    if (!r.ok) throw new Error(r.error || '一覧を読めませんでした');
+    if (!r.shots || !Array.isArray(r.list)) throw new Error(OLD_GAS);   // 1.1.x のGASは op を知らない
+    return r.list;
+  };
+
+  const blobToB64 = (blob) => new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result).replace(/^data:[^,]*,/, ''));
+    fr.onerror = () => rej(fr.error);
+    fr.readAsDataURL(blob);
+  });
+  const b64ToBlob = (b64, type) => {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: type || 'image/jpeg' });
+  };
+
+  const shotGuard = () => {
+    if (!Sy.configured()) return '先に「PCとスマホで同期」を設定してください';
+    if (!HC.shots || !HC.shots.ready) return 'この端末では画像を保存できません';
+    if (!navigator.onLine) return 'オフラインです。電波のあるところで押してください';
+    if (Sy.state.shotBusy) return 'いま画像を送受信しています';
+    return '';
+  };
+
+  /**
+   * この端末で入れた画像のうち、まだ置いていないものを送る。
+   * この端末から送ったあとで消したものは、サーバーからも消す
+   * @param onStep (i, n) 進み具合
+   */
+  Sy.shotsPush = async (onStep = () => {}) => {
+    const g = shotGuard();
+    if (g) return { error: g };
+    const Sh = HC.shots;
+    Sy.state.shotBusy = true;
+    let sent = 0;
+    try {
+      const k = await keyOf(conf().phrase);
+      const dev = deviceName();
+      const list = await shotIndex(k);
+      const onServer = new Set(list.map((x) => x.id));
+      const mine = Sh.all().filter((m) => !m.remote);
+      const mineIds = new Set(mine.map((m) => m.id));
+      const todo = mine.filter((m) => !onServer.has(m.id));
+      // 送ったはずなのにサーバーに無い（誰かが消した）ものは送り直す。送信済みの印だけ付け直す
+      for (const m of mine) if (onServer.has(m.id) && !m.sent) await Sh.mark(m.id, { sent: true });
+      const gone = list.filter((x) => x.dev === dev && !mineIds.has(x.id)).map((x) => x.id);
+      for (let i = 0; i < todo.length; i++) {
+        onStep(i, todo.length);
+        const m = todo[i];
+        const blob = await Sh.blob(m.id);
+        if (!blob) continue;
+        // base:-1 … 古いGASに当たっても計画のデータを上書きしない（必ず「競合」で返る）
+        const r = await post({ op: 'shotPut', k, base: -1, device: dev, id: m.id, meta: { ev: m.ev, cid: m.cid, w: m.w, h: m.h, t: m.t }, data: await blobToB64(blob) });
+        if (r.conflict) throw new Error(OLD_GAS);
+        if (!r.ok) throw new Error(r.error || '送れませんでした');
+        await Sh.mark(m.id, { sent: true });
+        sent++;
+      }
+      onStep(todo.length, todo.length);
+      if (gone.length) {
+        const r = await post({ op: 'shotDel', k, base: -1, device: dev, ids: gone });
+        if (r.conflict) throw new Error(OLD_GAS);
+      }
+      conf().shotsAt = Date.now();
+      S().save();
+      return { ok: true, sent, removed: gone.length, total: list.length - gone.length + sent };
+    } catch (e) {
+      return { error: niceError(e), sent };
+    } finally {
+      Sy.state.shotBusy = false;
+    }
+  };
+
+  /**
+   * ほかの端末が置いた画像を受け取る（まだ持っていないものだけ）。
+   * 送り元で消えたものは、この端末からも消す（この端末で入れた画像には触らない）
+   */
+  Sy.shotsPull = async (onStep = () => {}) => {
+    const g = shotGuard();
+    if (g) return { error: g };
+    const Sh = HC.shots;
+    Sy.state.shotBusy = true;
+    let got = 0;
+    try {
+      const k = await keyOf(conf().phrase);
+      const list = await shotIndex(k);
+      const have = new Set(Sh.all().map((m) => m.id));
+      const skip = Sh.skipped();
+      const todo = list.filter((x) => !have.has(x.id) && !skip.has(x.id));
+      const onServer = new Set(list.map((x) => x.id));
+      const gone = Sh.all().filter((m) => m.remote && !onServer.has(m.id));
+      for (let i = 0; i < todo.length; i++) {
+        onStep(i, todo.length);
+        const x = todo[i];
+        const r = await get(k, '&op=shot&id=' + encodeURIComponent(x.id));
+        if (!r.ok) { if (r.error === 'notfound') continue; throw new Error(r.error || '受け取れませんでした'); }
+        await Sh.addReceived(x, b64ToBlob(r.data, r.type));
+        got++;
+      }
+      onStep(todo.length, todo.length);
+      for (const m of gone) await Sh.remove(m.id, { sync: true });
+      conf().shotsAt = Date.now();
+      S().save();
+      return { ok: true, got, removed: gone.length };
+    } catch (e) {
+      return { error: niceError(e), got };
+    } finally {
+      Sy.state.shotBusy = false;
+    }
+  };
+
+  /** 受け取れる画像が何枚あるかだけ見る（起動時に知らせる用。失敗しても黙る） */
+  Sy.shotsCheck = async () => {
+    if (shotGuard()) return 0;
+    try {
+      const k = await keyOf(conf().phrase);
+      const list = await shotIndex(k);
+      const have = new Set(HC.shots.all().map((m) => m.id));
+      const skip = HC.shots.skipped();
+      return list.filter((x) => !have.has(x.id) && !skip.has(x.id)).length;
+    } catch (_) { return 0; }
   };
 
   /** 設定の受け渡し（QR用）。合言葉ごと渡すので、スマホ側は読み取るだけで済む */
