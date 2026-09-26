@@ -407,13 +407,24 @@
     },
   };
 
+  // まとめカードのサークル一覧。多いときは14件までにして、押すとカードの中で全部を広げる
+  const CHIP_MAX = 14;
+  V.chipOpen = {};   // { noimg: true, pend: true } 広げているカード
+  V.chipList = (cids, k) => (V.chipOpen[k] ? cids : cids.slice(0, CHIP_MAX));
+  V.chipMore = (cids, k) => {
+    if (cids.length <= CHIP_MAX) return '';
+    return V.chipOpen[k]
+      ? `<button class="link-btn" data-act="chipMore" data-k="${k}">${U.icon('up', 'sm')}たたむ</button>`
+      : `<button class="link-btn" data-act="chipMore" data-k="${k}">${U.icon('down', 'sm')}残り${cids.length - CHIP_MAX}件も表示</button>`;
+  };
+
   /**
    * お品書き画像をまだ登録していないサークルのまとめ（当日は圏外でも画像を見たいので、出かける前に埋めておく）
    */
   V.noShot = (cids) => {
     if (!cids || !cids.length) return '';
     const s = S();
-    const chips = cids.slice(0, 14).map((cid) => {
+    const chips = V.chipList(cids, 'noimg').map((cid) => {
       const c = s.circle(cid) || s.entry(cid).snap;
       return `<button class="pend-chip img" data-act="openCircle" data-cid="${esc(cid)}">${V.space(c)}<span>${esc(c.name)}</span></button>`;
     }).join('');
@@ -422,7 +433,7 @@
       <h3>${U.icon('image')}お品書き画像が未登録 <small>${cids.length}サークル</small></h3>
       <p class="muted small">お品書き画像をまだ登録していないサークルです。サークルを開いて画像を追加してください。${pc ? 'PCでは、画像をコピーして Ctrl+V で貼り付けることもできます。' : ''}登録した画像は、当日圏外でも見られます。</p>
       <div class="pend-list">${chips}</div>
-      ${cids.length > 14 ? `<button class="link-btn" data-act="listFilter" data-f="noimg">残り${cids.length - 14}件も見る</button>` : ''}
+      ${V.chipMore(cids, 'noimg')}
     </section>`;
   };
 
@@ -433,7 +444,7 @@
   V.pending = (cids) => {
     if (!cids || !cids.length) return '';
     const s = S();
-    const chips = cids.slice(0, 14).map((cid) => {
+    const chips = V.chipList(cids, 'pend').map((cid) => {
       const c = s.circle(cid) || s.entry(cid).snap;
       return `<button class="pend-chip" data-act="openCircle" data-cid="${esc(cid)}">${V.space(c)}<span>${esc(c.name)}</span></button>`;
     }).join('');
@@ -441,7 +452,7 @@
       <h3>${U.icon('clock')}お品書き待ち <small>${cids.length}サークル</small></h3>
       <p class="muted small">買うものをまだ登録していないサークルです。お品書きが公開されたら、サークルを開いて買うものを登録してください。登録するまでは予定の合計に含まれません。</p>
       <div class="pend-list">${chips}</div>
-      ${cids.length > 14 ? `<button class="link-btn" data-act="listFilter" data-f="pend">残り${cids.length - 14}件も見る</button>` : ''}
+      ${V.chipMore(cids, 'pend')}
     </section>`;
   };
 

@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '1.2.2';
+  HC.VERSION = '1.2.3';
 
   const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -1083,6 +1083,12 @@
     inp.value = '';
     V.circles.renderList();
     inp.focus();
+  };
+  /** まとめカード（お品書き待ち・画像なし）の「残りも表示」「たたむ」。カードの中で広げる */
+  A.chipMore = (ds) => {
+    V.chipOpen[ds.k] = !V.chipOpen[ds.k];
+    renderView('list');
+    if (!V.chipOpen[ds.k]) U.$('#sec-' + ds.k)?.scrollIntoView({ block: 'nearest' });   // たたんだら、カードが見える位置に戻す
   };
   A.listFilter = (ds) => { V.list.filter = ds.f; renderView('list'); };
 
