@@ -1038,7 +1038,7 @@
     if (!o || !('c' in o)) return o; // すでに通常形式
     const c = byId.get(o.c);
     const snap = c ? { name: c.name, tw: c.tw, space: c.space } : { name: (o.k || [])[0] || o.c, tw: (o.k || [])[1] || '', space: (o.k || [])[2] || o.c };
-    return { cid: o.c, pri: o.r || 3, items: (o.i || []).map(fatItem), memo: o.m || '', menu: o.u || '', status: o.s || 'todo', noItems: !!o.ni, doneAt: o.da || null, snap, addedAt: Date.now() };
+    return { cid: o.c, pri: o.r || 3, items: (o.i || []).map(fatItem), memo: o.m || '', menu: o.u || '', status: o.s || 'todo', noItems: !!o.ni, doneAt: o.da || null, snap, addedAt: 0 };   // 追加した時刻はスリム形式に載せない（0＝不明。ルートの「作ったあとに追加」に数えない）
   };
 
   /** 読み込んだ計画データを通常形式へ戻す（スリム形式・通常形式のどちらでも通る） */

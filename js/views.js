@@ -77,7 +77,7 @@
         <div><span>残り予定</span><b>${U.yen(st.plannedLeft)}</b></div>
         <div><span>見込み残</span><b class="${st.projected < 0 ? 'neg' : 'pos'}">${U.yen(st.projected)}</b></div>
         ${st.cashLeft != null ? `<div><span>財布の現金</span><b class="w-cash ${st.cashLeft < 0 ? 'neg' : ''}">${U.yen(st.cashLeft)}</b></div>` : ''}
-        <button class="link-btn w-wallet" data-act="wallet">${U.icon('wallet', 'sm')}${S().hasCashBreak() ? `金種 ${S().cashCount()}枚` : '金種を入れる'}</button>
+        <button class="link-btn w-wallet" data-act="wallet">${U.icon('wallet', 'sm')}${S().hasCashBreak() ? `金種 ${S().cashCount()}枚` : '金種を登録'}</button>
       </div>
       <div class="w-bar" aria-hidden="true"><i class="spent" style="width:${pSpent}%"></i><i class="plan" style="width:${pPlan}%"></i></div>
       ${st.projected < 0 ? `<div class="w-warn">${U.icon('warn', 'sm')} 予定を全部買うと ${U.yen(-st.projected)} 足りません${st.mustLeft ? `（必須の残り ${U.yen(st.mustLeft)}）` : ''}</div>` : ''}
@@ -188,18 +188,18 @@
     const sw = 'serviceWorker' in navigator && location.protocol === 'https:';
     const sync = s.state.sync;
     const rows = [
-      { ok: !!s.eventDate(), label: '開催日', note: s.eventDate() ? U.md(new Date(s.eventDate() + 'T00:00:00').getTime()) : '未設定だと「今日」として時刻を数えます', act: 'setEventDate', btn: '入れる' },
-      { ok: !!d.budget, label: '予算', note: d.budget ? U.yen(d.budget) : '残りと見込みが出せません', act: 'budgetEdit', btn: '入れる' },
-      { ok: !pend, label: 'お品書き待ち', note: pend ? `${pend}サークル。買うものが入っていません` : 'すべて入力済み', act: 'nav', data: 'data-view="list" data-scroll="pend"', btn: '見る' },
-      { ok: !unknownCids.length, label: '価格未定', note: unknownCids.length ? `${unknownCids.length}サークルに ¥? の品物があります` : 'すべて金額あり', act: 'openCircle', data: `data-cid="${esc(unknownCids[0] || '')}"`, btn: '入れる' },
-      { ok: !!d.routedAt && !addedAfter, label: 'ルート', note: !d.routedAt ? 'まだ作っていません' : addedAfter ? `作ったあとに${addedAfter}件追加しました` : `${U.md(d.routedAt)} ${U.time(d.routedAt)} に作成`, act: 'routeMenu', btn: '作る' },
-      { ok: s.hasCashBreak(), label: '財布の中身', note: s.hasCashBreak() ? `${U.yen(s.cashTotal())}（${s.cashCount()}枚）` : '金種を入れると出す硬貨・お札を案内します', act: 'wallet', btn: '入れる', optional: true },
+      { ok: !!s.eventDate(), label: '開催日', note: s.eventDate() ? U.md(new Date(s.eventDate() + 'T00:00:00').getTime()) : '未設定のときは、今日を開催日として時刻を計算します', act: 'setEventDate', btn: '設定' },
+      { ok: !!d.budget, label: '予算', note: d.budget ? U.yen(d.budget) : '未設定のため、残りと見込みを計算できません', act: 'budgetEdit', btn: '設定' },
+      { ok: !pend, label: 'お品書き待ち', note: pend ? `買うものを登録していないサークルが${pend}件あります` : 'すべて登録済みです', act: 'nav', data: 'data-view="list" data-scroll="pend"', btn: '見る' },
+      { ok: !unknownCids.length, label: '価格未定', note: unknownCids.length ? `金額が未定の品物があるサークルが${unknownCids.length}件あります` : 'すべての品物に金額があります', act: 'openCircle', data: `data-cid="${esc(unknownCids[0] || '')}"`, btn: '登録' },
+      { ok: !!d.routedAt && !addedAfter, label: 'ルート', note: !d.routedAt ? 'まだ作っていません' : addedAfter ? `ルートを作ったあとに${addedAfter}サークル追加しています` : `${U.md(d.routedAt)} ${U.time(d.routedAt)} に作成`, act: 'routeMenu', btn: '作る' },
+      { ok: s.hasCashBreak(), label: '財布の中身', note: s.hasCashBreak() ? `${U.yen(s.cashTotal())}（${s.cashCount()}枚）` : '金種ごとの枚数を登録すると、支払いで出す硬貨とお札を案内します', act: 'wallet', btn: '登録', optional: true },
       sw ? { ok: !!navigator.serviceWorker.controller, label: 'オフライン保存', note: navigator.serviceWorker.controller ? '圏外でも開けます' : 'まだ保存されていません', act: 'offlineRefresh', btn: '保存' } : null,
       sync.url && sync.phrase ? { ok: !sync.dirty, label: '同期', note: sync.dirty ? 'まだ送っていない変更があります' : '送信済み', act: 'syncNow', btn: '送る' } : null,
       sync.url && sync.phrase && HC.shots && HC.shots.ready && HC.shots.unsent().length
         ? { ok: false, label: 'お品書き画像', note: `${HC.shots.unsent().length}枚をまだ送っていません`, act: 'shotsPush', btn: '送る' } : null,
       sync.url && sync.phrase && HC.shots && HC.shots.ready && !HC.shots.unsent().length
-        ? { ok: false, optional: true, label: 'お品書き画像', note: `この端末 ${HC.shots.all().length}枚${sync.shotsAt ? ` ・ 最終の受け渡し ${U.md(sync.shotsAt)} ${U.time(sync.shotsAt)}` : ' ・ ほかの端末の画像は「受け取る」で'}`, act: 'shotsPull', btn: '受け取る' } : null,
+        ? { ok: false, optional: true, label: 'お品書き画像', note: `この端末 ${HC.shots.all().length}枚${sync.shotsAt ? ` ・ 最終の受け渡し ${U.md(sync.shotsAt)} ${U.time(sync.shotsAt)}` : ' ・ ほかの端末で追加した画像は「受け取る」で取り込めます'}`, act: 'shotsPull', btn: '受け取る' } : null,
       HC.app.updateReady ? { ok: false, label: '新しい版', note: '更新してから出かけると安心です', act: 'applyUpdate', btn: '更新' } : null,
     ].filter(Boolean);
     const left = rows.filter((r) => !r.ok && !r.optional).length;
@@ -250,7 +250,7 @@
       // 開催日が分かっているときだけ「終了」と言い切る（日付未設定なら単に今日の時間帯を過ぎただけ）
       return c.date
         ? `<span class="ck-day">${U.md(c.base)} 終了</span> <span class="ck-eta">記録は残っています</span>`
-        : `<span class="muted">開催日を入れると、当日の経過と残り時間が出ます</span>`;
+        : `<span class="muted">開催日を設定すると、当日の経過時間と残り時間が表示されます</span>`;
     }
     parts.push(`経過 <b>${U.span(c.elapsed)}</b>`);
     if (c.left > 0) parts.push(`<span class="ck-left">終了まで <b>${U.span(c.left)}</b></span>`);
@@ -401,7 +401,7 @@
 
   /**
    * お品書きがまだ出ていないサークルのまとめ。
-   * 発表されたらここから開いて買うものを入れる、という使い方を想定している
+   * 公開されたらここから開いて買うものを登録する、という使い方を想定している
    */
   V.pending = (cids) => {
     if (!cids || !cids.length) return '';
@@ -412,7 +412,7 @@
     }).join('');
     return `<section class="card pend-card" id="sec-pend">
       <h3>${U.icon('clock')}お品書き待ち <small>${cids.length}サークル</small></h3>
-      <p class="muted small">買うものがまだ入っていないサークルです。お品書きが出たら、押して入れてください。入れるまでは金額に含まれません。</p>
+      <p class="muted small">買うものをまだ登録していないサークルです。お品書きが公開されたら、サークルを開いて買うものを登録してください。登録するまでは予定の合計に含まれません。</p>
       <div class="pend-list">${chips}</div>
       ${cids.length > 14 ? `<button class="link-btn" data-act="listFilter" data-f="pend">残り${cids.length - 14}件も見る</button>` : ''}
     </section>`;
@@ -446,7 +446,7 @@
     if (sim.spent) notes.push(`合計には支払い済みの ${U.yen(sim.spent)}${sim.extras ? `（うちサークル外 ${U.yen(sim.extras)}）` : ''} を含みます。`);
     if (last.unknown) notes.push(`価格未定が ${last.unknown}件。平均 ${U.yen(sim.avg)} とみて <b>${U.yen(last.unknownEst)}</b> ほど増える見込みです。`);
     if (pend) notes.push(`<b class="pend-ink">お品書き待ちが ${pend}サークル。決まればここに乗ります。</b>`);
-    if (!hasBudget) notes.push('<button class="link-btn" data-act="budgetEdit">予算を入れると、残りも出ます</button>');
+    if (!hasBudget) notes.push('<button class="link-btn" data-act="budgetEdit">予算を設定すると、残りも表示されます</button>');
     else if (!fit) notes.push('<b class="neg">必須だけでも予算を超えます。</b>');
     else if (fit.cumCount >= last.cumCount) notes.push('<b class="pos">計画を全部買っても予算に収まります。</b>');
     else notes.push(`予算に収まるのは <b>${esc(fit.label)}</b> までです。`);
@@ -498,7 +498,7 @@
         <span class="l1">${V.space(c)}<span class="nm">${esc(c.name)}</span></span>
         <span class="l2">${s.isPending(e)
           ? `<span class="pend">${U.icon('clock', 'sm')}お品書き待ち</span>`
-          : (e.items.length ? esc(itemNames(e)) : '<i>買うもの未入力</i>')}${e.memo ? ` ・ ${U.icon('note', 'sm')}` : ''}</span>
+          : (e.items.length ? esc(itemNames(e)) : '<i>買うもの未登録</i>')}${e.memo ? ` ・ ${U.icon('note', 'sm')}` : ''}</span>
       </button>
       <span class="prow-side">
         <button class="pri-btn" data-act="priMenu" data-cid="${cid}">${V.pri(e.pri)}</button>
@@ -638,10 +638,10 @@
       <div class="field"><label>優先度</label>
         <div class="seg pri-seg">${[1, 2, 3, 4].map((p) => `<button class="p${p} ${e.pri === p ? 'on' : ''}" data-act="setPri" data-cid="${cid}" data-pri="${p}">${s.PRI[p].label}</button>`).join('')}</div></div>
       ${s.isPending(e) ? `<div class="pend-note">${U.icon('clock', 'sm')}
-        <div><b>お品書き待ち</b><small>発表されたら、下の「買うもの」に入れてください。入れるまで金額には入りません。</small></div>
-        <button class="btn sm ghost" data-act="noItems" data-cid="${cid}" data-on="1">入れなくてよい</button></div>`
+        <div><b>お品書き待ち</b><small>お品書きが公開されたら、下の「買うもの」に登録してください。登録するまでは予定の合計に含まれません。</small></div>
+        <button class="btn sm ghost" data-act="noItems" data-cid="${cid}" data-on="1">登録しない</button></div>`
         : (e.noItems ? `<div class="pend-note done">${U.icon('check', 'sm')}
-        <div><b>買うものは入れない印を付けています</b><small>お品書き待ちの一覧には出ません。</small></div>
+        <div><b>このサークルは買うものを登録しない設定です</b><small>お品書き待ちの一覧には出ません。</small></div>
         <button class="btn sm ghost" data-act="noItems" data-cid="${cid}" data-on="0">戻す</button></div>` : '')}
       <div class="field"><label>買うもの <small class="cd-sum">予定 ${U.yen(planned)}${spent ? ` ・ 支払済 ${U.yen(spent)}` : ''}</small></label>
         <div class="ie-list">${e.items.map((i) => `
@@ -657,7 +657,7 @@
           const hint = s.priceHint(p);
           return `<button class="chip sm" data-act="addItem" data-cid="${cid}" data-name="${esc(p)}">${U.icon('plus', 'sm')}${esc(p)}${hint ? `<small>${U.yen(hint)}</small>` : ''}</button>`;
         }).join('')}<button class="chip sm" data-act="addItem" data-cid="${cid}" data-name="">${U.icon('plus', 'sm')}自由入力</button>
-        <button class="chip sm ghost" data-act="bulkItems" data-cid="${cid}">${U.icon('note', 'sm')}まとめて入力</button></div>
+        <button class="chip sm ghost" data-act="bulkItems" data-cid="${cid}">${U.icon('note', 'sm')}まとめて登録</button></div>
       </div>
       <div class="field"><label>メモ <small>（売切れ注意・特典・列の様子など）</small></label>
         <textarea class="input" rows="2" data-f="memo" data-cid="${cid}" placeholder="例：新刊は午前中に完売しがち／セット特典あり">${esc(e.memo)}</textarea></div>
@@ -665,7 +665,7 @@
         <input class="input" type="url" data-f="menu" data-cid="${cid}" value="${esc(e.menu)}" placeholder="https://x.com/..."></div>
       ${HC.shots && HC.shots.ready ? `<div class="field"><label>お品書きの画像 <small>（端末に保存。当日オフラインでも見られます）</small></label>
         ${V.shots(cid, { add: true })}
-        <p class="shot-tip muted small">${U.icon('image', 'sm')}画像をコピーして <kbd>Ctrl</kbd>+<kbd>V</kbd>、またはファイルをここへドロップしても入ります${HC.sync.configured() ? '。スマホへは「設定 → 同期 → 画像を送る」' : ''}</p></div>` : ''}
+        <p class="shot-tip muted small">${U.icon('image', 'sm')}画像をコピーして <kbd>Ctrl</kbd>+<kbd>V</kbd> で貼り付けるか、画像ファイルをここへドロップしても追加できます。${HC.sync.configured() ? 'スマホへは「設定 → 同期 → 画像を送る」で送れます。' : ''}</p></div>` : ''}
       <div class="field"><label>当日の状態</label>
         <div class="seg st-seg">${['todo', 'later', 'done', 'soldout', 'skip'].map((k) => `<button class="${e.status === k ? 'on' : ''}" data-act="setStatus" data-st="${k}" data-cid="${cid}" data-keep="1">${s.STATUS[k].label}</button>`).join('')}</div></div>
       <div class="cd-actions">
@@ -855,7 +855,7 @@
                 const all = Sh.all(), unsent = Sh.unsent().length, got = all.filter((m) => m.remote).length;
                 return `<div class="shot-sync">
                   <h4>${U.icon('image', 'sm')}お品書き画像 <small>この端末 ${all.length}枚（受け取った ${got}枚）${c.shotsAt ? ` ・ 最終 ${esc(U.md(c.shotsAt))} ${esc(U.time(c.shotsAt))}` : ''}</small></h4>
-                  <p class="muted small">画像は重いので、自動では送りません。PCで入れたら「画像を送る」、スマホで「画像を受け取る」を押すと、まだ無い分だけ移ります（電波のあるうちに）。</p>
+                  <p class="muted small">画像はデータが大きいため、自動では送りません。PCで画像を追加したら「画像を送る」を、スマホでは「画像を受け取る」を押してください。まだ届いていない画像だけが移ります。電波のある場所で行ってください。</p>
                   <div class="btn-grid2">
                     <button class="btn${unsent ? ' primary' : ''}" data-act="shotsPush">${U.icon('upload')}画像を送る${unsent ? ` <small>${unsent}枚</small>` : ''}</button>
                     <button class="btn" data-act="shotsPull">${U.icon('download')}画像を受け取る</button>
