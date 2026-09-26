@@ -209,11 +209,6 @@
       <button class="dc-space" data-act="dayMap">${V.space(c, 'xxl')}</button>
       <div class="cur-name">${esc(c.name)}</div>
       ${e.memo ? `<div class="cur-memo">${esc(e.memo).replace(/\n/g, '<br>')}</div>` : ''}
-      ${shots.length ? `<div class="dc-shots">
-          <button class="dc-shot" data-act="viewShot" data-id="${esc(shots[0].id)}" data-cid="${esc(cid)}" aria-label="お品書きを大きく見る">
-            <img data-shot="${esc(shots[0].id)}" src="${shots[0].thumb}" alt="お品書き"><span class="dc-zoom">${U.icon('zoomIn', 'sm')}拡大</span></button>
-          ${shots.length > 1 ? `<div class="shots">${shots.slice(1).map((m) => `<button class="shot-thumb" data-act="viewShot" data-id="${esc(m.id)}" data-cid="${esc(cid)}" aria-label="お品書きを開く"><img src="${m.thumb}" alt="お品書き"></button>`).join('')}</div>` : ''}
-        </div>` : (Sh && Sh.ready && !e.noShot ? '<p class="dc-noshot">お品書き画像は登録されていません</p>' : '')}
       ${e.items.length ? `<ul class="items">${V.itemRows(cid, e)}</ul>`
         : (s.isPending(e)
           ? `<p class="cur-pend">${U.icon('clock', 'sm')}買うものは登録されていません。買ったものは下の「追加で買ったもの」から記録できます</p>`
@@ -222,6 +217,11 @@
         <button class="btn" data-act="extraBuy" data-cid="${cid}">${U.icon('plus')}追加で買ったもの</button>
         <button class="btn" data-act="editMemo" data-cid="${cid}">${U.icon('note')}${e.memo ? 'メモを直す' : 'メモ'}</button>
       </div>
+      ${shots.length ? `<div class="dc-shots">
+          <button class="dc-shot" data-act="viewShot" data-id="${esc(shots[0].id)}" data-cid="${esc(cid)}" aria-label="お品書きを大きく見る">
+            <img data-shot="${esc(shots[0].id)}" src="${shots[0].thumb}" alt="お品書き"><span class="dc-zoom">${U.icon('zoomIn', 'sm')}拡大</span></button>
+          ${shots.length > 1 ? `<div class="shots">${shots.slice(1).map((m) => `<button class="shot-thumb" data-act="viewShot" data-id="${esc(m.id)}" data-cid="${esc(cid)}" aria-label="お品書きを開く"><img src="${m.thumb}" alt="お品書き"></button>`).join('')}</div>` : ''}
+        </div>` : (Sh && Sh.ready && !e.noShot ? '<p class="dc-noshot">お品書き画像は登録されていません</p>' : '')}
       ${V.payReady(planned - spent)}
       <div class="cur-sum"><span>予定 ${U.yen(planned)}</span><span>支払 <b>${U.yen(spent)}</b></span></div>
       ${near.length ? `<div class="near"><span class="near-l">${U.icon('compass', 'sm')}この近く</span>
@@ -245,7 +245,7 @@
 
   /** 通常モードの当日タブに出す、当日モード・デモへの入口 */
   V.dayEntry = () => `<section class="card day-entry">
-      <div class="de-text"><b>${U.icon('go', 'sm')}当日モード</b><small>文字とボタンを大きくし、当日に使う画面だけにします。デモでは、記録を残さずに本番どおりの操作を試せます。</small></div>
+      <div class="de-text"><b>${U.icon('go', 'sm')}当日モード</b><small>文字とボタンを大きくし、当日に使う画面だけにします</small></div>
       <div class="de-btns">
         <button class="btn primary" data-act="dayOn">当日モードにする</button>
         <button class="btn" data-act="demoStart">デモで練習</button>
@@ -462,9 +462,9 @@
       <span class="ck-now">${U.icon('clock', 'sm')}<b id="ck-now">${U.clockTime(c.now)}</b></span>
       <span class="ck-el" id="ck-el">${clockElapsedText(c)}</span>
       <span class="grow"></span>
-      ${S().times().schedule.length ? `<button class="link-btn sm" data-act="schedule">${U.icon('cal', 'sm')}進行</button>` : ''}
+      <span class="ck-btns">${S().times().schedule.length ? `<button class="link-btn sm" data-act="schedule">${U.icon('cal', 'sm')}進行</button>` : ''}
       ${c.base ? `<button class="link-btn sm" data-act="clockMenu">${U.icon('timer', 'sm')}時刻</button>`
-        : `<button class="link-btn sm" data-act="clockStart">${U.icon('timer', 'sm')}経過を計り始める</button>`}
+        : `<button class="link-btn sm" data-act="clockStart">${U.icon('timer', 'sm')}経過を計り始める</button>`}</span>
     </div>`;
   };
   /** 時計バーの右側。開催前・開催中・終了後で出し分ける */
@@ -625,8 +625,7 @@
         <div><span>うち必須</span><b>${U.yen(mustTotal)}</b></div>
         ${st.budget ? `<div><span>予算との差</span><b class="${diff < 0 ? 'neg' : 'pos'}">${diff >= 0 ? '+' : ''}${U.yen(diff)}</b></div>` : `<div><button class="link-btn" data-act="budgetEdit">予算を設定</button></div>`}
       </section>
-      ${V.pending(pend)}
-      ${V.noShot(noimg)}
+      ${s.state.settings.dayMode ? '' : V.pending(pend) + V.noShot(noimg)}
       ${V.sim()}
       <div class="toolbar">
         <div class="seg sm">${[['all', '全部'], ['todo', '未完了'], ['must', '必須'], ['pend', `待ち${pend.length ? ' ' + pend.length : ''}`], ...(HC.shots && HC.shots.ready ? [['noimg', `画像なし${noimg.length ? ' ' + noimg.length : ''}`]] : []), ['done', '完了']].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="listFilter" data-f="${k}">${l}</button>`).join('')}</div>
@@ -1120,7 +1119,7 @@
           <div class="field"><span>テーマ</span>${seg('theme', [['auto', '自動'], ['light', 'ライト'], ['dark', 'ダーク']])}</div>
           <div class="field"><span>文字の大きさ</span>${seg('font', [['0.9', '小'], ['1', '標準'], ['1.12', '大'], ['1.25', '特大']])}</div>
           <div class="field"><span>地図の向き</span>${seg('mapOrient', [['auto', '自動'], ['land', '横'], ['port', '縦']])}</div>
-          ${toggle('wakeLock', '画面を消さない', '当日・地図タブを開いている間')}
+          ${toggle('wakeLock', '画面を消さない', '当日・地図タブを開いている間（当日モードではすべての画面）')}
           ${toggle('haptics', 'タップ時に振動', 'Android のみ')}
         </section>
 

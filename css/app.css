@@ -1054,3 +1054,44 @@ body.day[data-view="go"] .toast { bottom: calc(var(--tab-h) + var(--safe-b) + 14
 body.demo .map-view { height: calc(100dvh - var(--top-h) - env(safe-area-inset-top, 0px) - var(--tab-h) - var(--safe-b) - 44px); }
 @media (min-width: 960px) { body.demo .map-view { height: calc(100dvh - var(--top-h) - 44px); } }
 @media (min-width: 960px) { body.day .tabbar button { font-size: .95rem; } body.day .tabbar .ic { width: 22px; height: 22px; } }
+
+/* ============================================================ 操作性の見直し（1.3.1） */
+.plan-sum span { font-size: .76rem; }
+.fin summary, .prep summary { min-height: 44px; display: flex; align-items: center; }
+/* 当日モード：上の「残り」は帯と同じ内容なので出さない（縦の場所を空ける） */
+body.day .top-wallet { display: none; }
+.ds-top .link-btn { min-width: 40px; min-height: 40px; justify-content: center; }
+.sp.xxl { font-size: 3rem; }
+.dc-shot img { max-height: 34vh; }
+/* 下に固定したボタンは、押しやすさを保ったまま少し低く（小さい画面で本文が隠れすぎないように） */
+.day-actions { padding: 8px 12px; }
+.day-actions .btn.xl { min-height: 58px; font-size: 1.15rem; }
+.day-actions .btn-grid3 { margin-top: 6px; }
+.day-actions .btn-grid3 .btn { min-height: 46px; }
+body.day[data-view="go"] { padding-bottom: calc(var(--tab-h) + var(--safe-b) + 136px); }
+body.day[data-view="go"] .toast { bottom: calc(var(--tab-h) + var(--safe-b) + 132px); }
+.day-entry { padding: 10px 12px; }
+.day-entry .de-btns .btn { min-height: 40px; }
+/* シートを開いている間は、トーストを画面上部に出す（テンキーや入力欄に重ねない） */
+body:has(.sheet-wrap.open) .toast { bottom: auto; top: calc(var(--top-h) + env(safe-area-inset-top, 0px) + 8px); }
+/* テンキー：確定ボタンは常に見える位置に（小さい画面では下が切れて、スクロールしないと押せなかった） */
+.numpad-sheet [data-ok] { position: sticky; bottom: 0; z-index: 1; box-shadow: 0 -10px 12px -2px var(--surface); }
+@media (max-height: 760px) {
+  .np-key { min-height: 46px; font-size: 1.35rem; }
+  .np-keys { gap: 5px; margin-bottom: 8px; }
+  .np-amount { font-size: 2rem; }
+  .np-display { padding: 2px 4px; }
+  .np-name { margin-bottom: 4px; }
+  .np-chips, .np-presets { margin-bottom: 6px; }
+  .np-opts { margin-bottom: 8px; }
+}
+body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8px); }
+/* 地図の下の帯：地図の枠はタブバーの上で終わっているので、タブバーの高さを足さない（72px 浮いていた） */
+.map-seg { bottom: 10px; }
+.route-off { bottom: 16px; }
+/* 区間の帯とサークルのカードが両方出るときは、カードを帯の上に */
+.map-view:has(#mapseg:not([hidden])) .map-card { bottom: 96px; }
+.map-view:has(#mapseg:not([hidden])) .route-off { bottom: 96px; }
+.map-view:has(#mapseg:not([hidden])) .route-off { display: none; }
+/* 時計の帯の「進行」「時刻」は1つのまとまりにして、途中で折り返さない */
+.ck-btns { display: inline-flex; gap: 4px; white-space: nowrap; margin-left: auto; }

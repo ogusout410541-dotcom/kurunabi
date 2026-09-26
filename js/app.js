@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '1.3.0';
+  HC.VERSION = '1.3.1';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -1197,7 +1197,7 @@
   };
   A.dayOn = () => {
     setDay(true);
-    UI.toast('当日モードにしました。終えるときは「メニュー」から', { ms: 4000 });
+    UI.toast('当日モードにしました。通常の画面に戻すときは「メニュー」の「当日モードを終える」を押してください', { ms: 5000 });
   };
   A.dayOff = async () => {
     if (S.isDemo()) {

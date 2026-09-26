@@ -153,8 +153,9 @@
       const w = Math.abs(b.x - a.x) + pad * 2, h = Math.abs(b.y - a.y) + pad * 2;
       const box = inst.base;
       const ratio = box.h / box.w;
-      const vw = Math.max(w, h / ratio), vh = vw * ratio;
-      inst.setVB({ x: (x + w / 2) - vw / 2, y: (y + h / 2) - vh / 2, w: vw, h: vh });
+      // 下には区間の案内の帯が重なるので、少し広めに取って区間を画面の上寄り（高さの42%の位置）に置く
+      const vw = Math.max(w, h / ratio) / 0.8, vh = vw * ratio;
+      inst.setVB({ x: (x + w / 2) - vw / 2, y: (y + h / 2) - vh * 0.42, w: vw, h: vh });
       inst.paint();
       return leg;
     };
@@ -192,7 +193,9 @@
 
       // ルート線
       let route = '';
-      if (S.state.settings.showRoute && remaining.length) {
+      // 区間表示中は、ルート線を非表示にしていても、その区間だけは必ず描く（道順を見たくて開いているため）
+      const segMode = inst.segIndex != null;
+      if ((S.state.settings.showRoute || segMode) && remaining.length) {
         const lastDone = q.finished.map((cid) => d.entries[cid]).filter((e) => e.doneAt).sort((a, b) => b.doneAt - a.doneAt)[0];
         let prev = (lastDone && Lay.pointOf(L, S.circle(lastDone.cid))) || S.startPoint();
         const st = prev;
@@ -204,10 +207,9 @@
           pts.push(...seg.slice(1));
           prev = p;
         });
-        const segMode = inst.segIndex != null;
         // 下に縁取り（casing）を敷いて、机や配置図の上でも線が埋もれないようにする
         const ptsTxt = pts.map((p) => `${p.x},${p.y}`).join(' ');
-        route = `<polyline class="route-casing${segMode ? ' faded' : ''}" points="${ptsTxt}"/><polyline class="route${segMode ? ' faded' : ''}" points="${ptsTxt}"/>` +
+        route = (S.state.settings.showRoute ? `<polyline class="route-casing${segMode ? ' faded' : ''}" points="${ptsTxt}"/><polyline class="route${segMode ? ' faded' : ''}" points="${ptsTxt}"/>` : '') +
           `<g class="start-mark"><circle cx="${st.x}" cy="${st.y}" r="7"/></g>`;
         if (segMode) {
           // 選んだ区間だけをはっきり描く（線が重なって見分けられない問題への対応）
