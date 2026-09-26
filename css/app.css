@@ -513,8 +513,12 @@ select.input { appearance: auto; }
 .map-svg .cell.flash rect { animation: flash .6s ease-in-out 4; }
 @keyframes pulse { 50% { stroke-width: 6; } }
 @keyframes flash { 50% { fill: #ffe14d; stroke: #000; stroke-width: 3; } }
-.map-svg .route { fill: none; stroke: var(--accent); stroke-width: 3; stroke-dasharray: 7 6; stroke-linejoin: round; stroke-linecap: round; opacity: .75; pointer-events: none; }
-.map-svg .route.next-leg { stroke-width: 5; stroke-dasharray: none; opacity: .9; }
+/* ルート線は拡大・縮小しても画面上の太さが変わらないようにする（全体表示のスマホで細くなって見えなくなっていた） */
+.map-svg .route, .map-svg .route-casing { fill: none; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; vector-effect: non-scaling-stroke; }
+.map-svg .route { stroke: var(--accent); stroke-width: 3.5; stroke-dasharray: 9 6; }
+.map-svg .route-casing { stroke: var(--surface); stroke-width: 7; opacity: .85; }
+.map-svg .route-casing.wide { stroke-width: 11; opacity: .95; }
+.map-svg .route.next-leg { stroke-width: 6; stroke-dasharray: none; }
 .map-svg .start-mark circle { fill: var(--text); stroke: var(--surface); stroke-width: 2.5; }
 .map-svg .badge circle { fill: var(--p3); stroke: #fff; stroke-width: 1.6; }
 .map-svg .badge.p1 circle { fill: var(--p1); } .map-svg .badge.p2 circle { fill: var(--p2); } .map-svg .badge.p4 circle { fill: var(--p4); }
@@ -536,6 +540,10 @@ select.input { appearance: auto; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .map-svg.image-mode .map-img { filter: invert(.88) hue-rotate(180deg); } }
 
 .map-ctrl { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 8px; z-index: 2; }
+.route-off { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--tab-h) + var(--safe-b) + 16px); z-index: 3;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 16px; border-radius: 999px;
+  background: var(--surface); color: var(--accent); border: 2px solid var(--accent); font-weight: 700; font-size: .85rem; box-shadow: var(--shadow-lg); }
+@media (min-width: 960px) { .route-off { bottom: 20px; } }
 .map-legend { position: absolute; left: 10px; top: 10px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 80px); z-index: 2; pointer-events: none; }
 .map-legend .lg { font-size: .76rem; font-weight: 800; padding: 2px 7px; border-radius: 6px; color: #fff; background: var(--p3); box-shadow: var(--shadow); }
 .map-legend .p1 { background: var(--p1); } .map-legend .p2 { background: var(--p2); } .map-legend .p4 { background: var(--p4); }
@@ -923,8 +931,8 @@ body.offline .link-chip.x, body.offline .link-chip.px, body.offline .link-chip.w
 .prow .l2 .pend { font-size: .8rem; }
 
 /* ------------------------------------------------------------ 地図の区間表示 */
-.map-svg .route.faded { opacity: .18; }
-.map-svg .route.leg-line { stroke: var(--p2); stroke-width: 4; stroke-dasharray: none; opacity: 1; filter: drop-shadow(0 0 3px rgba(0,0,0,.35)); }
+.map-svg .route.faded, .map-svg .route-casing.faded { opacity: .2; }
+.map-svg .route.leg-line { stroke: var(--p2); stroke-width: 6; stroke-dasharray: none; opacity: 1; }
 .map-svg .leg-mark circle { fill: none; stroke: var(--p2); stroke-width: 3; }
 .map-svg .leg-mark.to circle { fill: color-mix(in srgb, var(--p2) 35%, transparent); }
 .map-seg {
@@ -940,3 +948,109 @@ body.offline .link-chip.x, body.offline .link-chip.px, body.offline .link-chip.w
 .seg-route .ic { color: var(--muted); }
 .seg-name { font-size: .8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
 body[data-view="map"] .map-legend { bottom: auto; }
+
+/* ============================================================ 当日モード（body.day）
+   会場で片手・急いでいる・明るさがまちまち、を前提に
+   文字は一段大きく（--fs を 1.12 倍。app.js の applyLook）、薄い灰色の文字を濃くし、
+   完了・売切などのボタンは親指の届く画面下に固定する */
+body.day { --muted: color-mix(in srgb, var(--text) 74%, var(--bg)); --line: color-mix(in srgb, var(--text) 18%, var(--bg)); }
+body.day .tabbar [data-view="list"], body.day .tabbar [data-view="circles"] { display: none; }
+body:not(.day) .tabbar [data-view="log"] { display: none; }
+body.day .tl-n, body:not(.day) .tl-d { display: none; }
+body.day .tabbar button { font-size: .78rem; font-weight: 700; }
+body.day .tabbar .ic { width: 26px; height: 26px; }
+
+/* 上部の帯：時計・残り時間・予算・財布・残り件数 */
+.day-strip { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px 8px; margin-bottom: 12px; box-shadow: var(--shadow); }
+.ds-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ds-now { font-size: 1.7rem; font-weight: 850; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.ds-el { flex: 1; font-size: .95rem; font-weight: 650; }
+.ds-el b { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.ds-nums { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin: 8px 0; }
+.ds-nums > * { display: flex; flex-direction: column; align-items: flex-start; padding: 6px 10px; border-radius: 12px; background: var(--surface2); min-height: 52px; justify-content: center; text-align: left; }
+.ds-nums small { font-size: .74rem; color: var(--muted); font-weight: 650; }
+.ds-nums b { font-size: 1.18rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ds-nums b small { font-size: .8rem; margin-left: 1px; }
+.day-strip .prog { height: 7px; }
+
+/* いま行くサークル */
+.sp.xxl { font-size: 3.4rem; font-weight: 900; line-height: 1; letter-spacing: .02em; }
+.day-card { padding-bottom: 12px; }
+.day-card .cur-top .order { font-size: .95rem; color: var(--text); }
+.dc-space { display: block; margin: 6px 0 2px; text-align: left; }
+.day-card .cur-name { font-size: 1.45rem; margin-bottom: 10px; }
+.day-card .cur-memo { font-size: 1rem; font-weight: 650; }
+.dc-shots { margin: 4px 0 12px; }
+.dc-shot { position: relative; display: block; width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #fff; }
+.dc-shot img { display: block; width: 100%; max-height: 46vh; object-fit: contain; background: #fff; }
+.dc-zoom { position: absolute; right: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 999px; background: rgba(0,0,0,.66); color: #fff; font-size: .8rem; font-weight: 700; }
+.dc-shots .shots { margin-top: 8px; }
+.dc-noshot { font-size: .85rem; color: var(--muted); margin: 0 0 10px; }
+.day-card .item-main { min-height: 60px; }
+.day-card .item .nm, .day-card .item .pr { font-size: 1.1rem; }
+.day-card .item .cb { width: 34px; height: 34px; }
+.dc-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.dc-sub .btn { min-height: 48px; font-size: .92rem; }
+.day-card .cur-links { margin: 10px 0 0; }
+
+/* 完了・売切・あとで・見送りは画面下に固定（親指の届くところ） */
+.day-actions {
+  position: fixed; left: 0; right: 0; bottom: calc(var(--tab-h) + var(--safe-b)); z-index: 25;
+  padding: 10px 12px 10px; background: var(--surface); border-top: 1px solid var(--line);
+  box-shadow: 0 -6px 20px rgba(16, 24, 40, .12);
+}
+.day-actions .btn.xl { min-height: 64px; font-size: 1.2rem; }
+.day-actions .btn-grid3 .btn { min-height: 52px; font-size: .95rem; }
+body.day[data-view="go"] { padding-bottom: calc(var(--tab-h) + var(--safe-b) + 150px); }
+/* 通常の当日タブ：当日モードへの入口 */
+.day-entry { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.de-text { flex: 1 1 220px; display: flex; flex-direction: column; }
+.de-text b { display: inline-flex; align-items: center; gap: 5px; }
+.de-text small { color: var(--muted); font-size: .8rem; }
+.de-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* 記録タブ */
+.log-sum { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.log-sum div { display: flex; flex-direction: column; padding: 8px 10px; border-radius: 12px; background: var(--surface2); }
+.log-sum span { font-size: .78rem; color: var(--muted); font-weight: 650; }
+.log-sum b { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.log-sum b small { font-size: .8rem; }
+.log-btns { margin-bottom: 12px; }
+.log.big { max-height: none; }
+.log.big li { min-height: 56px; font-size: .95rem; }
+.log.big .w { text-align: left; }
+.log.big .c { font-size: 1.05rem; }
+
+/* メニュータブ */
+.menu-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.menu-tile { display: flex; align-items: center; gap: 10px; min-height: 60px; padding: 0 14px; border-radius: 14px; background: var(--surface2); border: 1px solid var(--line); font-weight: 700; text-align: left; }
+.menu-tile .ic { color: var(--accent); flex: none; }
+.day-menu > .btn-grid2 { margin-bottom: 12px; }
+
+/* デモ中の帯。本番と取り違えないよう、しま模様で常に出す */
+.demo-bar {
+  position: sticky; top: calc(var(--top-h) + env(safe-area-inset-top, 0px)); z-index: 29;
+  display: flex; align-items: center; gap: 8px; padding: 6px 12px; min-height: 44px;
+  background: repeating-linear-gradient(135deg, #f59315 0 14px, #e07f00 14px 28px); color: #1b1203; font-weight: 700;
+}
+.demo-bar[hidden] { display: none; }
+.db-l { display: inline-flex; align-items: baseline; gap: 8px; }
+.db-now { font-variant-numeric: tabular-nums; font-size: 1.05rem; font-weight: 850; }
+.db-note { flex: 1; font-size: .74rem; font-weight: 650; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-btn { min-height: 36px; padding: 0 12px; border-radius: 999px; background: rgba(255,255,255,.85); color: #1b1203; font-size: .85rem; font-weight: 800; }
+.db-btn.end { background: #1b1203; color: #fff; }
+.demo-card { border: 2px solid #f59315; }
+body.demo .topbar { border-bottom-color: #f59315; }
+
+@media (min-width: 960px) {
+  .day-actions { bottom: 0; left: 50%; right: auto; transform: translateX(-50%); width: min(880px, 100vw); border-radius: 16px 16px 0 0; border: 1px solid var(--line); border-bottom: 0; }
+  body.day[data-view="go"] { padding-bottom: 170px; }
+  .demo-bar { top: var(--top-h); }
+}
+/* 当日モードの当日タブでは、トーストを固定ボタンの上に出す（ボタンに重ねない） */
+body.day[data-view="go"] .toast { bottom: calc(var(--tab-h) + var(--safe-b) + 146px); }
+@media (min-width: 960px) { body.day[data-view="go"] .toast { bottom: 170px; } }
+/* デモの帯のぶん、地図の高さを縮める（下が切れないように） */
+body.demo .map-view { height: calc(100dvh - var(--top-h) - env(safe-area-inset-top, 0px) - var(--tab-h) - var(--safe-b) - 44px); }
+@media (min-width: 960px) { body.demo .map-view { height: calc(100dvh - var(--top-h) - 44px); } }
+@media (min-width: 960px) { body.day .tabbar button { font-size: .95rem; } body.day .tabbar .ic { width: 22px; height: 22px; } }

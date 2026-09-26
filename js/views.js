@@ -110,9 +110,237 @@
     </div>`;
   };
 
+  // ------------------------------------------------------------------ 当日モード
+  /*
+   * 当日（会場）専用の画面。片手・急いでいる・電波が弱い・明るさがまちまち、を前提に
+   * 「いま行くサークル」だけを大きく出し、完了・売切などのボタンは親指の届く画面下に固定する。
+   * 文字の拡大と高コントラストは CSS（body.day）で行う
+   */
+  V.day = {
+    allOpen: false,   // 「この後」を全部広げているか
+    render(el) {
+      const s = S();
+      const d = s.d();
+      const st = s.stats();
+      const q = s.queue();
+      let html = V.dayStrip(st);
+      if (!d.order.length) {
+        html += emptyState('list', 'まだ計画がありません', '計画を作ってから当日モードを使ってください。',
+          `<button class="btn primary" data-act="dayOff">${U.icon('x')}当日モードを終える</button>`);
+        el.innerHTML = `<div class="go day">${html}</div>`;
+        return;
+      }
+      if (q.current) html += V.dayCard(q.current, q);
+      else {
+        html += `<section class="card done-card">
+          <div class="done-mark">${U.icon('flag')}</div><h3>全部回り終わりました</h3>
+          <p>おつかれさまでした。使った金額は <b>${U.yen(st.spent)}</b> です。</p>
+          <button class="btn lg" data-act="nav" data-view="log">${U.icon('yen')}購入の記録を見る</button>
+        </section>`;
+      }
+      const rest = [...q.todo, ...q.later].filter((x) => x !== q.current);
+      if (rest.length) {
+        const shown = this.allOpen ? rest : rest.slice(0, 5);
+        html += `<section class="card qcard day-next"><h3>この後 <small>${rest.length}件</small>
+            <button class="link-btn" data-act="reroute">${U.icon('route')}ここから組み直す</button></h3>
+          <ol class="qlist">${shown.map((cid, i) => V.qrow(cid, d.entries[cid].status === 'later' ? '後' : i + 2)).join('')}</ol>
+          ${rest.length > 5 ? `<button class="link-btn more" data-act="dayAll">${this.allOpen ? `${U.icon('up', 'sm')}たたむ` : `${U.icon('down', 'sm')}残り${rest.length - 5}件も表示`}</button>` : ''}
+        </section>`;
+      }
+      if (q.finished.length) {
+        const fin = q.finished.map((cid) => d.entries[cid]).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+        html += `<details class="card qcard fin"><summary><h3>終わったところ <small>${fin.length}件</small></h3></summary>
+          <ol class="qlist">${fin.map((e) => V.qrow(e.cid, U.time(e.doneAt) || U.icon('check', 'sm'))).join('')}</ol></details>`;
+      }
+      el.innerHTML = `<div class="go day">${html}</div>`;
+    },
+  };
+
+  /** 当日モードの上部：時計・残り時間・予算・財布・残り件数 */
+  V.dayStrip = (st) => {
+    const s = S();
+    const c = s.clock();
+    const pct = st.total ? Math.round((st.doneCount / st.total) * 100) : 0;
+    return `<section class="day-strip">
+      <div class="ds-top">
+        <b class="ds-now" id="ck-now">${U.clockTime(c.now)}</b>
+        <span class="ds-el" id="ck-el" data-day="1">${dayElapsedText(c)}</span>
+        <button class="link-btn sm" data-act="clockMenu" aria-label="時刻の設定">${U.icon('timer', 'sm')}</button>
+      </div>
+      <div class="ds-nums">
+        <button data-act="nav" data-view="log"><small>${st.budget ? '予算の残り' : '使った金額'}</small><b class="${st.budget && st.left < 0 ? 'neg' : ''}">${U.yen(st.budget ? st.left : st.spent)}</b></button>
+        <button data-act="wallet"><small>財布の現金</small><b class="${st.cashLeft != null && st.cashLeft < 0 ? 'neg' : ''}">${st.cashLeft != null ? U.yen(st.cashLeft) : '未登録'}</b></button>
+        <div><small>残り</small><b>${st.activeCount}<small>件</small></b></div>
+      </div>
+      <div class="prog"><i style="width:${pct}%"></i></div>
+    </section>`;
+  };
+
+  /** 当日モードの時計の右側（短く） */
+  const dayElapsedText = (c) => {
+    if (c.state === 'before') return c.days >= 1 ? `開始まで <b>${c.days}日</b>` : `開始まで <b>${U.span(c.base - c.now)}</b>`;
+    if (c.state === 'after') return c.date ? '終了しました' : '';
+    if (c.state === 'none') return '';
+    return c.left > 0 ? `終了まで <b>${U.span(c.left)}</b>` : `経過 <b>${U.span(c.elapsed)}</b>`;
+  };
+
+  /** 当日モードの「いま行くサークル」カード */
+  V.dayCard = (cid, q) => {
+    const s = S();
+    const d = s.d();
+    const e = d.entries[cid];
+    const c = s.circle(cid) || { ...e.snap, block: (e.snap.space || '?')[0] };
+    const all = [...q.todo, ...q.later];
+    const idx = all.indexOf(cid);
+    const planned = s.entryPlanned(e), spent = s.entrySpent(e);
+    const hasTodo = e.items.some((i) => i.status === 'todo');
+    const near = s.nearby(cid, 3);
+    const Sh = HC.shots;
+    const shots = Sh && Sh.ready ? Sh.list(s.state.eventId, cid) : [];
+    const enter = HC.app.curGuard && Date.now() < HC.app.curGuard ? ' enter' : '';
+    return `<section class="card cur day-card p${e.pri} st-${e.status}${enter}">
+      <div class="cur-top">
+        <span class="order">${idx >= 0 ? `${idx + 1} / ${all.length}` : ''}</span>${V.pri(e.pri)}${V.status(e.status)}
+        ${s.isWall(cid) ? '<span class="tag wall">壁</span>' : ''}
+        <span class="grow"></span>
+        <button class="btn sm" data-act="dayMap">${U.icon('map')}道順</button>
+        <button class="icon-btn" data-act="openCircle" data-cid="${cid}" aria-label="詳細・編集">${U.icon('edit')}</button>
+      </div>
+      <button class="dc-space" data-act="dayMap">${V.space(c, 'xxl')}</button>
+      <div class="cur-name">${esc(c.name)}</div>
+      ${e.memo ? `<div class="cur-memo">${esc(e.memo).replace(/\n/g, '<br>')}</div>` : ''}
+      ${shots.length ? `<div class="dc-shots">
+          <button class="dc-shot" data-act="viewShot" data-id="${esc(shots[0].id)}" data-cid="${esc(cid)}" aria-label="お品書きを大きく見る">
+            <img data-shot="${esc(shots[0].id)}" src="${shots[0].thumb}" alt="お品書き"><span class="dc-zoom">${U.icon('zoomIn', 'sm')}拡大</span></button>
+          ${shots.length > 1 ? `<div class="shots">${shots.slice(1).map((m) => `<button class="shot-thumb" data-act="viewShot" data-id="${esc(m.id)}" data-cid="${esc(cid)}" aria-label="お品書きを開く"><img src="${m.thumb}" alt="お品書き"></button>`).join('')}</div>` : ''}
+        </div>` : (Sh && Sh.ready && !e.noShot ? '<p class="dc-noshot">お品書き画像は登録されていません</p>' : '')}
+      ${e.items.length ? `<ul class="items">${V.itemRows(cid, e)}</ul>`
+        : (s.isPending(e)
+          ? `<p class="cur-pend">${U.icon('clock', 'sm')}買うものは登録されていません。買ったものは下の「追加で買ったもの」から記録できます</p>`
+          : '<p class="muted small">買うものは登録していません</p>')}
+      <div class="dc-sub">
+        <button class="btn" data-act="extraBuy" data-cid="${cid}">${U.icon('plus')}追加で買ったもの</button>
+        <button class="btn" data-act="editMemo" data-cid="${cid}">${U.icon('note')}${e.memo ? 'メモを直す' : 'メモ'}</button>
+      </div>
+      ${V.payReady(planned - spent)}
+      <div class="cur-sum"><span>予定 ${U.yen(planned)}</span><span>支払 <b>${U.yen(spent)}</b></span></div>
+      ${near.length ? `<div class="near"><span class="near-l">${U.icon('compass', 'sm')}この近く</span>
+        ${near.map((x) => {
+          const nc = s.circle(x.cid) || d.entries[x.cid].snap;
+          return `<button class="near-chip" data-act="focus" data-cid="${x.cid}">${V.space(nc)}<span>${esc(nc.name)}</span></button>`;
+        }).join('')}</div>` : ''}
+      <div class="cur-links">${V.links(c, e)}</div>
+      <div class="day-actions">
+        ${hasTodo || !e.items.length
+          ? `<button class="btn primary xl block" data-act="completeAll" data-cid="${cid}">${U.icon('check')}${e.items.length ? `全部買えた${U.icon('right', 'sm')}次へ` : '金額を入れて完了'}</button>`
+          : `<button class="btn primary xl block" data-act="setStatus" data-st="done" data-cid="${cid}">${U.icon('check')}完了${U.icon('right', 'sm')}次へ</button>`}
+        <div class="btn-grid3">
+          <button class="btn" data-act="setStatus" data-st="soldout" data-cid="${cid}">${U.icon('ban')}売り切れ</button>
+          <button class="btn" data-act="setStatus" data-st="later" data-cid="${cid}">${U.icon('clock')}あとで</button>
+          <button class="btn" data-act="setStatus" data-st="skip" data-cid="${cid}">${U.icon('skip')}見送り</button>
+        </div>
+      </div>
+    </section>`;
+  };
+
+  /** 通常モードの当日タブに出す、当日モード・デモへの入口 */
+  V.dayEntry = () => `<section class="card day-entry">
+      <div class="de-text"><b>${U.icon('go', 'sm')}当日モード</b><small>文字とボタンを大きくし、当日に使う画面だけにします。デモでは、記録を残さずに本番どおりの操作を試せます。</small></div>
+      <div class="de-btns">
+        <button class="btn primary" data-act="dayOn">当日モードにする</button>
+        <button class="btn" data-act="demoStart">デモで練習</button>
+      </div>
+    </section>`;
+
+  /** デモ中の帯（画面上部に常に出す） */
+  V.demoBar = () => {
+    const el = U.$('#demo-bar');
+    if (!el) return;
+    const s = S();
+    if (!s.isDemo()) { el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    el.innerHTML = `<span class="db-l"><b>デモ中</b><span class="db-now" id="demo-now">${U.clockTime(s.now())}</span></span>
+      <small class="db-note">記録は終了すると元に戻ります</small>
+      <button class="db-btn" data-act="demoFwd" data-m="10">+10分</button>
+      <button class="db-btn end" data-act="demoEnd">終了</button>`;
+  };
+
+  // ------------------------------------------------------------------ 記録（当日モードのタブ）
+  V.log = {
+    render(el) {
+      const s = S();
+      const st = s.stats();
+      const log = s.log().reverse();
+      el.innerHTML = `<div class="log-view">
+        <section class="card log-sum">
+          <div><span>使った金額</span><b>${U.yen(st.spent)}</b></div>
+          ${st.budget ? `<div><span>予算の残り</span><b class="${st.left < 0 ? 'neg' : ''}">${U.yen(st.left)}</b></div>` : ''}
+          <div><span>財布の現金</span><b class="${st.cashLeft != null && st.cashLeft < 0 ? 'neg' : ''}">${st.cashLeft != null ? U.yen(st.cashLeft) : '未登録'}</b></div>
+          <div><span>買ったもの</span><b>${log.length}<small>件</small></b></div>
+        </section>
+        <div class="btn-grid2 log-btns">
+          <button class="btn lg" data-act="outsideBuy">${U.icon('plus')}サークル外の支出</button>
+          <button class="btn lg" data-act="wallet">${U.icon('wallet')}財布の中身</button>
+        </div>
+        <section class="card">
+          <h3>${U.icon('yen')}購入の記録 <small>新しい順</small></h3>
+          ${log.length ? `<ol class="log big">${log.map((r) => `<li>
+            <span class="t">${U.time(r.t)}</span>
+            ${r.cid ? `<button class="w" data-act="openCircle" data-cid="${esc(r.cid)}">` : '<span class="w">'}<span class="wl">${r.space ? `<b>${esc(r.space)}</b> ` : ''}${esc(r.circle)}</span><small>${esc(r.name)}${r.qty > 1 ? ' ×' + r.qty : ''}${r.planned ? '' : ' ・追加'}${r.pay === 'card' ? ' ・キャッシュレス' : ''}</small>${r.cid ? '</button>' : '</span>'}
+            <span class="c">${U.yen(r.cost)}</span>
+            ${r.xid ? `<button class="icon-btn sm" data-act="removeExtra" data-xid="${r.xid}" aria-label="削除">${U.icon('trash')}</button>` : ''}
+          </li>`).join('')}</ol>` : '<p class="muted">まだ記録はありません。買ったらサークルのカードで「全部買えた」を押すと、ここに並びます。</p>'}
+        </section>
+      </div>`;
+    },
+  };
+
+  /** 当日モードの「メニュー」タブ（設定の代わりに、当日に使うものだけ大きく並べる） */
+  V.dayMenu = (el) => {
+    const s = S();
+    const T = s.times();
+    const demo = s.state.demo;
+    const tile = (act, icon, label, extra = '') => `<button class="menu-tile" data-act="${act}" ${extra}>${U.icon(icon)}<span>${label}</span></button>`;
+    el.innerHTML = `<div class="more-view day-menu">
+      ${demo ? `<section class="card demo-card">
+        <h3>${U.icon('timer')}デモ中 <small>時計は ${esc(U.md(s.now()))} ${esc(U.time(s.now()))}</small></h3>
+        <p class="small">デモで付けた記録と財布の変化は、終了すると始める前の状態に戻ります。デモ中は同期を止めています。</p>
+        <div class="btn-grid2">
+          <button class="btn" data-act="demoFwd" data-m="10">+10分 進める</button>
+          <button class="btn" data-act="demoFwd" data-m="60">+1時間 進める</button>
+          <button class="btn" data-act="demoRestart">最初からやり直す</button>
+          <button class="btn primary" data-act="demoEnd">デモを終了する</button>
+        </div>
+      </section>` : ''}
+      <section class="card">
+        <h3>${U.icon('go')}当日に使うもの</h3>
+        <div class="menu-tiles">
+          ${tile('wallet', 'wallet', '財布の中身')}
+          ${tile('outsideBuy', 'yen', 'サークル外の支出')}
+          ${tile('reroute', 'route', 'ここから組み直す')}
+          ${T.schedule.length ? tile('schedule', 'cal', '進行表') : ''}
+          ${tile('clockMenu', 'timer', '時刻の設定')}
+          ${tile('nav', 'list', '計画のリスト', 'data-view="list"')}
+          ${tile('nav', 'search', 'サークルを探す', 'data-view="circles"')}
+          ${HC.sync.configured() ? tile('shotsPull', 'download', 'お品書き画像を受け取る') : ''}
+        </div>
+      </section>
+      ${demo ? '' : `<section class="card">
+        <h3>${U.icon('timer')}デモで練習</h3>
+        <p class="small">いまの計画のまま、時計を開催日の開始時刻に合わせて本番どおりに操作できます。付けた記録は、終了すると元に戻ります。</p>
+        <button class="btn block" data-act="demoStart">デモを始める</button>
+      </section>`}
+      <div class="btn-grid2">
+        <button class="btn lg" data-act="fullSettings">${U.icon('more')}すべての設定</button>
+        <button class="btn lg danger ghost" data-act="dayOff">${U.icon('x')}当日モードを終える</button>
+      </div>
+    </div>`;
+  };
+
   // ------------------------------------------------------------------ 当日（ナビ）
   V.go = {
     render(el) {
+      if (S().state.settings.dayMode) return V.day.render(el);
       const s = S();
       const d = s.d();
       const st = s.stats();
@@ -127,6 +355,7 @@
         return;
       }
 
+      html += V.dayEntry();
       // 開催前（と、まだ1件も回っていない間）は準備の抜けを出す
       const ck = s.clock();
       if (ck.state === 'before' || ck.state === 'none' || !st.doneCount) html += V.prep(ck);
@@ -264,12 +493,14 @@
   };
   /** 1秒ごとの更新（文字の差し替えだけ） */
   V.tickClock = () => {
+    const dn = U.$('#demo-now');
+    if (dn) dn.textContent = U.clockTime(S().now());
     const el = U.$('#ck-now');
-    if (!el) return false;
+    if (!el) return !!dn;
     const c = S().clock();
     el.textContent = U.clockTime(c.now);
     const e2 = U.$('#ck-el');
-    if (e2) e2.innerHTML = clockElapsedText(c);
+    if (e2) e2.innerHTML = e2.dataset.day ? dayElapsedText(c) : clockElapsedText(c);
     return true;
   };
 
@@ -308,7 +539,12 @@
     const near = s.nearby(cid, 3);
     const planned = s.entryPlanned(e), spent = s.entrySpent(e);
     const hasTodo = e.items.some((i) => i.status === 'todo');
-    const items = e.items.map((i) => `
+    const items = V.itemRows(cid, e);
+    return V.curCardBody(cid, q, e, c, idx, near, planned, spent, hasTodo, items);
+  };
+
+  /** 当日カードの品物の行（通常・当日モード共通） */
+  V.itemRows = (cid, e) => e.items.map((i) => `
       <li class="item it-${i.status}${i.planned === false ? ' extra' : ''}">
         <button class="item-main" data-act="toggleItem" data-cid="${cid}" data-iid="${i.id}">
           <span class="cb">${i.status === 'bought' ? U.icon('check') : i.status === 'soldout' ? '売' : i.status === 'skip' ? '－' : ''}</span>
@@ -317,6 +553,10 @@
         </button>
         <button class="icon-btn" data-act="itemMenu" data-cid="${cid}" data-iid="${i.id}" aria-label="この品物の操作">${U.icon('more')}</button>
       </li>`).join('');
+
+  V.curCardBody = (cid, q, e, c, idx, near, planned, spent, hasTodo, items) => {
+    const s = S();
+    const d = s.d();
     // 直前に完了して切り替わったところなら、しばらく押せないようにする（連打の保険）
     const enter = HC.app.curGuard && Date.now() < HC.app.curGuard ? ' enter' : '';
     return `<section class="card cur p${e.pri} st-${e.status}${enter}">
@@ -752,6 +992,7 @@
             <button class="icon-btn solid" data-act="mapImage" title="公式配置図に切替">${U.icon('image')}</button>
           </div>
           <div class="map-legend"><span class="lg p1">必須</span><span class="lg p2">優先</span><span class="lg p3">通常</span><span class="lg p4">余裕</span><span class="lg done">済</span><span class="lg next">次</span></div>
+          <button class="route-off" id="route-off" data-act="mapRoute" hidden>${U.icon('route', 'sm')}ルート線は非表示です。押すと表示します</button>
           <div class="map-seg" id="mapseg" hidden></div>
           <div class="map-card" id="mapcard" hidden></div>
         </div>`;
@@ -764,7 +1005,9 @@
       } else {
         this.inst.paint();
       }
-      U.$$('[data-act="mapRoute"]', el).forEach((b) => b.classList.toggle('on', s.state.settings.showRoute));
+      U.$$('.map-ctrl [data-act="mapRoute"]', el).forEach((b) => b.classList.toggle('on', s.state.settings.showRoute));
+      const off = U.$('#route-off', el);
+      if (off) off.hidden = !!s.state.settings.showRoute || !s.queue().todo.length && !s.queue().later.length;
       U.$$('[data-act="mapImage"]', el).forEach((b) => {
         b.classList.toggle('on', s.state.settings.mapMode === 'image');
         b.hidden = !s.ev().layout.image;
@@ -800,7 +1043,9 @@
 
   // ------------------------------------------------------------------ その他（設定・データ・記録）
   V.more = {
+    full: false,   // 当日モードで「すべての設定」を開いているか
     render(el) {
+      if (S().state.settings.dayMode && !this.full) return V.dayMenu(el);
       const s = S();
       const ev = s.ev();
       const d = s.d();
@@ -813,6 +1058,15 @@
       const custom = s.state.customEvents[ev.id];
 
       el.innerHTML = `<div class="more-view">
+        ${set.dayMode ? `<div class="btn-row"><button class="btn" data-act="fullSettingsOff">${U.icon('up')}当日モードのメニューに戻る</button></div>` : ''}
+        <section class="card">
+          <h3>${U.icon('go')}当日モード・デモ</h3>
+          <p class="muted small">当日モードは、文字とボタンを大きくし、当日に使う画面（いま・地図・記録・メニュー）だけにします。開催日にアプリを開くと、切り替えるかどうかを聞きます。デモでは、時計を開催日の開始時刻に合わせて本番どおりに操作でき、付けた記録は終了すると元に戻ります。</p>
+          <div class="btn-row wrap">
+            ${set.dayMode ? `<button class="btn" data-act="dayOff">${U.icon('x')}当日モードを終える</button>` : `<button class="btn primary" data-act="dayOn">${U.icon('go')}当日モードにする</button>`}
+            ${s.isDemo() ? `<button class="btn" data-act="demoEnd">デモを終了する</button>` : `<button class="btn" data-act="demoStart">${U.icon('timer')}デモで練習</button>`}
+          </div>
+        </section>
         <section class="card">
           <h3>${U.icon('cal')}イベント</h3>
           <div class="ev-cur"><b>${esc(ev.name)}</b>${ev.date || d.date ? `<span>${esc(ev.date || d.date)}</span>` : ''}<small>${ev.circles.length}サークル${ev.spec ? '' : '・簡易マップ'}</small></div>

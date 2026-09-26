@@ -40,6 +40,11 @@
     if (Number.isNaN(d.getTime())) return '';
     return `${d.getMonth() + 1}月${d.getDate()}日(${WD[d.getDay()]})`;
   };
+  /** 端末の時刻での今日の日付 'YYYY-MM-DD'（toISOString は UTC なので、日本の朝9時前は前日になってしまう） */
+  U.today = (ts = Date.now()) => {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${U.pad2(d.getMonth() + 1)}-${U.pad2(d.getDate())}`;
+  };
   /** 秒まで出す時計表示 */
   U.clockTime = (ts) => {
     const d = new Date(ts);

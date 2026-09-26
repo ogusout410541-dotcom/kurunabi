@@ -92,6 +92,7 @@
   Sy.push = async (opt = {}) => {
     const c = conf();
     if (!Sy.configured()) return { skipped: 'not-configured' };
+    if (S().isDemo()) return { skipped: 'demo' };   // デモの記録は送らない
     if (!navigator.onLine) { c.dirty = true; S().save(); return { skipped: 'offline' }; }
     if (Sy.state.busy) return { skipped: 'busy' };
     Sy.state.busy = true;
@@ -122,6 +123,7 @@
   Sy.pull = async (opt = {}) => {
     const c = conf();
     if (!Sy.configured()) return { skipped: 'not-configured' };
+    if (S().isDemo()) return { skipped: 'demo' };   // デモ中に取り込むと練習の記録が上書きされる
     if (!navigator.onLine) return { skipped: 'offline' };
     if (Sy.state.busy) return { skipped: 'busy' };
     Sy.state.busy = true;
@@ -168,7 +170,7 @@
   }, PUSH_WAIT);
 
   U.on('change', (m) => {
-    if (applying || !Sy.configured()) return;
+    if (applying || !Sy.configured() || S().isDemo()) return;
     if (m && m.sync) return;
     conf().dirty = true;
     schedule();

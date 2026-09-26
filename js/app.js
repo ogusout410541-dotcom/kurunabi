@@ -8,15 +8,16 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '1.2.3';
+  HC.VERSION = '1.3.0';
 
-  const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
+  const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
 
   // ------------------------------------------------------------------ 画面
   app.show = (view, opt = {}) => {
     if (!VIEWS.includes(view)) view = 'go';
     const changed = app.view !== view;
+    if (changed && view === 'more' && V.more.full) { V.more.full = false; app.dirty.add('more'); }
     app.view = view;
     VIEWS.forEach((v) => {
       U.$('#v-' + v).hidden = v !== view;
@@ -28,17 +29,20 @@
     try { localStorage.setItem('kurunavi.view', view); } catch (_) { /* noop */ }
     updateWake();
     app.clockTick();
+    if (view === 'map' && !opt.noLeg) autoLeg();
   };
 
   const renderView = (v) => {
     const el = U.$('#v-' + v);
     V[v].render(el);
     app.dirty.delete(v);
+    if (v === 'go') hydrateShots(el);
     if (v === 'more') app.paintVersion();   // 「いま動いている版／保存されている版」を後から埋める
   };
 
   app.refresh = () => {
     V.header();
+    V.demoBar();
     if (app.noRender) {   // 金種の入力中：いま出ている画面は作り直さず、数字だけ差し替える
       VIEWS.forEach((v) => app.dirty.add(v));
       app.dirty.delete(app.view);
@@ -76,7 +80,9 @@
     const root = document.documentElement;
     if (set.theme === 'auto') root.removeAttribute('data-theme');
     else root.dataset.theme = set.theme;
-    root.style.setProperty('--fs', String(set.font || 1));
+    root.style.setProperty('--fs', String((set.font || 1) * (set.dayMode ? 1.12 : 1)));
+    document.body.classList.toggle('day', !!set.dayMode);
+    document.body.classList.toggle('demo', S.isDemo());
     const dark = set.theme === 'dark' || (set.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
     const meta = U.$('meta[name="theme-color"]');
     if (meta) meta.content = dark ? '#12151c' : '#ffffff';
@@ -85,7 +91,7 @@
   // ------------------------------------------------------------------ 画面を消さない
   let wake = null;
   const updateWake = async () => {
-    const want = S.state.settings.wakeLock && (app.view === 'go' || app.view === 'map') && document.visibilityState === 'visible';
+    const want = S.state.settings.wakeLock && (S.state.settings.dayMode || app.view === 'go' || app.view === 'map') && document.visibilityState === 'visible';
     if (want && !wake && 'wakeLock' in navigator) {
       try {
         wake = await navigator.wakeLock.request('screen');
@@ -268,7 +274,7 @@
         onOk: (r) => {
           S.mutate('購入完了', (d) => {
             const en = d.entries[cid];
-            const now = Date.now();
+            const now = S.now();
             en.items.push(S.newItem(r.name || '購入品', r.unit, r.qty, { status: 'bought', paid: r.amount, pay: r.pay, planned: false, t: now }));
             en.status = 'done';
             en.doneAt = now;
@@ -291,7 +297,7 @@
         onOk: (r) => {
           S.mutate('購入完了', (d) => {
             const en = d.entries[cid];
-            const now = Date.now();
+            const now = S.now();
             let first = true;
             en.items.forEach((i) => {
               if (i.status !== 'todo') return;
@@ -390,7 +396,7 @@
 
   A.showOnMap = (ds) => {
     UI.closeAll();
-    app.show('map');
+    app.show('map', { noLeg: true });
     const go = () => {
       const inst = ensureMap();
       if (!inst || !inst.L) return setTimeout(go, 50);
@@ -910,7 +916,7 @@
 
   // ---- 当日の時計（現在時刻・経過）
   A.clockStart = () => {
-    S.mutate('経過の計測開始', (d) => { d.startedAt = Date.now(); });
+    S.mutate('経過の計測開始', (d) => { d.startedAt = S.now(); });
     UI.toast('ここからの経過時間を表示します');
   };
 
@@ -957,7 +963,7 @@
   A.schedule = () => {
     const T = S.times();
     const c = S.clock();
-    const now = new Date();
+    const now = new Date(S.now());   // デモ中はデモの時計で「いまここ」を出す
     const hhmm = U.pad2(now.getHours()) + ':' + U.pad2(now.getMinutes());
     // 開催日が別の日なら「いまここ」は出さない（当日だけ色を付ける）
     const sameDay = !c.date || (c.state !== 'before' && c.state !== 'after') || c.days === 0;
@@ -982,9 +988,9 @@
   // 1秒ごとに時計の文字だけ差し替える（当日タブを見ている間だけ動かす）
   let clockTimer = null;
   const clockTick = () => {
-    const want = app.view === 'go' && document.visibilityState === 'visible';
+    const want = (app.view === 'go' || S.isDemo()) && document.visibilityState === 'visible';
     if (want && !clockTimer) {
-      clockTimer = setInterval(() => { if (!V.tickClock()) stopClock(); }, 1000);
+      clockTimer = setInterval(() => { if (!V.tickClock() && !S.isDemo()) stopClock(); }, 1000);
       V.tickClock();
     } else if (!want) stopClock();
   };
@@ -1129,11 +1135,16 @@
   A.mapSegOff = () => {
     const inst = ensureMap();
     if (!inst) return;
+    app.legFor = S.queue().current;   // 全体に戻したら、次の目的地が変わるまで区間表示に戻さない
     inst.clearLeg();
     V.mapSeg();
   };
 
-  A.mapRoute = () => { S.setSetting('showRoute', !S.state.settings.showRoute); renderView('map'); };
+  A.mapRoute = () => {
+    S.setSetting('showRoute', !S.state.settings.showRoute);
+    renderView('map');
+    UI.toast(S.state.settings.showRoute ? 'ルート線を表示しました' : 'ルート線を非表示にしました（もう一度押すと表示）');
+  };
   A.mapImage = () => {
     S.setSetting('mapMode', S.state.settings.mapMode === 'image' ? 'simple' : 'image');
     const inst = ensureMap();
@@ -1152,6 +1163,133 @@
     if (ds.k === 'mapOrient' && V.map.inst) V.map.inst.build();
     applyLook();
     renderView('more');
+  };
+
+  // ---- 当日モード・デモ
+  /** 当日モードで地図を開いたら、いま向かう区間だけを大きく出す（次の目的地が変わるたびに1回） */
+  const autoLeg = (force) => {
+    if (!S.state.settings.dayMode) return;
+    const cur = S.queue().current;
+    if (!cur || (!force && app.legFor === cur)) return;
+    const go = (n = 0) => {
+      const inst = ensureMap();
+      if (!inst || !inst.L) { if (n < 40) setTimeout(() => go(n + 1), 50); return; }
+      const legs = inst.legs();
+      const i = legs.findIndex((l) => l.cid === cur);
+      if (i < 0) return;
+      app.legFor = cur;
+      inst.showLeg(i);
+      V.mapSeg();
+    };
+    requestAnimationFrame(() => go());
+  };
+
+  A.dayMap = () => { app.show('map', { noLeg: true }); autoLeg(true); };
+  A.dayAll = () => { V.day.allOpen = !V.day.allOpen; renderView('go'); };
+
+  const setDay = (on) => {
+    S.setSetting('dayMode', on);
+    applyLook();
+    VIEWS.forEach((v) => app.dirty.add(v));
+    app.show(on ? 'go' : (app.view === 'log' ? 'go' : app.view));
+    renderView(app.view);
+    updateWake();
+  };
+  A.dayOn = () => {
+    setDay(true);
+    UI.toast('当日モードにしました。終えるときは「メニュー」から', { ms: 4000 });
+  };
+  A.dayOff = async () => {
+    if (S.isDemo()) {
+      if (!(await UI.confirm('デモ中です。当日モードを終えると、デモも終了して記録が元に戻ります。', { ok: '終える' }))) return;
+      S.endDemo();
+    }
+    setDay(false);
+    UI.toast('通常の画面に戻しました');
+  };
+  A.fullSettings = () => { V.more.full = true; renderView('more'); window.scrollTo(0, 0); };
+  A.fullSettingsOff = () => { V.more.full = false; renderView('more'); window.scrollTo(0, 0); };
+
+  A.demoStart = async () => {
+    if (S.isDemo()) return UI.toast('すでにデモ中です');
+    if (!Object.keys(S.d().entries).length) return UI.toast('先に計画を作ってください', { error: true });
+    const today = U.today();
+    const warn = S.eventDate() === today ? '\n\n今日は開催日です。本番の記録を付ける前に、必ずデモを終了してください。' : '';
+    if (!(await UI.confirm(`いまの計画のまま、本番どおりに操作を試します。\n・時計は開催日の開始時刻から進みます（「+10分」で早送り）\n・デモ中に付けた記録や財布の変化は、終了すると元に戻ります\n・デモ中は同期を止めます${warn}`, { ok: 'デモを始める', title: 'デモで練習' }))) return;
+    S.startDemo();
+    applyLook();
+    V.demoBar();
+    VIEWS.forEach((v) => app.dirty.add(v));
+    app.show('go');
+    app.clockTick();
+    updateWake();
+    UI.toast('デモを始めました。上の帯の「終了」で元に戻ります', { ms: 5000 });
+  };
+  A.demoEnd = async () => {
+    if (!S.isDemo()) return;
+    if (!(await UI.confirm('デモを終了して、始める前の計画と財布に戻します。デモで付けた記録は消えます。', { ok: '終了する' }))) return;
+    S.endDemo();
+    applyLook();
+    V.demoBar();
+    VIEWS.forEach((v) => app.dirty.add(v));
+    app.show(S.state.settings.dayMode ? 'go' : 'go');
+    app.clockTick();
+    UI.toast('デモを終了して、元の状態に戻しました');
+    // 止めていたあいだに溜まった変更があれば送る
+    if (HC.sync.configured() && S.state.sync.dirty) HC.sync.push().catch(() => {});
+  };
+  A.demoRestart = async () => {
+    if (!S.isDemo()) return;
+    if (!(await UI.confirm('デモの記録を消して、開始時刻からやり直します。', { ok: 'やり直す' }))) return;
+    S.endDemo();
+    S.startDemo();
+    applyLook();
+    V.demoBar();
+    app.show('go');
+    UI.toast('最初からやり直します');
+  };
+  A.demoFwd = (ds) => {
+    S.demoForward((+ds.m || 10) * 60000);
+    V.tickClock();
+    UI.toast(`時計を${+ds.m >= 60 ? (+ds.m / 60) + '時間' : (+ds.m || 10) + '分'}進めました（${U.time(S.now())}）`);
+  };
+
+  /** 当日カードのお品書きは、まずサムネで描いてから本体の画像に差し替える（大きく出してもぼやけないように） */
+  const shotUrls = new Map();
+  const hydrateShots = (el) => {
+    if (!HC.shots || !HC.shots.ready) return;
+    U.$$('img[data-shot]', el).forEach(async (img) => {
+      const id = img.dataset.shot;
+      let url = shotUrls.get(id);
+      if (!url) {
+        url = await HC.shots.url(id).catch(() => null);
+        if (!url) return;
+        shotUrls.set(id, url);
+      }
+      if (img.isConnected) img.src = url;
+    });
+  };
+
+  /** 開催日に開いたら当日モードを勧める（1日1回）。デモが残っていたら終了を勧める */
+  const dayPrompt = async () => {
+    const today = U.today();
+    if (S.eventDate() !== today || !Object.keys(S.d().entries).length) return;
+    if (S.isDemo()) {
+      if (await UI.confirm('デモが続いています。今日は開催日なので、デモを終了して本番の状態に戻しますか？', { ok: 'デモを終了する', title: '本番の前に' })) {
+        S.endDemo();
+        applyLook();
+        V.demoBar();
+        VIEWS.forEach((v) => app.dirty.add(v));
+        app.show('go');
+        UI.toast('デモを終了しました');
+      }
+      return;
+    }
+    let asked = '';
+    try { asked = localStorage.getItem('kurunavi.dayAsk') || ''; } catch (_) { /* noop */ }
+    if (S.state.settings.dayMode || asked === today) return;
+    try { localStorage.setItem('kurunavi.dayAsk', today); } catch (_) { /* noop */ }
+    if (await UI.confirm('今日は開催日です。当日モード（文字とボタンが大きく、当日に使う画面だけ）にしますか？', { ok: '当日モードにする', cancel: 'このまま', title: '当日モード' })) A.dayOn();
   };
 
   // ---- 財布（金種）
@@ -1380,7 +1518,11 @@
   };
   const appUrl = () => location.href.split('#')[0];
 
+  /** デモ中は計画の受け渡しをしない（デモの記録が混ざる／終了時に読み込んだ計画が消えるため） */
+  const demoBlock = () => { if (!S.isDemo()) return false; UI.toast('デモ中はできません。デモを終了してから行ってください', { error: true }); return true; };
+
   A.shareLink = async () => {
+    if (demoBlock()) return;
     const packed = await U.pack(S.exportPlan(S.state.eventId, { slim: true }));
     const url = `${appUrl()}#import=${packed}`;
     const isFile = location.protocol === 'file:';
@@ -1405,11 +1547,13 @@
   };
 
   A.exportPlan = () => {
+    if (demoBlock()) return;
     const ev = S.ev();
     U.download(`kurunavi_${ev.short}_${stamp()}.json`, JSON.stringify(S.exportPlan()));
     UI.toast('書き出しました');
   };
   A.exportAll = () => {
+    if (demoBlock()) return;
     U.download(`kurunavi_backup_${stamp()}.json`, JSON.stringify(S.exportAll()));
     UI.toast('全データを書き出しました');
   };
@@ -1418,6 +1562,7 @@
   };
 
   const importObj = async (obj) => {
+    if (demoBlock()) return;
     // 同期の設定（QRで渡されたもの）は、読み込んだらそのまま取り込みに行く
     if (obj && obj.kind === 'sync') {
       if (!(await UI.confirm('同期の設定を受け取りました。この端末でも同じ合言葉で同期しますか？', { ok: '設定する' }))) return;
@@ -1689,13 +1834,17 @@
 
     U.on('change', () => app.refresh());
     U.on('settings', (k) => {
+      if (k === 'dayMode') applyLook();
       if (k === 'showRoute' || k === 'mapMode') V.map.inst && V.map.inst.paint();
     });
 
     let initial = 'go';
     try { initial = localStorage.getItem('kurunavi.view') || (Object.keys(S.d().entries).length ? 'go' : 'circles'); } catch (_) { /* noop */ }
     V.header();
+    V.demoBar();
+    if (S.state.settings.dayMode && (initial === 'list' || initial === 'circles')) initial = 'go';
     app.show(initial);
+    setTimeout(() => dayPrompt(), 600);
 
     // 共有リンクからの読み込み
     const m = location.hash.match(/^#import=([A-Za-z0-9_-]+)/);

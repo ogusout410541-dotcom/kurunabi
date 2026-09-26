@@ -28,7 +28,7 @@ hall_holo12_配置図.pdf   公式配置図の原本（ベクター。座標の�
 js/store.js           HC.store  : 状態・永続化・集計・undo・入出力。データ変更はここ経由のみ
 js/ui.js              HC.ui     : シート（スマホ=ボトムシート / PC=右パネル）、トースト、テンキー、確認
 js/map.js             HC.map    : SVG 配置図（色分け・番号・ルート線・ピンチ/パン・縦持ちで90°回転）
-js/views.js           HC.views  : 各画面の HTML 生成（go/list/map/circles/more ＋ サークル詳細シート）
+js/views.js           HC.views  : 各画面の HTML 生成（go/list/map/log/circles/more ＋ サークル詳細シート ＋ 当日モードの画面 V.day/V.dayMenu）
 js/app.js             HC.app / HC.actions : 起動、画面切替、data-act のハンドラ、入力(change)処理、ドラッグ並べ替え
 sw.js                 オフラインキャッシュ（リリース時は CACHE のバージョンを上げる）
                       画面から 'status' / 'refresh' を postMessage で問い合わせできる（設定のオフライン欄）
@@ -47,7 +47,8 @@ tools/gas/コード.gs    同期用の Google Apps Script（貼り付けてウ�
   data: { [eventId]: EventData },      // イベントごとの利用者データ
   favorites: { 'tw:<id小文字>' | 'nm:<正規化名>': { name, tw, t } },   // イベントをまたいで有効
   layouts: { [eventId]: layoutSpec },  // 配置図エディタで作ったもの（同梱の配置図より優先）
-  settings: { theme, font, haptics, wakeLock, mapMode:'simple'|'image', mapOrient, routeMode:'must'|'tier'|'short', wallFirst(壁を先に回る), showRoute, defaultPay:'cash'|'card' },
+  settings: { theme, font, haptics, wakeLock, mapMode:'simple'|'image', mapOrient, routeMode:'must'|'tier'|'short', wallFirst(壁を先に回る), showRoute, defaultPay:'cash'|'card', dayMode(当日モード) },
+  demo: null | { eventId, snap, offset, day, syncDirty, t },   // デモ中の控え（下の「当日モード・デモモード」）
 }
 EventData = { budget, cash（財布の現金。cashBreak があるとその合計で上書きされる）, cashBreak: {[金種]: 枚数}, reserve,
               order: [cid], entries: {[cid]: Entry}, extras: [Extra],
@@ -181,6 +182,27 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
   壁は列が長くなりやすいので、必須の壁 → 残りの壁 → ふつうの島、の順で回る
 - **区間ナビ**：`V.map.inst.legs()` が「入口→A、A→B…」の区間一覧を返し、`showLeg(i)` でその区間だけ太く描いて拡大する
   （ほかの線は薄く残す）。`clearLeg()` で全体表示に戻る。画面側は `V.mapSeg()` の `◀ 1/7 ▶ 全体` バー
+- **ルート線の太さ**は `vector-effect: non-scaling-stroke` で画面上の px に固定し、下に縁取り（`.route-casing`）を敷く。
+  座標系の太さのままだと、スマホ縦持ちの全体表示で約1.3pxまで細くなり「線が出ない」と見えていた（1.3.0）。
+  非表示にしているときは地図の下に「ルート線は非表示です。押すと表示します」を出す（ボタンを押した自覚がないまま消えていることがあるため）
+
+## 当日モード・デモモード（1.3.0）
+
+- **当日モード**（`settings.dayMode`。端末ごと＝同期しない）：`body.day` で文字を 1.12 倍（`applyLook` が `--fs` に掛ける）、
+  薄い灰色の文字と罫線を濃くする。タブは「いま・マップ・記録・メニュー」だけ（リスト・サークルはメニューの奥）。
+  - 「いま」＝`V.day.render`：上の帯（`V.dayStrip`：時計・残り時間・予算の残り・財布・残り件数）＋ `V.dayCard`（大きなスペース番号、
+    お品書き画像を大きく表示＝まずサムネで描いて `hydrateShots` が本体の Blob URL に差し替える、品物、メモ）。
+    完了・売切・あとで・見送りは `.day-actions` で**画面下に固定**（親指の届くところ）。`.card.cur` の中にあるので連打の保険もそのまま効く
+  - 「記録」＝`V.log`（使った金額・予算・財布・購入の記録を新しい順）、「メニュー」＝`V.dayMenu`（当日に使う操作のタイル。「すべての設定」で通常の設定へ）
+  - 当日モードで地図を開くと、いま向かう区間だけを出す（`autoLeg`。次の目的地が変わるたびに1回。「全体」を押したらその目的地の間は戻さない）
+  - 開催日にアプリを開くと切り替えを聞く（`dayPrompt`。1日1回、`localStorage['kurunavi.dayAsk']`）。画面を消さない設定はどの画面でも効く
+- **デモモード**（`state.demo = { eventId, snap, offset, day, syncDirty, t }`）：自宅で本番どおりに練習する。
+  `S.startDemo()` がいまのイベントのデータを JSON で控え、記録をまっさらにし（`resetRecords`）、時計を開催日の開始時刻に合わせる。
+  **時刻は `S.now()`**（デモ中は `offset` だけずれる）。購入・完了の時刻や `S.clock()` はこれを使う。`S.endDemo()` で控えを書き戻す
+  （終了後のデータは開始前とバイト単位で一致することを確認済み）。デモ中は：同期の送受信を止める（`sync.js` が `skipped:'demo'`）、
+  共有リンク・書き出し・読み込みを断る（`demoBlock`）、画面上部にしま模様の帯（`V.demoBar`、+10分・終了）を常に出す。
+  開催日にデモが残っていたら起動時に終了を促す
+- 今日の日付は **`U.today()`**（端末の時刻）。`toISOString()` は UTC なので、日本の朝9時前は前日になる。日付の比較に使わないこと
 
 ## 共有・入出力
 
@@ -240,7 +262,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## 版の更新（ここを間違えると「いつまでも古い版のまま」になる）
 
-- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.2.3）
+- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.3.0）
 - **SW の install はブラウザのHTTPキャッシュを避けて取り込む**（`freshRequests()`＝`cache:'reload'` ＋ `?v=CACHE`）。
   GitHub Pages は `Cache-Control: max-age=600` を返すので、ふつうに `cache.addAll(ASSETS)` すると
   **新しい版のキャッシュに古いファイルが入り**、プッシュしても画面がいつまでも古いままになる。2026-09-24 に実際にこれで詰まった
@@ -296,6 +318,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 - [x] 画面文言の見直し（「買うもの」まわりは「登録」に統一）・共有リンクの読み込みでルートの「作ったあとに追加」が誤って出るのを修正（1.2.1）
 - [x] お品書き画像が未登録のサークルを見える化（リストのカード・絞り込み・行の印・詳細の注記・準備欄。「登録しない」で外せる）（1.2.2）
 - [x] まとめカード（お品書き待ち・画像なし）の「残り◯件も表示」をカードの中で広げる形に（以前は下の一覧を絞り込むだけで、押しても変化が見えなかった）（1.2.3）
+- [x] 当日モード（大きな文字・画面下に固定した操作ボタン・当日に使うタブだけ・区間の道順）とデモモード（開始時刻からの時計・終了で元に戻る・同期停止）。ルート線が細くて見えない問題の修正、取り消し後に価格のあたりが残る問題の修正（1.3.0）
 - [ ] サークル画像の取り込み：URLをもらってから。**目的のサークルのみ**・**アプリに同梱**（`data/cuts/`）で本人合意済み（2026-09-24）。
       CORSのため端末側での直接取得は不可なので、こちらで取得→長辺800pxのWebPに縮小→同梱→一覧・詳細・当日カードに表示する
 - 運用方針（2026-09-24 本人確認）：スマホは **GitHub Pages に公開**して開く／当日の記録は**チェックだけ**が基本（予定額で自動計上、違ったときだけ金額を直す）

@@ -39,6 +39,7 @@
     wallFirst: true,   // 壁（Aブロックなど列が長くなる席）を先に回る
     showRoute: true,
     defaultPay: 'cash',
+    dayMode: false,    // 当日モード（文字大きめ・当日に使う画面だけ）。端末ごと
   });
 
   // PCとスマホの同期（js/sync.js）。url と phrase が入っていれば動く
@@ -61,6 +62,7 @@
     layouts: {},   // イベントIDごとの配置図（エディタで作ったもの。同梱の配置図より優先）
     sync: defaultSync(),
     settings: defaultSettings(),
+    demo: null,    // デモ中の控え { eventId, snap(始める前のデータ), offset(時計のずれ), day, syncDirty, t }
   });
 
   const defaultData = () => ({
@@ -84,6 +86,10 @@
   });
 
   S.state = defaultState();
+
+  /** いまの時刻。デモ中は開催日の開始時刻から進む時計になる */
+  S.now = () => Date.now() + (S.state.demo ? S.state.demo.offset || 0 : 0);
+  S.isDemo = () => !!S.state.demo;
 
   // ------------------------------------------------------------------ 永続化
   S.load = () => {
@@ -286,6 +292,7 @@
     if (!S.canUndo()) return null;
     const u = undoStack.pop();
     S.state.data[u.eventId] = JSON.parse(u.json);
+    S._hints = null;   // 価格のあたりも作り直す（取り消した品物の金額が残らないように）
     S.invalidate(u.eventId);
     S.save();
     U.emit('change', { undo: true });
@@ -521,7 +528,7 @@
       const e = d.entries[cid];
       if (!e) return;
       e.status = status;
-      const now = Date.now();
+      const now = S.now();
       if (status === 'done') {
         e.doneAt = now;
       } else if (status === 'soldout') {
@@ -548,7 +555,7 @@
     S.mutate('購入完了', (d) => {
       const e = d.entries[cid];
       if (!e) return;
-      const now = Date.now();
+      const now = S.now();
       e.items.forEach((i) => {
         if (i.status === 'todo') { i.status = 'bought'; i.paid = null; i.pay = pay || S.state.settings.defaultPay; i.t = now; }
       });
@@ -563,7 +570,7 @@
       const it = e && e.items.find((i) => i.id === iid);
       if (!it) return;
       if (it.status === 'bought') { it.status = 'todo'; it.t = null; it.paid = null; }
-      else { it.status = 'bought'; it.t = Date.now(); it.pay = pay || it.pay || S.state.settings.defaultPay; }
+      else { it.status = 'bought'; it.t = S.now(); it.pay = pay || it.pay || S.state.settings.defaultPay; }
     });
 
   S.setItemStatus = (cid, iid, status) =>
@@ -577,7 +584,7 @@
   /** 実際に払った額の記録（アイテム確定 or 追加購入） */
   S.recordPurchase = (cid, { iid, name, amount, qty, pay }) =>
     S.mutate(iid ? '金額を修正' : '追加購入', (d) => {
-      const now = Date.now();
+      const now = S.now();
       if (!cid) {
         d.extras.push({ id: U.uid(), name: name || 'その他', cost: amount, qty: qty || 1, pay, t: now });
         return;
@@ -832,7 +839,7 @@
     return ev.date || S.d(id).date || '';
   };
 
-  S.clock = (now = Date.now()) => {
+  S.clock = (now = S.now()) => {
     const d = S.d();
     const T = S.times();
     const dateStr = S.eventDate();
@@ -1164,21 +1171,79 @@
   };
 
   /** 当日記録だけリセット（計画は残す）— リハーサル後などに */
-  S.resetDay = () =>
-    S.mutate('当日記録リセット', (d) => {
-      Object.values(d.entries).forEach((e) => {
-        e.status = 'todo';
-        e.doneAt = null;
-        e.items = e.items.filter((i) => i.planned !== false);
-        e.items.forEach((i) => { i.status = 'todo'; i.paid = null; i.pay = null; i.t = null; });
-        e.cashPaid = 0;
-      });
-      d.extras = [];
-      d.focus = null;
-      // 試しに財布から引いたぶんも、買い物を始める前の中身に戻す
-      if (d.cashStart) { d.cashBreak = { ...d.cashStart }; d.cash = S.cashTotal(d.cashBreak); }
-      d.cashSettled = 0;
+  const resetRecords = (d) => {
+    Object.values(d.entries).forEach((e) => {
+      e.status = 'todo';
+      e.doneAt = null;
+      e.items = e.items.filter((i) => i.planned !== false);
+      e.items.forEach((i) => { i.status = 'todo'; i.paid = null; i.pay = null; i.t = null; delete i.byEntry; });
+      e.cashPaid = 0;
     });
+    d.extras = [];
+    d.focus = null;
+    // 試しに財布から引いたぶんも、買い物を始める前の中身に戻す
+    if (d.cashStart) { d.cashBreak = { ...d.cashStart }; d.cash = S.cashTotal(d.cashBreak); }
+    d.cashSettled = 0;
+  };
+  S.resetDay = () => S.mutate('当日記録リセット', resetRecords);
+
+  // ------------------------------------------------------------------ デモモード
+  /*
+   * 自宅で本番どおりに練習するためのモード。
+   * 始めるときに今の計画・財布をまるごと控え、記録をまっさらにして、時計を開催日の開始時刻に合わせる。
+   * 終えるときに控えを書き戻すので、デモ中の購入・財布の変化は残らない。
+   * デモ中は同期を止める（練習の記録でPCの本番データを上書きしないため。js/sync.js）
+   */
+  S.startDemo = () => {
+    if (S.state.demo) return;
+    const id = S.state.eventId;
+    const d = S.d(id);
+    const T = S.times(id);
+    const date = S.eventDate(id) || U.today();
+    const open = /^\d{1,2}:\d{2}$/.test(T.openAt) ? T.openAt.padStart(5, '0') : '12:00';
+    const target = new Date(date + 'T' + open + ':00').getTime();
+    S.state.demo = {
+      eventId: id,
+      snap: JSON.stringify(d),
+      offset: Number.isNaN(target) ? 0 : target - Date.now(),
+      day: !!S.state.settings.dayMode,
+      syncDirty: !!S.state.sync.dirty,
+      t: Date.now(),
+    };
+    resetRecords(d);
+    d.startedAt = 0;
+    S.state.settings.dayMode = true;
+    undoStack.length = 0;
+    S.flush();
+    U.emit('change', { event: true, demo: true });
+    U.emit('settings', 'dayMode');
+  };
+
+  /** デモを終えて、始める前の状態に戻す */
+  S.endDemo = () => {
+    const demo = S.state.demo;
+    if (!demo) return;
+    try {
+      const back = S.migrateData({ [demo.eventId]: JSON.parse(demo.snap) });
+      S.state.data[demo.eventId] = back[demo.eventId];
+    } catch (e) { console.error(e); }
+    S.state.sync.dirty = demo.syncDirty;
+    S.state.settings.dayMode = demo.day;
+    S.state.demo = null;
+    undoStack.length = 0;
+    S.invalidate();
+    S.flush();
+    U.emit('change', { event: true, demo: true });
+    U.emit('settings', 'dayMode');
+  };
+
+  /** デモの時計を早送りする */
+  S.demoForward = (ms) => {
+    if (!S.state.demo) return;
+    S.state.demo.offset += ms;
+    S.save();
+    U.emit('change', { demo: true });
+  };
 
   S.clearEventData = () => S.mutate('計画を全消去', (d) => { Object.assign(d, defaultData(), { budget: d.budget, cash: d.cash, reserve: d.reserve, start: d.start }); });
 

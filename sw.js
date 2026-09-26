@@ -1,6 +1,6 @@
 /* オフライン対応：アプリ本体をキャッシュ（会場は電波が弱い前提）
    ファイルを変更したら CACHE のバージョンを上げること */
-const CACHE = 'kurunavi-v1.2.3';
+const CACHE = 'kurunavi-v1.3.0';
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/util.js', 'js/parser.js', 'js/layout.js', 'js/qr.js', 'js/shots.js', 'js/store.js', 'js/ui.js', 'js/map.js', 'js/sync.js', 'js/editor.js', 'js/views.js', 'js/app.js',

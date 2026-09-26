@@ -205,7 +205,9 @@
           prev = p;
         });
         const segMode = inst.segIndex != null;
-        route = `<polyline class="route${segMode ? ' faded' : ''}" points="${pts.map((p) => `${p.x},${p.y}`).join(' ')}"/>` +
+        // 下に縁取り（casing）を敷いて、机や配置図の上でも線が埋もれないようにする
+        const ptsTxt = pts.map((p) => `${p.x},${p.y}`).join(' ');
+        route = `<polyline class="route-casing${segMode ? ' faded' : ''}" points="${ptsTxt}"/><polyline class="route${segMode ? ' faded' : ''}" points="${ptsTxt}"/>` +
           `<g class="start-mark"><circle cx="${st.x}" cy="${st.y}" r="7"/></g>`;
         if (segMode) {
           // 選んだ区間だけをはっきり描く（線が重なって見分けられない問題への対応）
@@ -213,7 +215,8 @@
           const leg = legs[U.clamp(inst.segIndex, 0, legs.length - 1)];
           if (leg) {
             const seg = Lay.polyline(L, leg.from, leg.to);
-            route += `<polyline class="route leg-line" points="${seg.map((p) => `${p.x},${p.y}`).join(' ')}"/>`;
+            const segTxt = seg.map((p) => `${p.x},${p.y}`).join(' ');
+            route += `<polyline class="route-casing wide" points="${segTxt}"/><polyline class="route leg-line" points="${segTxt}"/>`;
             route += `<g class="leg-mark from"><circle cx="${leg.from.x}" cy="${leg.from.y}" r="9"/></g>`;
             route += `<g class="leg-mark to"><circle cx="${leg.to.x}" cy="${leg.to.y}" r="11"/></g>`;
           }
@@ -222,7 +225,8 @@
           const cur = q.current && Lay.pointOf(L, S.circle(q.current));
           if (cur && q.current === remaining[0]) {
             const seg = Lay.polyline(L, st, cur);
-            route += `<polyline class="route next-leg" points="${seg.map((p) => `${p.x},${p.y}`).join(' ')}"/>`;
+            const segTxt = seg.map((p) => `${p.x},${p.y}`).join(' ');
+            route += `<polyline class="route-casing wide" points="${segTxt}"/><polyline class="route next-leg" points="${segTxt}"/>`;
           }
         }
       }
