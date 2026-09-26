@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '1.3.1';
+  HC.VERSION = '1.3.2';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -131,15 +131,9 @@
     setTimeout(() => U.$$('.card.cur.enter').forEach((x) => x.classList.remove('enter')), 720);
     const q = S.queue();
     const next = q.current ? S.circle(q.current) : null;
-    const msg = `${label}：${circleLabel(cid)}${next ? ` ／ 次は ${next.space}` : ''}`;
-    // 金種を入れている人には、チェックだけで終えたときも財布を合わせられるようにしておく
-    const amount = S.cashUnpaid(cid);
-    const plan = amount > 0 && S.hasCashBreak() ? S.payPlan(amount) : null;
-    if (plan && plan.best) {
-      UI.toast(msg, { undo: true, action: { label: `財布から ${U.yen(amount)} 引く`, fn: () => { S.applyPay(plan.best, cid); UI.toast(`財布は ${U.yen(S.cashTotal())} になりました`, { undo: true }); } } });
-    } else {
-      UI.toast(msg, { undo: true });
-    }
+    // チェックだけで終えたときも、現金で払ったぶんは財布の中身から自動で引く（おつりは金種に戻す）
+    settleCash(cid);
+    UI.toast(`${label}：${circleLabel(cid)}${next ? ` ／ 次は ${next.space}` : ''}`, { undo: true });
     if (app.view === 'go') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -154,18 +148,29 @@
     return `<div class="np-hint-in">
       <div class="ph-row"><b>${b.exact ? 'ちょうど出せます' : `${U.yen(b.pay)} を出す（おつり ${U.yen(b.change)}）`}</b><div class="ph-coins">${fmt(b.use)}</div></div>
       ${plan.alt ? `<div class="ph-row alt"><b>小銭を減らすなら</b><div class="ph-coins">${fmt(plan.alt.use)}</div></div>` : ''}
-      <label class="ph-deduct"><input type="checkbox" data-deduct checked> 財布の中身から引く</label>
     </div>`;
   };
   app.payHint = payHint;
 
-  /** 「財布から引く」が押されていたら、手持ちの金種を更新する */
-  const deductIfAsked = (r, cid) => {
-    if (!r || !r.deduct || r.pay !== 'cash' || !S.hasCashBreak()) return;
+  /**
+   * 現金で払ったら、財布の中身（金種）から自動で引く。
+   * 多めに出しておつりをもらっても、財布の合計は代金ぶんだけ減るので、本人に「引く」操作はさせない。
+   * 取り消し（元に戻す）は直前の購入の記録とまとめて戻る
+   */
+  const deductCash = (r, cid) => {
+    if (!r || r.pay !== 'cash' || !(r.amount > 0) || !S.hasCashBreak()) return;
     const plan = S.payPlan(r.amount);
-    if (plan && plan.best) S.applyPay(plan.best, cid);
+    if (plan && plan.best) S.applyPay(plan.best, cid, { noUndo: true });
   };
-  app.deductIfAsked = deductIfAsked;
+  app.deductCash = deductCash;
+
+  /** そのサークルで、まだ財布から引いていない現金をまとめて引く（チェックだけで完了したとき） */
+  const settleCash = (cid) => {
+    const amount = S.cashUnpaid(cid);
+    if (!(amount > 0) || !S.hasCashBreak()) return;
+    const plan = S.payPlan(amount);
+    if (plan && plan.best) S.applyPay(plan.best, cid, { noUndo: true });
+  };
 
   const numpadForItem = (cid, it) => {
     const unit = it.paid != null ? Math.round(it.paid / (it.qty || 1)) : it.price;
@@ -180,7 +185,7 @@
       allowZero: true,   // 無料でもらったものは 0 円で記録できる
       onOk: (r) => {
         S.recordPurchase(cid, { iid: it.id, amount: r.amount, qty: r.qty, pay: r.pay });
-        deductIfAsked(r, cid);
+        deductCash(r, cid);
         U.vibrate();
         checkAllChecked(cid);
       },
@@ -255,7 +260,11 @@
     const st = ds.st;
     if (e.status === st) return;
     S.setStatus(ds.cid, st);
-    if (ds.keep) { UI.toast(`${S.STATUS[st].label}にしました`, { undo: true }); return; }
+    if (ds.keep) {
+      if (st === 'done') settleCash(ds.cid);   // 詳細から購入済にしたときも財布を合わせる
+      UI.toast(`${S.STATUS[st].label}にしました`, { undo: true });
+      return;
+    }
     afterFinish(ds.cid, S.STATUS[st].label);
   };
 
@@ -280,7 +289,7 @@
             en.doneAt = now;
             if (d.focus === cid) d.focus = null;
           });
-          deductIfAsked(r, cid);
+          deductCash(r, cid);
           afterFinish(cid, '完了');
         },
       });
@@ -310,7 +319,7 @@
             en.doneAt = now;
             if (d.focus === cid) d.focus = null;
           });
-          deductIfAsked(r, cid);
+          deductCash(r, cid);
           afterFinish(cid, '完了');
         },
       });
@@ -353,7 +362,7 @@
       title: `${c.space} 追加購入`,
       onOk: (r) => {
         S.recordPurchase(ds.cid, { name: r.name, amount: r.amount, qty: r.qty, pay: r.pay });
-        deductIfAsked(r, ds.cid);
+        deductCash(r, ds.cid);
         U.vibrate();
         UI.toast(`追加購入 ${U.yen(r.amount)} を記録`, { undo: true });
       },
@@ -366,7 +375,7 @@
       title: 'サークル外の支出（企業ブース・飲食など）',
       onOk: (r) => {
         S.recordPurchase(null, { name: r.name || 'その他', amount: r.amount, qty: r.qty, pay: r.pay });
-        deductIfAsked(r);
+        deductCash(r);
         UI.toast(`${U.yen(r.amount)} を記録`, { undo: true });
       },
     });

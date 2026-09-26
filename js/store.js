@@ -448,8 +448,9 @@
    * その出し方で払ったとして手持ちを更新する（釣りは受け取った体で足す）。
    * cid を渡すと「このサークルでいくら財布から出したか」を控えておき、二重に引かないようにする
    */
-  S.applyPay = (plan, cid) =>
-    S.mutate('財布から支払う', (d) => {
+  S.applyPay = (plan, cid, opt = {}) =>
+    // noUndo: 購入の記録と一緒に自動で引くとき。取り消しは購入の記録のほうでまとめて戻る（控えは購入の前の状態なので）
+    S.mutate(opt.noUndo ? null : '財布から支払う', (d) => {
       const br = { ...d.cashBreak };
       Object.entries(plan.use || {}).forEach(([den, n]) => { br[den] = Math.max(0, (br[den] || 0) - n); });
       let change = plan.change || 0;

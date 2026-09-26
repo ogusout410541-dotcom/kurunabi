@@ -633,8 +633,6 @@ select.input { appearance: auto; }
   padding: 3px 9px; font-weight: 800; white-space: nowrap;
 }
 .ph-coins small { font-weight: 700; color: var(--muted); margin-left: 2px; }
-.ph-deduct { display: flex; align-items: center; gap: 8px; min-height: 36px; font-weight: 700; cursor: pointer; }
-.ph-deduct input { width: 20px; height: 20px; accent-color: var(--accent); }
 
 /* 財布の中身（金種ごとの枚数） */
 .denoms { display: flex; flex-direction: column; gap: 4px; }

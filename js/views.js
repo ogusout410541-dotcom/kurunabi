@@ -106,7 +106,7 @@
       ${rows}
       <div class="den-foot"><span>合計</span><b>${U.yen(total)}</b><span class="muted">${count}枚</span>
         ${count ? `<button class="link-btn" data-act="cashClear">${U.icon('x', 'sm')}全部消す</button>` : ''}</div>
-      <p class="muted small">枚数を入れておくと、支払いのときに出す金種の組み合わせが出ます。記録のときに「財布の中身から引く」を押すと、出した分を引いて、おつりを足し戻します。</p>
+      <p class="muted small">枚数を入れておくと、支払いのときに出す金種の組み合わせが出ます。現金で買ったものを記録すると、出した分を財布の中身から自動で引き、おつりを足し戻します。</p>
     </div>`;
   };
 

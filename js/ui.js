@@ -200,7 +200,6 @@
       unit: String(opt.amount || ''),
       qty: opt.qty || 1,
       pay: opt.pay || S.state.settings.defaultPay,
-      deduct: true,   // 支払いヒントの「財布の中身から引く」
       fresh: true, // 最初のキー入力で既存値を置き換える
     };
     const id = 'numpad';
@@ -216,8 +215,6 @@
         const html = (st.pay === 'cash' && opt.hint) ? opt.hint(unit * st.qty) : '';
         hint.innerHTML = html || '';
         hint.hidden = !html;
-        const cb = U.$('[data-deduct]', hint);
-        if (cb) cb.checked = st.deduct;   // 描き直しても選び直さなくていいように
       }
     };
     UI.sheet({
@@ -242,7 +239,6 @@
       onMount: (el) => {
         draw(el);
         const nameInp = U.$('.np-name', el);
-        el.addEventListener('change', (e) => { if (e.target.matches('[data-deduct]')) st.deduct = e.target.checked; });
         el.addEventListener('click', (e) => {
           const b = e.target.closest('button');
           if (!b) return;
@@ -265,12 +261,10 @@
             nameInp.value = b.dataset.nm;
           } else if (b.hasAttribute('data-ok')) {
             const unit = parseInt(st.unit || '0', 10);
-            const deduct = U.$('.np-hint [data-deduct]', el);   // 閉じる前に読む
             UI.close(id);
             opt.onOk({
               name: nameInp ? nameInp.value.trim() : st.name,
               unit, amount: unit * st.qty, qty: st.qty, pay: st.pay,
-              deduct: !!(deduct && deduct.checked),
             });
             return;
           } else return;
