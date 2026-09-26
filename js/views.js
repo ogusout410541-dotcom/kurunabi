@@ -33,7 +33,7 @@
     return `<div class="shots">${list.map((m) => `
       <button class="shot-thumb" data-act="viewShot" data-id="${esc(m.id)}" data-cid="${esc(cid)}" aria-label="お品書きを開く">
         <img src="${m.thumb}" alt="お品書き" loading="lazy" width="${m.w}" height="${m.h}"></button>`).join('')}
-      ${add ? `<button class="shot-add" data-act="addShot" data-cid="${esc(cid)}">${U.icon('image')}<span>写真を追加</span></button>` : ''}</div>`;
+      ${add ? `<button class="shot-add" data-act="addShot" data-cid="${esc(cid)}">${U.icon('image')}<span>画像を追加</span></button>` : ''}</div>`;
   };
 
   const itemNames = (e) => e.items.map((i) => i.name || '（無題）').join('・');
@@ -196,10 +196,14 @@
       { ok: s.hasCashBreak(), label: '財布の中身', note: s.hasCashBreak() ? `${U.yen(s.cashTotal())}（${s.cashCount()}枚）` : '金種ごとの枚数を登録すると、支払いで出す硬貨とお札を案内します', act: 'wallet', btn: '登録', optional: true },
       sw ? { ok: !!navigator.serviceWorker.controller, label: 'オフライン保存', note: navigator.serviceWorker.controller ? '圏外でも開けます' : 'まだ保存されていません', act: 'offlineRefresh', btn: '保存' } : null,
       sync.url && sync.phrase ? { ok: !sync.dirty, label: '同期', note: sync.dirty ? 'まだ送っていない変更があります' : '送信済み', act: 'syncNow', btn: '送る' } : null,
+      HC.shots && HC.shots.ready ? (() => {
+        const n = s.noShotCids().length;
+        return { ok: !n, label: 'お品書き画像の登録', note: n ? `画像を登録していないサークルが${n}件あります` : 'すべて登録済みです', act: 'nav', data: 'data-view="list" data-scroll="noimg"', btn: '見る' };
+      })() : null,
       sync.url && sync.phrase && HC.shots && HC.shots.ready && HC.shots.unsent().length
-        ? { ok: false, label: 'お品書き画像', note: `${HC.shots.unsent().length}枚をまだ送っていません`, act: 'shotsPush', btn: '送る' } : null,
+        ? { ok: false, label: '画像の受け渡し', note: `${HC.shots.unsent().length}枚をまだ送っていません`, act: 'shotsPush', btn: '送る' } : null,
       sync.url && sync.phrase && HC.shots && HC.shots.ready && !HC.shots.unsent().length
-        ? { ok: false, optional: true, label: 'お品書き画像', note: `この端末 ${HC.shots.all().length}枚${sync.shotsAt ? ` ・ 最終の受け渡し ${U.md(sync.shotsAt)} ${U.time(sync.shotsAt)}` : ' ・ ほかの端末で追加した画像は「受け取る」で取り込めます'}`, act: 'shotsPull', btn: '受け取る' } : null,
+        ? { ok: false, optional: true, label: '画像の受け渡し', note: `この端末 ${HC.shots.all().length}枚${sync.shotsAt ? ` ・ 最終の受け渡し ${U.md(sync.shotsAt)} ${U.time(sync.shotsAt)}` : ' ・ ほかの端末で追加した画像は「受け取る」で取り込めます'}`, act: 'shotsPull', btn: '受け取る' } : null,
       HC.app.updateReady ? { ok: false, label: '新しい版', note: '更新してから出かけると安心です', act: 'applyUpdate', btn: '更新' } : null,
     ].filter(Boolean);
     const left = rows.filter((r) => !r.ok && !r.optional).length;
@@ -360,6 +364,8 @@
       const d = s.d();
       const st = s.stats();
       const f = this.filter;
+      const noimg = s.noShotCids();
+      const noimgSet = new Set(noimg);
       const rows = d.order.filter((cid) => {
         const e = d.entries[cid];
         if (!e) return false;
@@ -367,6 +373,7 @@
         if (f === 'done') return !(e.status === 'todo' || e.status === 'later');
         if (f === 'must') return e.pri === 1;
         if (f === 'pend') return s.isPending(e);
+        if (f === 'noimg') return noimgSet.has(cid);
         return true;
       });
       const mustTotal = U.sum(Object.values(d.entries).filter((e) => e.pri === 1), (e) => s.entryPlanned(e));
@@ -379,9 +386,10 @@
         ${st.budget ? `<div><span>予算との差</span><b class="${diff < 0 ? 'neg' : 'pos'}">${diff >= 0 ? '+' : ''}${U.yen(diff)}</b></div>` : `<div><button class="link-btn" data-act="budgetEdit">予算を設定</button></div>`}
       </section>
       ${V.pending(pend)}
+      ${V.noShot(noimg)}
       ${V.sim()}
       <div class="toolbar">
-        <div class="seg sm">${[['all', '全部'], ['todo', '未完了'], ['must', '必須'], ['pend', `待ち${pend.length ? ' ' + pend.length : ''}`], ['done', '完了']].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="listFilter" data-f="${k}">${l}</button>`).join('')}</div>
+        <div class="seg sm">${[['all', '全部'], ['todo', '未完了'], ['must', '必須'], ['pend', `待ち${pend.length ? ' ' + pend.length : ''}`], ...(HC.shots && HC.shots.ready ? [['noimg', `画像なし${noimg.length ? ' ' + noimg.length : ''}`]] : []), ['done', '完了']].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="listFilter" data-f="${k}">${l}</button>`).join('')}</div>
         <span class="grow"></span>
         <button class="btn sm primary" data-act="routeMenu">${U.icon('route')}ルート作成</button>
       </div>`;
@@ -397,6 +405,25 @@
       }
       el.innerHTML = `<div class="list-view">${html}</div>`;
     },
+  };
+
+  /**
+   * お品書き画像をまだ登録していないサークルのまとめ（当日は圏外でも画像を見たいので、出かける前に埋めておく）
+   */
+  V.noShot = (cids) => {
+    if (!cids || !cids.length) return '';
+    const s = S();
+    const chips = cids.slice(0, 14).map((cid) => {
+      const c = s.circle(cid) || s.entry(cid).snap;
+      return `<button class="pend-chip img" data-act="openCircle" data-cid="${esc(cid)}">${V.space(c)}<span>${esc(c.name)}</span></button>`;
+    }).join('');
+    const pc = matchMedia('(pointer: fine)').matches;
+    return `<section class="card pend-card img-card" id="sec-noimg">
+      <h3>${U.icon('image')}お品書き画像が未登録 <small>${cids.length}サークル</small></h3>
+      <p class="muted small">お品書き画像をまだ登録していないサークルです。サークルを開いて画像を追加してください。${pc ? 'PCでは、画像をコピーして Ctrl+V で貼り付けることもできます。' : ''}登録した画像は、当日圏外でも見られます。</p>
+      <div class="pend-list">${chips}</div>
+      ${cids.length > 14 ? `<button class="link-btn" data-act="listFilter" data-f="noimg">残り${cids.length - 14}件も見る</button>` : ''}
+    </section>`;
   };
 
   /**
@@ -484,6 +511,16 @@
       <button class="icon-btn solid" data-act="mapSegOff" aria-label="全体を見る">${U.icon('fit')}</button>`;
   };
 
+  /** リストの行に出す画像の印（あれば枚数、無ければ「画像なし」） */
+  V.shotMark = (cid, e) => {
+    const Sh = HC.shots;
+    if (!Sh || !Sh.ready) return '';
+    const n = Sh.list(S().state.eventId, cid).length;
+    if (n) return ` ・ <span class="shot-n">${U.icon('image', 'sm')}${n}</span>`;
+    if (e.noShot || !(e.status === 'todo' || e.status === 'later')) return '';
+    return ` ・ <span class="noimg">${U.icon('image', 'sm')}画像なし</span>`;
+  };
+
   V.prow = (cid, n, canDrag) => {
     const s = S();
     const e = s.entry(cid);
@@ -498,7 +535,7 @@
         <span class="l1">${V.space(c)}<span class="nm">${esc(c.name)}</span></span>
         <span class="l2">${s.isPending(e)
           ? `<span class="pend">${U.icon('clock', 'sm')}お品書き待ち</span>`
-          : (e.items.length ? esc(itemNames(e)) : '<i>買うもの未登録</i>')}${e.memo ? ` ・ ${U.icon('note', 'sm')}` : ''}</span>
+          : (e.items.length ? esc(itemNames(e)) : '<i>買うもの未登録</i>')}${e.memo ? ` ・ ${U.icon('note', 'sm')}` : ''}${V.shotMark(cid, e)}</span>
       </button>
       <span class="prow-side">
         <button class="pri-btn" data-act="priMenu" data-cid="${cid}">${V.pri(e.pri)}</button>
@@ -664,6 +701,12 @@
       <div class="field"><label>お品書きURL</label>
         <input class="input" type="url" data-f="menu" data-cid="${cid}" value="${esc(e.menu)}" placeholder="https://x.com/..."></div>
       ${HC.shots && HC.shots.ready ? `<div class="field"><label>お品書きの画像 <small>（端末に保存。当日オフラインでも見られます）</small></label>
+        ${!HC.shots.has(s.state.eventId, cid) && !e.noShot ? `<div class="pend-note img">${U.icon('image', 'sm')}
+          <div><b>お品書き画像が未登録です</b><small>「画像を追加」から登録してください。お品書きが無いサークルは「登録しない」にすると、未登録の一覧から外れます。</small></div>
+          <button class="btn sm ghost" data-act="noShot" data-cid="${cid}" data-on="1">登録しない</button></div>`
+          : (e.noShot ? `<div class="pend-note done">${U.icon('check', 'sm')}
+          <div><b>このサークルは画像を登録しない設定です</b><small>画像が未登録の一覧には出ません。</small></div>
+          <button class="btn sm ghost" data-act="noShot" data-cid="${cid}" data-on="0">戻す</button></div>` : '')}
         ${V.shots(cid, { add: true })}
         <p class="shot-tip muted small">${U.icon('image', 'sm')}画像をコピーして <kbd>Ctrl</kbd>+<kbd>V</kbd> で貼り付けるか、画像ファイルをここへドロップしても追加できます。${HC.sync.configured() ? 'スマホへは「設定 → 同期 → 画像を送る」で送れます。' : ''}</p></div>` : ''}
       <div class="field"><label>当日の状態</label>

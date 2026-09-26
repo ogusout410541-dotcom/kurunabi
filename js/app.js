@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '1.2.1';
+  HC.VERSION = '1.2.2';
 
   const VIEWS = ['go', 'list', 'map', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -427,6 +427,15 @@
       if (d.entries[ds.cid]) d.entries[ds.cid].noItems = on;
     });
     UI.toast(on ? 'お品書き待ちの一覧から外しました' : 'お品書き待ちに戻しました', { undo: true });
+  };
+
+  /** 「お品書き画像は登録しない」の切り替え（画像が未登録の一覧から外す） */
+  A.noShot = (ds) => {
+    const on = ds.on === '1';
+    S.mutate(on ? '画像を登録しない' : '画像の登録を戻す', (d) => {
+      if (d.entries[ds.cid]) d.entries[ds.cid].noShot = on;
+    });
+    UI.toast(on ? '画像が未登録の一覧から外しました' : '画像が未登録の一覧に戻しました', { undo: true });
   };
 
   /** 品目を1行足す。過去に入れた金額が分かっていれば価格も入れておく */

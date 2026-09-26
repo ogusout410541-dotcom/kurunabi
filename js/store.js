@@ -310,7 +310,8 @@
     memo: '',
     menu: '',
     status: 'todo',
-    noItems: false,   // true = お品書き待ちではなく、買うものを入れないと決めた
+    noItems: false,   // true = お品書き待ちではなく、買うものを登録しないと決めた
+    noShot: false,    // true = お品書き画像は登録しないと決めた（画像なしの一覧に出さない）
     snap: { name: c.name, tw: c.tw, space: c.space },
     addedAt: Date.now(),
   });
@@ -474,6 +475,16 @@
 
   /** お品書きがまだ出ていない＝買うものが1つも入っていないサークル（自分で「入れない」と決めたものは除く） */
   S.isPending = (e) => !!e && !e.noItems && !e.items.some((i) => i.planned !== false);
+  /** お品書き画像が1枚も無い、まだ回っていないサークル（「画像は登録しない」にしたものは除く）。画像が使えない端末では空 */
+  S.noShotCids = (id = S.state.eventId) => {
+    const Sh = HC.shots;
+    if (!Sh || !Sh.ready) return [];
+    const d = S.d(id);
+    return d.order.filter((cid) => {
+      const e = d.entries[cid];
+      return e && !e.noShot && (e.status === 'todo' || e.status === 'later') && !Sh.has(id, cid);
+    });
+  };
   S.pendingCids = (id = S.state.eventId) => {
     const d = S.d(id);
     return d.order.filter((cid) => S.isPending(d.entries[cid]));
@@ -1029,6 +1040,7 @@
     if (e.menu) o.u = e.menu;
     if (e.status !== 'todo') o.s = e.status;
     if (e.noItems) o.ni = 1;
+    if (e.noShot) o.ns = 1;
     // サークル名などは読み込み側でイベントの一覧から引けるので、引けない時だけ持たせる
     if (e.snap && !known.has(e.cid)) o.k = [e.snap.name, e.snap.tw || '', e.snap.space || ''];
     if (e.doneAt) o.da = e.doneAt;
@@ -1038,7 +1050,7 @@
     if (!o || !('c' in o)) return o; // すでに通常形式
     const c = byId.get(o.c);
     const snap = c ? { name: c.name, tw: c.tw, space: c.space } : { name: (o.k || [])[0] || o.c, tw: (o.k || [])[1] || '', space: (o.k || [])[2] || o.c };
-    return { cid: o.c, pri: o.r || 3, items: (o.i || []).map(fatItem), memo: o.m || '', menu: o.u || '', status: o.s || 'todo', noItems: !!o.ni, doneAt: o.da || null, snap, addedAt: 0 };   // 追加した時刻はスリム形式に載せない（0＝不明。ルートの「作ったあとに追加」に数えない）
+    return { cid: o.c, pri: o.r || 3, items: (o.i || []).map(fatItem), memo: o.m || '', menu: o.u || '', status: o.s || 'todo', noItems: !!o.ni, noShot: !!o.ns, doneAt: o.da || null, snap, addedAt: 0 };   // 追加した時刻はスリム形式に載せない（0＝不明。ルートの「作ったあとに追加」に数えない）
   };
 
   /** 読み込んだ計画データを通常形式へ戻す（スリム形式・通常形式のどちらでも通る） */
