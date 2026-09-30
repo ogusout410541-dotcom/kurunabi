@@ -8,7 +8,7 @@
   const UI = HC.ui;
   const P = HC.parser;
 
-  HC.VERSION = '1.3.2';
+  HC.VERSION = '1.3.3';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -1193,6 +1193,37 @@
     requestAnimationFrame(() => go());
   };
 
+  /** ホーム画面から開いているか（インストールされたアプリとして） */
+  app.standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  app.isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  /** ホーム画面に追加する方法（Android は使えれば、そのまま追加の画面を出す） */
+  let installEvt = null;
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; });
+  A.a2hs = async () => {
+    if (installEvt) {
+      try {
+        await installEvt.prompt();
+        const r = await installEvt.userChoice;
+        installEvt = null;
+        if (r && r.outcome === 'accepted') return UI.toast('ホーム画面に追加しました');
+      } catch (_) { installEvt = null; }   // 出せなかったときは手順を案内する
+    }
+    const ios = app.isIOS();
+    UI.sheet({
+      id: 'a2hs',
+      center: true,
+      title: 'ホーム画面に追加',
+      html: `<ol class="a2hs-steps">
+          ${ios
+            ? '<li>Safari の下（iPad は上）にある共有ボタン（四角から矢印が出ているマーク）を押す</li><li>「ホーム画面に追加」を選んで、「追加」を押す</li><li>ホーム画面にできた「クルナビ」のアイコンから開く</li>'
+            : '<li>ブラウザの右上のメニュー（点が3つのマーク）を押す</li><li>「ホーム画面に追加」または「アプリをインストール」を選ぶ</li><li>ホーム画面にできた「クルナビ」のアイコンから開く</li>'}
+        </ol>
+        <p class="warn small">${U.icon('warn', 'sm')}${ios ? 'iPhone では、ホーム画面から開いたアプリは Safari とデータが別になります。' : ''}追加したアプリで開いたら、PCの「設定 → 同期 → 設定をスマホへ（QR）」を読み込むか、共有リンクで計画を移してください。お品書き画像は「画像を受け取る」で入れ直せます。</p>
+        <div class="btn-row"><button class="btn" data-close>閉じる</button></div>`,
+    });
+  };
+
   A.dayMap = () => { app.show('map', { noLeg: true }); autoLeg(true); };
   A.dayAll = () => { V.day.allOpen = !V.day.allOpen; renderView('go'); };
 
@@ -1635,8 +1666,8 @@
 
   A.resetDay = async () => {
     if (!(await UI.confirm('購入済・売切などの当日記録をすべて未購入に戻します（計画・予算はそのまま）。', { ok: 'リセット', danger: true }))) return;
-    S.resetDay();
-    UI.toast('当日記録をリセットしました', { undo: true });
+    const wallet = S.resetDay();
+    UI.toast(wallet || !S.hasCashBreak() ? '当日記録をリセットしました' : '当日記録をリセットしました。財布の中身はそのままです（必要なら入れ直してください）', { undo: true, ms: 6000 });
   };
   A.clearPlan = async () => {
     if (!(await UI.confirm(`「${S.ev().name}」の計画と記録をすべて消去します。`, { ok: '全消去', danger: true }))) return;

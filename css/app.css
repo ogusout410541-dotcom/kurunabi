@@ -1093,3 +1093,13 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .map-view:has(#mapseg:not([hidden])) .route-off { display: none; }
 /* 時計の帯の「進行」「時刻」は1つのまとまりにして、途中で折り返さない */
 .ck-btns { display: inline-flex; gap: 4px; white-space: nowrap; margin-left: auto; }
+
+/* 当日モード：下に固定したボタンの上の「次は ◯◯」（並んでいる間に次の行き先が分かるように） */
+.da-next { display: flex; align-items: baseline; gap: 6px; margin: 0 2px 6px; font-size: .85rem; color: var(--muted); white-space: nowrap; overflow: hidden; }
+.da-next b { color: var(--text); font-size: .95rem; }
+.da-next span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+body.day[data-view="go"] { padding-bottom: calc(var(--tab-h) + var(--safe-b) + 160px); }
+body.day[data-view="go"] .toast { bottom: calc(var(--tab-h) + var(--safe-b) + 156px); }
+@media (min-width: 960px) { body.day[data-view="go"] { padding-bottom: 190px; } body.day[data-view="go"] .toast { bottom: 190px; } }
+/* ホーム画面に追加の手順 */
+.a2hs-steps { margin: 0 0 12px; padding-left: 1.4em; display: flex; flex-direction: column; gap: 6px; }

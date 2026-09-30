@@ -231,6 +231,11 @@
         }).join('')}</div>` : ''}
       <div class="cur-links">${V.links(c, e)}</div>
       <div class="day-actions">
+        ${(() => {
+          const nx = all.filter((x) => x !== cid)[0];
+          const nc = nx && (s.circle(nx) || d.entries[nx].snap);
+          return nc ? `<div class="da-next">次は <b>${esc(nc.space)}</b><span>${esc(nc.name)}</span></div>` : '<div class="da-next">これが最後のサークルです</div>';
+        })()}
         ${hasTodo || !e.items.length
           ? `<button class="btn primary xl block" data-act="completeAll" data-cid="${cid}">${U.icon('check')}${e.items.length ? `全部買えた${U.icon('right', 'sm')}次へ` : '金額を入れて完了'}</button>`
           : `<button class="btn primary xl block" data-act="setStatus" data-st="done" data-cid="${cid}">${U.icon('check')}完了${U.icon('right', 'sm')}次へ</button>`}
@@ -424,6 +429,10 @@
       { ok: !!d.routedAt && !addedAfter, label: 'ルート', note: !d.routedAt ? 'まだ作っていません' : addedAfter ? `ルートを作ったあとに${addedAfter}サークル追加しています` : `${U.md(d.routedAt)} ${U.time(d.routedAt)} に作成`, act: 'routeMenu', btn: '作る' },
       { ok: s.hasCashBreak(), label: '財布の中身', note: s.hasCashBreak() ? `${U.yen(s.cashTotal())}（${s.cashCount()}枚）` : '金種ごとの枚数を登録すると、支払いで出す硬貨とお札を案内します', act: 'wallet', btn: '登録', optional: true },
       sw ? { ok: !!navigator.serviceWorker.controller, label: 'オフライン保存', note: navigator.serviceWorker.controller ? '圏外でも開けます' : 'まだ保存されていません', act: 'offlineRefresh', btn: '保存' } : null,
+      // スマホで、ホーム画面から開いていないとき（iPhone の Safari は、しばらく開かないとデータを消すことがある）
+      matchMedia('(pointer: coarse)').matches && sw && !HC.app.standalone()
+        ? { ok: false, optional: !HC.app.isIOS(), label: 'ホーム画面に追加', note: HC.app.isIOS() ? 'Safari のままだと、しばらく開かない間にデータが消えることがあります' : '全画面で開けて、データも消えにくくなります', act: 'a2hs', btn: '方法' } : null,
+      !(sync.url && sync.phrase) ? { ok: false, optional: true, label: 'バックアップ', note: '同期を使っていないので、全データをファイルに保存しておくと安心です', act: 'exportAll', btn: '保存' } : null,
       sync.url && sync.phrase ? { ok: !sync.dirty, label: '同期', note: sync.dirty ? 'まだ送っていない変更があります' : '送信済み', act: 'syncNow', btn: '送る' } : null,
       HC.shots && HC.shots.ready ? (() => {
         const n = s.noShotCids().length;

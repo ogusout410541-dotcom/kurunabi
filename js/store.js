@@ -365,7 +365,8 @@
     // サークルごとの「引いた額」も合わせる（完了トーストの「財布から引く」をもう出さない）
     Object.values(d.entries).forEach((e) => { e.cashPaid = U.sum(e.items.filter((i) => i.status === 'bought' && (i.pay || S.state.settings.defaultPay) === 'cash'), S.itemCost); });
     // まだ何も買っていないうちの中身を「始める前の財布」として覚えておく（リハーサル後のリセット用）
-    if (!spent) d.cashStart = { ...d.cashBreak };
+    // 買い物の記録があるあとで入れ直したときは「始める前」が分からないので、古い控えは捨てる（リセットで古い中身に戻さないように）
+    d.cashStart = spent ? null : { ...d.cashBreak };
   };
 
   S.setCashBreak = (denom, n) =>
@@ -1172,7 +1173,8 @@
   };
 
   /** 当日記録だけリセット（計画は残す）— リハーサル後などに */
-  const resetRecords = (d) => {
+  /** 当日の記録を消す。wallet=true のときは財布の中身も「買い物を始める前」に戻す（控えがあるときだけ） */
+  const resetRecords = (d, wallet) => {
     Object.values(d.entries).forEach((e) => {
       e.status = 'todo';
       e.doneAt = null;
@@ -1183,10 +1185,11 @@
     d.extras = [];
     d.focus = null;
     // 試しに財布から引いたぶんも、買い物を始める前の中身に戻す
-    if (d.cashStart) { d.cashBreak = { ...d.cashStart }; d.cash = S.cashTotal(d.cashBreak); }
+    if (wallet && d.cashStart) { d.cashBreak = { ...d.cashStart }; d.cash = S.cashTotal(d.cashBreak); }
     d.cashSettled = 0;
   };
-  S.resetDay = () => S.mutate('当日記録リセット', resetRecords);
+  /** 戻り値：財布の中身も戻せたか */
+  S.resetDay = () => S.mutate('当日記録リセット', (d) => { const w = !!d.cashStart; resetRecords(d, true); return w; });
 
   // ------------------------------------------------------------------ デモモード
   /*
