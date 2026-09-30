@@ -125,9 +125,9 @@
       const L = inst.L;
       if (!L) return [];
       const remaining = [...q.todo, ...q.later];
-      const lastDone = q.finished.map((cid) => d.entries[cid]).filter((e) => e.doneAt).sort((a, b) => b.doneAt - a.doneAt)[0];
-      let from = (lastDone && Lay.pointOf(L, S.circle(lastDone.cid))) || S.startPoint();
-      let fromName = lastDone ? (S.circle(lastDone.cid) || {}).space : (L.starts.find((s) => s.id === d.start) || L.starts[0] || {}).label || 'スタート';
+      const o = S.origin();   // いまいる場所（指定した場所か、最後に回ったサークル）
+      let from = o.p;
+      let fromName = o.label;
       const legs = [];
       remaining.forEach((cid, i) => {
         const c = S.circle(cid);
@@ -196,8 +196,7 @@
       // 区間表示中は、ルート線を非表示にしていても、その区間だけは必ず描く（道順を見たくて開いているため）
       const segMode = inst.segIndex != null;
       if ((S.state.settings.showRoute || segMode) && remaining.length) {
-        const lastDone = q.finished.map((cid) => d.entries[cid]).filter((e) => e.doneAt).sort((a, b) => b.doneAt - a.doneAt)[0];
-        let prev = (lastDone && Lay.pointOf(L, S.circle(lastDone.cid))) || S.startPoint();
+        let prev = S.origin().p;
         const st = prev;
         const pts = [prev];
         remaining.forEach((cid) => {

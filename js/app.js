@@ -7,8 +7,9 @@
   const V = HC.views;
   const UI = HC.ui;
   const P = HC.parser;
+  const Lay = HC.layout;
 
-  HC.VERSION = '1.3.3';
+  HC.VERSION = '1.3.4';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -1068,7 +1069,7 @@
         hint: { must: '必須を先に回り切る', tier: '必須→優先→通常→余裕', short: '優先度を無視して最短' }[m],
         act: () => { S.setSetting('routeMode', m); runRoute(m, false); },
       })),
-      { label: '最後に回った場所から組み直す', icon: 'target', hint: '当日の途中で', act: () => runRoute(mode, true) },
+      { label: 'いまいる場所から組み直す', icon: 'target', hint: '入口・近くのスペース番号・最後に回った場所から選ぶ', act: () => A.reroute() },
       { label: 'スペース番号順に並べる', icon: 'list', act: () => sortBySpace() },
     ]);
   };
@@ -1084,7 +1085,70 @@
     d.order = [...fixed, ...active];
     d.routedAt = Date.now();
   });
-  A.reroute = () => runRoute(S.state.settings.routeMode, true);
+  /**
+   * いまいる場所を選んで、そこから回る順番を作り直す（当日、どこから始めるか分からない／会場の外にいるとき用）。
+   * 入口・近くのスペース番号・最後に回った場所から選べる。地図でサークルを押して選ぶこともできる（A.hereCircle）
+   */
+  A.reroute = () => {
+    const L = S.ev().layout;
+    const o = S.origin();
+    const q = S.queue();
+    if (!q.todo.length && !q.later.length) return UI.toast('まだ回っていないサークルはありません');
+    const d = S.d();
+    const last = Object.values(d.entries).filter((e) => e.doneAt && !(e.status === 'todo' || e.status === 'later')).sort((a, b) => b.doneAt - a.doneAt)[0];
+    const lc = last && S.circle(last.cid);
+    UI.sheet({
+      id: 'here',
+      center: true,
+      title: 'いまいる場所',
+      html: `<p class="small">いまいる場所を選ぶと、そこから、まだ回っていないサークルの順番を作り直します。<br><span class="muted">いまの出発点：${U.esc(o.label)}</span></p>
+        <div class="here-list">
+          ${L.starts.map((st) => `<button class="here-opt" data-door="${U.esc(st.id)}">${U.icon('door')}<span><b>${U.esc(st.label)}</b><small>会場の外から入るとき</small></span></button>`).join('')}
+          ${lc ? `<button class="here-opt" data-last="1">${U.icon('check')}<span><b>最後に回った ${U.esc(lc.space)}</b><small>${U.esc(lc.name)}</small></span></button>` : ''}
+        </div>
+        <label class="field here-sid-l"><span>近くのスペース番号</span>
+          <div class="here-sid"><input class="input" type="text" placeholder="例：G23" autocapitalize="characters" autocomplete="off" enterkeyhint="go"><button class="btn primary" data-sid-go>ここから</button></div></label>
+        <p class="muted small">地図でサークルを押して「ここから組み直す」を選んでも指定できます。</p>`,
+      onMount: (el) => {
+        const go = (p, label) => { UI.close('here'); setHere(p, label); };
+        U.$$('[data-door]', el).forEach((b) => (b.onclick = () => {
+          const st = L.starts.find((x) => x.id === b.dataset.door);
+          if (st) go(st, st.label);
+        }));
+        const lb = U.$('[data-last]', el);
+        if (lb) lb.onclick = () => go(Lay.pointOf(L, lc), lc.space);
+        const inp = U.$('.here-sid input', el);
+        const bySid = () => {
+          const sq = P.parseSpaceQuery(inp.value);
+          if (!sq) return UI.toast('ブロックの文字と番号で入れてください（例：G23）', { error: true });
+          const sid = sq.block + sq.num;
+          const p = S.pointOfSid(sid);
+          if (!p) return UI.toast(`${sq.block}${U.pad2(sq.num)} は配置図にありません`, { error: true });
+          go(p, `${sq.block}${U.pad2(sq.num)} の前`);
+        };
+        U.$('[data-sid-go]', el).onclick = bySid;
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); bySid(); } });
+      },
+    });
+  };
+
+  /** 地図で押したサークルの前から組み直す */
+  A.hereCircle = (ds) => {
+    const c = S.circle(ds.cid);
+    const p = c && Lay.pointOf(S.ev().layout, c);
+    if (!p) return UI.toast('このサークルは配置図にありません', { error: true });
+    setHere(p, c.space + ' の前');
+  };
+
+  const setHere = (p, label) => {
+    S.setHere(p, label);
+    const cur = S.queue().current;
+    const next = cur && S.circle(cur);
+    UI.toast(`${label} から組み直しました${next ? `。最初は ${next.space}` : ''}`, {
+      undo: true, ms: 6000,
+      action: { label: '地図で見る', fn: () => (S.state.settings.dayMode ? A.dayMap() : app.show('map')) },
+    });
+  };
 
   A.cfilter = (ds) => {
     V.circles.f = V.circles.f === ds.f && ds.f !== 'all' ? 'all' : ds.f;

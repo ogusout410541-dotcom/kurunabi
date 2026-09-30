@@ -1103,3 +1103,15 @@ body.day[data-view="go"] .toast { bottom: calc(var(--tab-h) + var(--safe-b) + 15
 @media (min-width: 960px) { body.day[data-view="go"] { padding-bottom: 190px; } body.day[data-view="go"] .toast { bottom: 190px; } }
 /* ホーム画面に追加の手順 */
 .a2hs-steps { margin: 0 0 12px; padding-left: 1.4em; display: flex; flex-direction: column; gap: 6px; }
+
+/* いまいる場所の選択 */
+.here-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 14px; }
+.here-opt { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 14px; border-radius: 14px; background: var(--surface2); border: 1px solid var(--line); text-align: left; }
+.here-opt .ic { color: var(--accent); flex: none; }
+.here-opt span { display: flex; flex-direction: column; min-width: 0; }
+.here-opt small { color: var(--muted); font-size: .78rem; }
+.here-sid { display: flex; gap: 8px; }
+.here-sid .input { flex: 1; min-width: 0; font-size: 1.1rem; text-transform: uppercase; }
+.here-sid .btn { flex: none; }
+/* シートを開いている間のトーストは、どの画面でも上に出す（下の位置指定が後から効くと、上下に引き伸ばされて画面を覆っていた） */
+body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8px) !important; bottom: auto !important; }

@@ -142,7 +142,7 @@
       if (rest.length) {
         const shown = this.allOpen ? rest : rest.slice(0, 5);
         html += `<section class="card qcard day-next"><h3>この後 <small>${rest.length}件</small>
-            <button class="link-btn" data-act="reroute">${U.icon('route')}ここから組み直す</button></h3>
+            <button class="link-btn" data-act="reroute">${U.icon('route')}いる場所から組み直す</button></h3>
           <ol class="qlist">${shown.map((cid, i) => V.qrow(cid, d.entries[cid].status === 'later' ? '後' : i + 2)).join('')}</ol>
           ${rest.length > 5 ? `<button class="link-btn more" data-act="dayAll">${this.allOpen ? `${U.icon('up', 'sm')}たたむ` : `${U.icon('down', 'sm')}残り${rest.length - 5}件も表示`}</button>` : ''}
         </section>`;
@@ -322,7 +322,7 @@
         <div class="menu-tiles">
           ${tile('wallet', 'wallet', '財布の中身')}
           ${tile('outsideBuy', 'yen', 'サークル外の支出')}
-          ${tile('reroute', 'route', 'ここから組み直す')}
+          ${tile('reroute', 'route', 'いる場所から組み直す')}
           ${T.schedule.length ? tile('schedule', 'cal', '進行表') : ''}
           ${tile('clockMenu', 'timer', '時刻の設定')}
           ${tile('nav', 'list', '計画のリスト', 'data-view="list"')}
@@ -385,7 +385,7 @@
       const nextIds = q.todo.filter((x) => x !== q.current);
       if (nextIds.length) {
         html += `<section class="card qcard"><h3>この後 <small>${nextIds.length}件</small>
-          <button class="link-btn" data-act="reroute">${U.icon('route')}ここから組み直す</button></h3>
+          <button class="link-btn" data-act="reroute">${U.icon('route')}いる場所から組み直す</button></h3>
           <ol class="qlist">${nextIds.slice(0, 6).map((cid, i) => V.qrow(cid, i + 2)).join('')}</ol>
           ${nextIds.length > 6 ? `<button class="link-btn more" data-act="nav" data-view="list">残り${nextIds.length - 6}件をリストで見る</button>` : ''}
         </section>`;
@@ -1045,6 +1045,7 @@
           ${e ? `<button class="btn sm primary" data-act="goNow" data-cid="${cid}">${U.icon('go')}次にここへ</button>`
             : `<button class="btn sm primary" data-act="addPlan" data-cid="${cid}" data-pri="3">${U.icon('plus')}計画に追加</button>`}
           ${e ? '' : `<button class="btn sm" data-act="addPlan" data-cid="${cid}" data-pri="1">必須で追加</button>`}
+          ${s.queue().todo.length + s.queue().later.length ? `<button class="btn sm" data-act="hereCircle" data-cid="${cid}">${U.icon('target')}ここから組み直す</button>` : ''}
         </div>`;
     },
   };

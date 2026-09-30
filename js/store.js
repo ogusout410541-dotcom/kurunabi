@@ -82,6 +82,7 @@
     cashSettled: 0, // 現金の支出のうち、すでに金種（財布の中身）に反映したぶん。二重に引かないため
     cashStart: null, // 買い物を始める前の金種。「当日の記録だけリセット」で戻す
     routedAt: 0,    // 最後にルートを作った時刻（そのあと追加したサークルがあれば準備欄で知らせる）
+    here: null,     // 当日に指定した「いまいる場所」{ x, y, label, t }。最後に回ったサークルより新しければルートの出発点になる
     updated: Date.now(),
   });
 
@@ -896,15 +897,8 @@
         if (!e) return;
         (e.status === 'todo' || e.status === 'later' ? active : fixed).push(cid);
       });
-      let start = S.startPoint();
-      if (fromCurrent) {
-        const last = fixed
-          .map((cid) => d.entries[cid])
-          .filter((e) => e.doneAt)
-          .sort((a, b) => b.doneAt - a.doneAt)[0];
-        const p = last && Lay.pointOf(L, S.circle(last.cid));
-        if (p) start = p;
-      }
+      // 当日の途中は「いまいる場所」（指定した場所か、最後に回ったサークルの新しいほう）から組む
+      const start = fromCurrent ? S.origin().p : S.startPoint();
       let groups =
         mode === 'short' ? [active]
           : mode === 'tier' ? [1, 2, 3, 4].map((p) => active.filter((cid) => d.entries[cid].pri === p))
@@ -945,9 +939,39 @@
     if (st) return st;
     if (d.start && L.bySid.get(d.start)) {
       const c = L.bySid.get(d.start);
-      return { x: c.sx, y: c.sy };
+      return { x: c.sx, y: c.sy, label: d.start + ' の前' };
     }
     return L.starts[0];
+  };
+
+  /**
+   * ルートの出発点。当日に指定した「いまいる場所」と、最後に回ったサークルのうち新しいほう。
+   * どちらも無ければ設定のスタート地点（入口）
+   * @returns {{p:{x,y}, label:string}}
+   */
+  S.origin = () => {
+    const L = S.ev().layout;
+    const d = S.d();
+    const last = Object.values(d.entries)
+      .filter((e) => e.doneAt && !(e.status === 'todo' || e.status === 'later'))
+      .sort((a, b) => b.doneAt - a.doneAt)[0];
+    const lc = last && S.circle(last.cid);
+    const lp = lc && Lay.pointOf(L, lc);
+    if (d.here && (!lp || (d.here.t || 0) >= last.doneAt)) return { p: { x: d.here.x, y: d.here.y }, label: d.here.label || 'いまいる場所' };
+    if (lp) return { p: lp, label: lc.space };
+    const st = S.startPoint();
+    return { p: st, label: st.label || 'スタート' };
+  };
+
+  /** 「いまいる場所」を決めて、そこから未完了のサークルを回る順番を作り直す */
+  S.setHere = (p, label, mode = S.state.settings.routeMode) => {
+    S.mutate(null, (d) => { d.here = { x: p.x, y: p.y, label, t: S.now() }; }, { silent: true });
+    S.optimize(mode, true);
+  };
+  /** スペース番号（G23 など）→ その席の前の通路の点。無ければ null */
+  S.pointOfSid = (sid) => {
+    const c = S.ev().layout.bySid.get(sid);
+    return c ? { x: c.sx, y: c.sy } : null;
   };
 
   /** 残りルートの移動量（全体比較用の目安） */
@@ -1184,6 +1208,7 @@
     });
     d.extras = [];
     d.focus = null;
+    d.here = null;
     // 試しに財布から引いたぶんも、買い物を始める前の中身に戻す
     if (wallet && d.cashStart) { d.cashBreak = { ...d.cashStart }; d.cash = S.cashTotal(d.cashBreak); }
     d.cashSettled = 0;
