@@ -1115,3 +1115,10 @@ body.day[data-view="go"] .toast { bottom: calc(var(--tab-h) + var(--safe-b) + 15
 .here-sid .btn { flex: none; }
 /* シートを開いている間のトーストは、どの画面でも上に出す（下の位置指定が後から効くと、上下に引き伸ばされて画面を覆っていた） */
 body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8px) !important; bottom: auto !important; }
+
+/* ルート線：区間ごとに車線をずらして描く（同じ通路を何度も通っても重ならない）。
+   破線だと並んだ線が読みにくいので実線にし、先の区間ほど薄くする（js/map.js の paintRoute） */
+.map-svg .route { stroke-dasharray: none; stroke-width: 3; }
+.map-svg .route-casing { stroke-width: 6; }
+.map-svg .route.next-leg { stroke-width: 6; }
+.map-svg .leg-g { transition: opacity .2s; }

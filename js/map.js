@@ -113,6 +113,7 @@
       svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
       const z = b.w / vb.w;
       svg.classList.toggle('zoomed', z > 2.2);
+      routeOnZoom();
     };
 
     inst.fit = () => inst.setVB({ ...inst.base });
@@ -192,47 +193,115 @@
       U.$('.badge-layer', svg).innerHTML = badges.join('');
 
       // ルート線
-      let route = '';
-      // 区間表示中は、ルート線を非表示にしていても、その区間だけは必ず描く（道順を見たくて開いているため）
-      const segMode = inst.segIndex != null;
-      if ((S.state.settings.showRoute || segMode) && remaining.length) {
-        let prev = S.origin().p;
-        const st = prev;
-        const pts = [prev];
-        remaining.forEach((cid) => {
-          const p = Lay.pointOf(L, S.circle(cid));
-          if (!p) return;
-          const seg = Lay.polyline(L, prev, p);
-          pts.push(...seg.slice(1));
-          prev = p;
+      inst.paintRoute();
+    };
+
+    /*
+     * ルート線。区間（いまいる場所→1件目、1件目→2件目…）ごとに線を引き、
+     * 同じ通路を何度も通る区間は「車線」をずらして並べる（地下鉄の路線図のように、重ならず並んで見える）。
+     * 車線の間隔は画面上で一定（拡大・縮小したら描き直す）。先の区間ほど薄くして、近い区間を目立たせる
+     */
+    const LANE_PX = 6.5;     // 車線の間隔（画面上の px）
+    const LANE_ORDER = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5];
+    /** 折れ線を「縦・横の線分」の並びに整える（同じ点・一直線の途中の点を省く） */
+    const cleanPoly = (pts) => {
+      const out = [];
+      pts.forEach((p) => {
+        const last = out[out.length - 1];
+        if (last && Math.abs(last.x - p.x) < 0.5 && Math.abs(last.y - p.y) < 0.5) return;
+        if (out.length >= 2) {
+          const a = out[out.length - 2], b = last;
+          const colV = Math.abs(a.x - b.x) < 0.5 && Math.abs(b.x - p.x) < 0.5;
+          const colH = Math.abs(a.y - b.y) < 0.5 && Math.abs(b.y - p.y) < 0.5;
+          if (colV || colH) out.pop();
+        }
+        out.push(p);
+      });
+      return out;
+    };
+    /** 区間ごとの線に車線を割り当て、ずらした点列を返す */
+    const laneRoutes = (legs, gap) => {
+      const used = new Map();   // 通路（向き＋位置）→ [{lo, hi, lane}]
+      return legs.map((leg) => {
+        const pts = cleanPoly(Lay.polyline(inst.L, leg.from, leg.to));
+        if (pts.length < 2) return null;
+        const segs = [];
+        for (let i = 1; i < pts.length; i++) {
+          const a = pts[i - 1], b = pts[i];
+          const vert = Math.abs(a.x - b.x) < 0.5;
+          const key = vert ? 'v' + Math.round(a.x) : 'h' + Math.round(a.y);
+          const lo = vert ? Math.min(a.y, b.y) : Math.min(a.x, b.x);
+          const hi = vert ? Math.max(a.y, b.y) : Math.max(a.x, b.x);
+          const list = used.get(key) || [];
+          const busy = new Set(list.filter((s) => s.lo < hi - 1 && s.hi > lo + 1).map((s) => s.lane));
+          const lane = LANE_ORDER.find((l) => !busy.has(l)) ?? 0;
+          list.push({ lo, hi, lane });
+          used.set(key, list);
+          segs.push({ vert, off: lane * gap });
+        }
+        // 角の点は、前後の線分のずらし（縦の線分は x、横の線分は y）を合わせて決める
+        return pts.map((p, i) => {
+          const before = segs[i - 1], after = segs[i];
+          let dx = 0, dy = 0;
+          [before, after].forEach((s) => { if (!s) return; if (s.vert) dx = s.off; else dy = s.off; });
+          return { x: p.x + dx, y: p.y + dy };
         });
-        // 下に縁取り（casing）を敷いて、机や配置図の上でも線が埋もれないようにする
-        const ptsTxt = pts.map((p) => `${p.x},${p.y}`).join(' ');
-        route = (S.state.settings.showRoute ? `<polyline class="route-casing${segMode ? ' faded' : ''}" points="${ptsTxt}"/><polyline class="route${segMode ? ' faded' : ''}" points="${ptsTxt}"/>` : '') +
-          `<g class="start-mark"><circle cx="${st.x}" cy="${st.y}" r="7"/></g>`;
-        if (segMode) {
-          // 選んだ区間だけをはっきり描く（線が重なって見分けられない問題への対応）
-          const legs = inst.legs();
-          const leg = legs[U.clamp(inst.segIndex, 0, legs.length - 1)];
-          if (leg) {
-            const seg = Lay.polyline(L, leg.from, leg.to);
-            const segTxt = seg.map((p) => `${p.x},${p.y}`).join(' ');
-            route += `<polyline class="route-casing wide" points="${segTxt}"/><polyline class="route leg-line" points="${segTxt}"/>`;
-            route += `<g class="leg-mark from"><circle cx="${leg.from.x}" cy="${leg.from.y}" r="9"/></g>`;
-            route += `<g class="leg-mark to"><circle cx="${leg.to.x}" cy="${leg.to.y}" r="11"/></g>`;
-          }
-        } else {
-          // 次の目的地までの区間を強調
-          const cur = q.current && Lay.pointOf(L, S.circle(q.current));
-          if (cur && q.current === remaining[0]) {
-            const seg = Lay.polyline(L, st, cur);
-            const segTxt = seg.map((p) => `${p.x},${p.y}`).join(' ');
-            route += `<polyline class="route-casing wide" points="${segTxt}"/><polyline class="route next-leg" points="${segTxt}"/>`;
-          }
+      });
+    };
+    const ptsAttr = (pts) => pts.map((p) => `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`).join(' ');
+
+    inst.paintRoute = () => {
+      const layer = U.$('.route-layer', svg);
+      if (!inst.L || !layer) return;
+      const q = S.queue();
+      const segMode = inst.segIndex != null;
+      // 区間表示中は、ルート線を非表示にしていても、その区間だけは必ず描く（道順を見たくて開いているため）
+      if (!(S.state.settings.showRoute || segMode) || !(q.todo.length + q.later.length)) { layer.innerHTML = ''; return; }
+      const legs = inst.legs();
+      if (!legs.length) { layer.innerHTML = ''; return; }
+      // 画面上の 1px が配置図の座標でいくつか
+      const r = svg.getBoundingClientRect();
+      const scale = r.width && r.height && inst.vb ? Math.min(r.width / inst.vb.w, r.height / inst.vb.h) : 0.5;
+      inst.routeScale = scale;
+      const lanes = laneRoutes(legs, LANE_PX / scale);
+      const st = S.origin().p;
+      let html = '';
+      if (S.state.settings.showRoute) {
+        // 先の区間から描いて、近い区間が上に来るようにする
+        for (let i = legs.length - 1; i >= 0; i--) {
+          const pts = lanes[i];
+          if (!pts) continue;
+          const first = i === 0 && legs[0].cid === q.current && !segMode;
+          const op = segMode ? 0.2 : Math.max(0.28, 1 - i * 0.09);
+          html += `<g class="leg-g${first ? ' now' : ''}" style="opacity:${first ? 1 : op.toFixed(2)}"><polyline class="route-casing${first ? ' wide' : ''}" points="${ptsAttr(pts)}"/><polyline class="route${first ? ' next-leg' : ''}" points="${ptsAttr(pts)}"/></g>`;
         }
       }
-      U.$('.route-layer', svg).innerHTML = route;
+      html += `<g class="start-mark"><circle cx="${st.x}" cy="${st.y}" r="7"/></g>`;
+      if (segMode) {
+        // 選んだ区間だけをはっきり描く
+        const n = U.clamp(inst.segIndex, 0, legs.length - 1);
+        const leg = legs[n], pts = lanes[n];
+        if (leg && pts) {
+          html += `<polyline class="route-casing wide" points="${ptsAttr(pts)}"/><polyline class="route leg-line" points="${ptsAttr(pts)}"/>`;
+          html += `<g class="leg-mark from"><circle cx="${leg.from.x}" cy="${leg.from.y}" r="9"/></g>`;
+          html += `<g class="leg-mark to"><circle cx="${leg.to.x}" cy="${leg.to.y}" r="11"/></g>`;
+        }
+      }
+      layer.innerHTML = html;
     };
+
+    /** 拡大率が変わったら、車線の間隔を画面上で一定に保つためにルート線だけ描き直す（1フレームに1回まで） */
+    let routeFrame = 0;
+    const routeOnZoom = () => {
+      if (routeFrame || !inst.routeScale) return;
+      routeFrame = requestAnimationFrame(() => {
+        routeFrame = 0;
+        const r = svg.getBoundingClientRect();
+        const scale = r.width && inst.vb ? Math.min(r.width / inst.vb.w, r.height / inst.vb.h) : 0;
+        if (scale && Math.abs(Math.log(scale / inst.routeScale)) > 0.12) inst.paintRoute();
+      });
+    };
+
 
     /** 指定サークルへ寄る */
     inst.focus = (cid, zoom = 3.2) => {
