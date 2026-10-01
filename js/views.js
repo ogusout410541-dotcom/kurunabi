@@ -1204,6 +1204,16 @@
           <div class="btn-row wrap"><button class="btn" data-act="outsideBuy">${U.icon('plus')}サークル外の支出</button><button class="btn" data-act="exportCsv">${U.icon('download')}CSVで書き出し</button></div>
         </section>
 
+        ${(() => {
+          const ys = s.yearly();
+          const Y = ys[0];
+          return `<section class="card" id="sec-yearly">
+            <h3>${U.icon('cal')}支出の集計 <small>イベントをまたいで年ごと</small></h3>
+            ${Y ? `<div class="ev-cur"><b>${Y.year}年 ${U.yen(Y.total)}</b><small>${Y.events.length}イベント ・ ${Y.count}件</small></div>` : '<p class="muted small">まだ購入の記録がありません</p>'}
+            <div class="btn-row wrap"><button class="btn" data-act="yearly"${Y ? '' : ' disabled'}>${U.icon('list')}集計を開く・家計簿CSV</button></div>
+          </section>`;
+        })()}
+
         ${HC.shots && HC.shots.ready ? (() => {
           const u = HC.shots.usage(s.state.eventId);
           return `<section class="card" id="sec-shots">
@@ -1228,6 +1238,7 @@
             入力の途中なら、いったん入力欄の外を押してから更新してください。</p>
           <p class="ver-state muted small" id="ver-state"></p>
           <div class="btn-row wrap">
+            <button class="btn" data-act="changelog">${U.icon('note')}バージョン履歴</button>
             <button class="btn" data-act="checkUpdate">${U.icon('download')}更新を確認</button>
             <button class="btn ghost" data-act="reloadApp">${U.icon('undo')}読み込み直す</button>
           </div>

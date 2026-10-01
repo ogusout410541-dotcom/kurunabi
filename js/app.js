@@ -9,7 +9,7 @@
   const P = HC.parser;
   const Lay = HC.layout;
 
-  HC.VERSION = '1.3.5';
+  HC.VERSION = '1.4.0';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -173,6 +173,22 @@
     if (plan && plan.best) S.applyPay(plan.best, cid, { noUndo: true });
   };
 
+  /**
+   * この記録で予算や財布の現金を超えるときは、記録する前に確認する。超えないときはそのまま true。
+   * 予算はすでに超えているときは毎回は聞かない（超える瞬間だけ）。財布の現金は足りないたびに聞く
+   */
+  const confirmOver = async (amount, pay) => {
+    if (!(amount > 0)) return true;
+    const st = S.stats();
+    const lines = [];
+    if (st.budget && st.left >= 0 && st.left - amount < 0) lines.push(`予算を ${U.yen(amount - st.left)} 超えます（予算の残りは ${U.yen(st.left)}）。`);
+    if ((pay || S.state.settings.defaultPay) === 'cash' && st.cashLeft != null && st.cashLeft - amount < 0) {
+      lines.push(`財布の現金では ${U.yen(amount - Math.max(0, st.cashLeft))} 足りません（財布の現金は ${U.yen(Math.max(0, st.cashLeft))}）。`);
+    }
+    if (!lines.length) return true;
+    return UI.confirm(`${U.yen(amount)} を記録すると、\n${lines.join('\n')}\n\n記録しますか？`, { ok: '記録する', cancel: 'やめる', title: '予算の確認' });
+  };
+
   const numpadForItem = (cid, it) => {
     const unit = it.paid != null ? Math.round(it.paid / (it.qty || 1)) : it.price;
     UI.numpad({
@@ -184,7 +200,9 @@
       pay: it.pay,
       okLabel: '購入済にする',
       allowZero: true,   // 無料でもらったものは 0 円で記録できる
-      onOk: (r) => {
+      onOk: async (r) => {
+        // 支払額を直すときは、増えたぶんだけで確かめる
+        if (!(await confirmOver(r.amount - (it.status === 'bought' ? S.itemCost(it) : 0), r.pay))) return;
         S.recordPurchase(cid, { iid: it.id, amount: r.amount, qty: r.qty, pay: r.pay });
         deductCash(r, cid);
         U.vibrate();
@@ -269,7 +287,7 @@
     afterFinish(ds.cid, S.STATUS[st].label);
   };
 
-  A.completeAll = (ds) => {
+  A.completeAll = async (ds) => {
     const cid = ds.cid;
     const e = S.entry(cid);
     if (!e) return;
@@ -281,7 +299,8 @@
         name: '',
         okLabel: '記録して完了',
         allowZero: true,
-        onOk: (r) => {
+        onOk: async (r) => {
+          if (!(await confirmOver(r.amount, r.pay))) return;
           S.mutate('購入完了', (d) => {
             const en = d.entries[cid];
             const now = S.now();
@@ -304,7 +323,10 @@
         showName: false,
         okLabel: '記録して完了',
         allowZero: true,
-        onOk: (r) => {
+        onOk: async (r) => {
+          // 価格の決まっている品物も一緒に購入済になるので、その分も足して確かめる
+          const known = U.sum(e.items.filter((i) => i.status === 'todo' && !S.isUnknown(i)), (i) => (i.price || 0) * (i.qty || 1));
+          if (!(await confirmOver(r.amount + known, r.pay))) return;
           S.mutate('購入完了', (d) => {
             const en = d.entries[cid];
             const now = S.now();
@@ -326,16 +348,18 @@
       });
       return;
     }
+    if (!(await confirmOver(S.entryLeft(e), S.state.settings.defaultPay))) return;
     S.completeAll(cid);
     afterFinish(cid, '完了');
   };
 
-  A.toggleItem = (ds) => {
+  A.toggleItem = async (ds) => {
     const e = S.entry(ds.cid);
     const it = e && e.items.find((i) => i.id === ds.iid);
     if (!it) return;
     if (it.status === 'todo' && S.isUnknown(it)) return numpadForItem(ds.cid, it);
     if (it.status === 'soldout' || it.status === 'skip') { S.setItemStatus(ds.cid, ds.iid, 'todo'); return; }
+    if (it.status === 'todo' && !(await confirmOver((it.price || 0) * (it.qty || 1), it.pay))) return;
     S.toggleItem(ds.cid, ds.iid);
     U.vibrate(8);
     if (it.status === 'bought') checkAllChecked(ds.cid); // toggleItem は同じ参照を書き換えている
@@ -349,7 +373,7 @@
       { label: it.status === 'bought' ? '支払額を修正' : '支払額を入れて購入済に', icon: 'yen', act: () => numpadForItem(ds.cid, it) },
       it.status === 'bought'
         ? { label: '未購入に戻す', icon: 'undo', act: () => S.setItemStatus(ds.cid, ds.iid, 'todo') }
-        : { label: '予定価格で購入済に', icon: 'check', act: () => { S.toggleItem(ds.cid, ds.iid); checkAllChecked(ds.cid); } },
+        : { label: '予定価格で購入済に', icon: 'check', act: async () => { if (!(await confirmOver((it.price || 0) * (it.qty || 1), it.pay))) return; S.toggleItem(ds.cid, ds.iid); checkAllChecked(ds.cid); } },
       { label: 'これは売り切れ', icon: 'ban', act: () => { S.setItemStatus(ds.cid, ds.iid, 'soldout'); UI.toast('売切にしました', { undo: true }); } },
       { label: '今回は買わない', icon: 'skip', act: () => S.setItemStatus(ds.cid, ds.iid, 'skip') },
       { label: 'この品物を削除', icon: 'trash', danger: true, act: () => { S.mutate('買うものを削除', (d) => { const en = d.entries[ds.cid]; en.items = en.items.filter((i) => i.id !== ds.iid); }); UI.toast('削除しました', { undo: true }); } },
@@ -361,7 +385,8 @@
     UI.numpad({
       hint: payHint,
       title: `${c.space} 追加購入`,
-      onOk: (r) => {
+      onOk: async (r) => {
+        if (!(await confirmOver(r.amount, r.pay))) return;
         S.recordPurchase(ds.cid, { name: r.name, amount: r.amount, qty: r.qty, pay: r.pay });
         deductCash(r, ds.cid);
         U.vibrate();
@@ -374,7 +399,8 @@
     UI.numpad({
       hint: payHint,
       title: 'サークル外の支出（企業ブース・飲食など）',
-      onOk: (r) => {
+      onOk: async (r) => {
+        if (!(await confirmOver(r.amount, r.pay))) return;
         S.recordPurchase(null, { name: r.name || 'その他', amount: r.amount, qty: r.qty, pay: r.pay });
         deductCash(r);
         UI.toast(`${U.yen(r.amount)} を記録`, { undo: true });
@@ -671,6 +697,76 @@
   };
 
   A.reloadApp = () => location.reload();
+
+  /** 版番号の比較（'1.3.5' と '1.4.0'）。a が新しければ正 */
+  const cmpVer = (a, b) => {
+    const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; }
+    return 0;
+  };
+  const TAG = { new: '新機能', up: '改善', fix: '修正' };
+
+  /**
+   * バージョン履歴。opt.since を渡すと、その版より新しいものだけを「新しくなったこと」として出す（更新後の初回起動）
+   */
+  A.changelog = (opt = {}) => {
+    const all = HC.CHANGELOG || [];
+    const since = opt.since && typeof opt.since === 'string' ? opt.since : '';
+    const list = since ? all.filter((c) => cmpVer(c.v, since) > 0) : all;
+    if (!list.length) return;
+    UI.sheet({
+      id: 'changelog',
+      center: !!since,
+      title: since ? `新しくなったこと<small>v${U.esc(since)} → v${U.esc(HC.VERSION)}</small>` : 'バージョン履歴',
+      html: `<ol class="clog">${list.map((c) => `
+          <li class="clog-v${c.v === HC.VERSION ? ' now' : ''}">
+            <div class="clog-head"><span class="clog-ver">v${U.esc(c.v)}</span>${c.v === HC.VERSION ? '<span class="clog-now">いまの版</span>' : ''}<span class="clog-date">${U.esc(c.date.replace(/-/g, '/'))}</span></div>
+            <b class="clog-title">${U.esc(c.title)}</b>
+            <ul>${c.items.map(([t, text]) => `<li><span class="clog-tag ${U.esc(t)}">${TAG[t] || ''}</span><span>${U.esc(text)}</span></li>`).join('')}</ul>
+          </li>`).join('')}</ol>
+        ${since ? '<div class="btn-row"><button class="btn" data-all>すべての履歴</button><button class="btn primary" data-close>閉じる</button></div>' : ''}`,
+      onMount: (el) => {
+        const b = U.$('[data-all]', el);
+        if (b) b.onclick = () => { UI.close('changelog'); setTimeout(() => A.changelog(), 250); };
+      },
+    });
+  };
+
+  /** 年ごとの支出の集計（イベントをまたいで）と、家計簿用 CSV の書き出し */
+  A.yearly = (ds = {}) => {
+    const years = S.yearly();
+    if (!years.length) return UI.toast('まだ購入の記録がありません');
+    const y = years.find((Y) => Y.year === +ds.year) || years[0];
+    UI.sheet({
+      id: 'yearly',
+      side: true,
+      title: '支出の集計',
+      html: `${years.length > 1 ? `<div class="seg sm year-seg">${years.map((Y) => `<button class="${Y.year === y.year ? 'on' : ''}" data-year="${Y.year}">${Y.year}年</button>`).join('')}</div>` : ''}
+        <section class="year-sum">
+          <div class="ys-total"><span>${y.year}年の支出</span><b>${U.yen(y.total)}</b></div>
+          <div><span>買ったもの</span><b>${y.count}<small>件</small></b></div>
+          <div><span>現金</span><b>${U.yen(y.cash)}</b></div>
+          <div><span>キャッシュレス</span><b>${U.yen(y.card)}</b></div>
+        </section>
+        <h4 class="year-h">イベントごと</h4>
+        <ul class="year-ev">${y.events.map((E) => `<li>
+            <span class="ye-name"><b>${U.esc(E.name)}</b><small>${E.date ? U.esc(E.date.replace(/-/g, '/')) + ' ・ ' : ''}${E.circles}サークル ・ ${E.count}件</small></span>
+            <span class="ye-total">${U.yen(E.total)}</span></li>`).join('')}</ul>
+        <div class="btn-grid2">
+          <button class="btn primary" data-csv="${y.year}">${U.icon('download')}${y.year}年をCSVで書き出し</button>
+          <button class="btn" data-csv="all">${U.icon('download')}全期間をCSVで書き出し</button>
+        </div>
+        <p class="muted small">CSV は「日付・時刻・内容・金額・支払方法・カテゴリ・メモ」の順で、1行が1回の支出です。家計簿アプリの CSV 取り込みや表計算ソフトで開けます。デモで付けた記録は数えません。</p>`,
+      onMount: (el) => {
+        U.$$('[data-year]', el).forEach((b) => (b.onclick = () => A.yearly({ year: b.dataset.year })));
+        U.$$('[data-csv]', el).forEach((b) => (b.onclick = () => {
+          const yr = b.dataset.csv === 'all' ? null : +b.dataset.csv;
+          U.download(`kurunavi_家計簿_${yr || '全期間'}_${stamp()}.csv`, S.kakeiboCsv(yr), 'text/csv');
+          UI.toast('書き出しました');
+        }));
+      },
+    });
+  };
 
   // ---- PCとスマホの同期
   const syncMsg = (r) => (r && r.error ? '同期できませんでした：' + r.error : '');
@@ -1993,7 +2089,13 @@
     // 前回開いたときと版が変わっていたら、更新が当たったことを知らせる
     try {
       const seen = localStorage.getItem('kurunavi.version');
-      if (seen && seen !== HC.VERSION) UI.toast(`v${HC.VERSION} に更新されました`, { ms: 6000 });
+      if (seen && seen !== HC.VERSION) {
+        // 新しい版になったら、最初に開いたときに「新しくなったこと」を出す（ほかの確認が出ているときはトーストで知らせる）
+        setTimeout(() => {
+          if (UI.top()) UI.toast(`v${HC.VERSION} に更新されました`, { ms: 8000, action: { label: '新しくなったこと', fn: () => A.changelog({ since: seen }) } });
+          else A.changelog({ since: seen });
+        }, 1400);
+      }
       localStorage.setItem('kurunavi.version', HC.VERSION);
     } catch (_) { /* noop */ }
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});

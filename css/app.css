@@ -1122,3 +1122,34 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .map-svg .route-casing { stroke-width: 6; }
 .map-svg .route.next-leg { stroke-width: 6; }
 .map-svg .leg-g { transition: opacity .2s; }
+
+/* バージョン履歴 */
+.clog { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.clog-v { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; background: var(--surface); }
+.clog-v.now { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.clog-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.clog-ver { font-weight: 850; font-variant-numeric: tabular-nums; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: .85rem; }
+.clog-now { font-size: .72rem; font-weight: 800; color: #fff; background: var(--accent); padding: 2px 8px; border-radius: 999px; }
+.clog-date { margin-left: auto; color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
+.clog-title { display: block; font-size: .98rem; margin: 2px 0 6px; }
+.clog-v ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.clog-v ul li { display: flex; gap: 8px; align-items: flex-start; font-size: .88rem; line-height: 1.45; }
+.clog-tag { flex: none; font-size: .7rem; font-weight: 800; padding: 1px 7px; border-radius: 6px; margin-top: 2px; }
+.clog-tag.new { background: var(--ok-soft); color: var(--ok); }
+.clog-tag.up { background: var(--accent-soft); color: var(--accent); }
+.clog-tag.fix { background: var(--warn-bg); color: var(--warn-ink); }
+/* 支出の集計 */
+.year-seg { margin-bottom: 10px; }
+.year-sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.year-sum div { display: flex; flex-direction: column; padding: 8px 10px; border-radius: 12px; background: var(--surface2); }
+.year-sum .ys-total { grid-column: 1 / -1; background: var(--accent-soft); }
+.year-sum span { font-size: .76rem; color: var(--muted); font-weight: 650; }
+.year-sum b { font-size: 1.1rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.year-sum .ys-total b { font-size: 1.6rem; }
+.year-h { margin: 6px 0; font-size: .9rem; }
+.year-ev { list-style: none; margin: 0 0 12px; padding: 0; }
+.year-ev li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.ye-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ye-name small { color: var(--muted); font-size: .76rem; }
+.ye-total { font-weight: 800; font-variant-numeric: tabular-nums; }
+.clog, .clog-v { text-align: left; }

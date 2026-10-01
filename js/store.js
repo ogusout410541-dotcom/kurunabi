@@ -1277,17 +1277,84 @@
   S.clearEventData = () => S.mutate('計画を全消去', (d) => { Object.assign(d, defaultData(), { budget: d.budget, cash: d.cash, reserve: d.reserve, start: d.start }); });
 
   /** 購入ログ（時系列） */
-  S.log = () => {
-    const d = S.d();
+  S.log = () => S.logOf(S.state.eventId, S.d());
+
+  /** 指定イベントの購入ログ（時系列）。d を省くと保存されている記録（デモ中のイベントは始める前の記録）を使う */
+  S.logOf = (id, d = realData(id)) => {
+    if (!d) return [];
+    const ev = S.ev(id);
+    const pay = S.state.settings.defaultPay;
     const rows = [];
-    Object.values(d.entries).forEach((e) => {
-      const c = S.circle(e.cid) || e.snap;
-      e.items.forEach((i) => {
-        if (i.status === 'bought') rows.push({ t: i.t || e.doneAt || 0, space: c.space, circle: c.name, name: i.name, qty: i.qty, cost: S.itemCost(i), pay: i.pay || S.state.settings.defaultPay, planned: i.planned !== false, cid: e.cid });
+    Object.values(d.entries || {}).forEach((e) => {
+      const c = (ev && ev.byId.get(e.cid)) || e.snap || {};
+      (e.items || []).forEach((i) => {
+        if (i.status === 'bought') rows.push({ t: i.t || e.doneAt || 0, space: c.space || '', circle: c.name || '', name: i.name, qty: i.qty, cost: S.itemCost(i), pay: i.pay || pay, planned: i.planned !== false, cid: e.cid });
       });
     });
-    d.extras.forEach((x) => rows.push({ t: x.t, space: '', circle: '（サークル外）', name: x.name, qty: x.qty || 1, cost: x.cost, pay: x.pay || S.state.settings.defaultPay, planned: false, xid: x.id }));
+    (d.extras || []).forEach((x) => rows.push({ t: x.t, space: '', circle: '（サークル外）', name: x.name, qty: x.qty || 1, cost: x.cost, pay: x.pay || pay, planned: false, xid: x.id }));
     return rows.sort((a, b) => a.t - b.t);
+  };
+  /** 集計に使うイベントの記録。デモ中のイベントは、デモを始める前の記録を使う（練習の記録を数えないため） */
+  const realData = (id) => {
+    const demo = S.state.demo;
+    if (demo && demo.eventId === id) { try { return JSON.parse(demo.snap); } catch (_) { /* noop */ } }
+    return S.state.data[id];
+  };
+
+  /**
+   * 年ごとの支出の集計（イベントをまたいで）。
+   * 購入の時刻の年で数え、時刻が無いものはイベントの開催日の年に入れる
+   * @returns [{ year, total, cash, card, count, events: [{ id, name, date, total, count, circles }] }]（新しい年が先）
+   */
+  S.yearly = () => {
+    const years = new Map();
+    Object.keys(S.state.data).forEach((id) => {
+      const ev = S.ev(id);
+      if (!ev) return;
+      const date = ev.date || (S.state.data[id] && S.state.data[id].date) || '';
+      S.logOf(id).forEach((r) => {
+        const y = r.t ? new Date(r.t).getFullYear() : (date ? Number(date.slice(0, 4)) : 0);
+        if (!y) return;
+        if (!years.has(y)) years.set(y, { year: y, total: 0, cash: 0, card: 0, count: 0, ev: new Map() });
+        const Y = years.get(y);
+        Y.total += r.cost; Y.count++;
+        if (r.pay === 'card') Y.card += r.cost; else Y.cash += r.cost;
+        if (!Y.ev.has(id)) Y.ev.set(id, { id, name: ev.name, date, total: 0, count: 0, cids: new Set() });
+        const E = Y.ev.get(id);
+        E.total += r.cost; E.count++;
+        if (r.cid) E.cids.add(r.cid);
+      });
+    });
+    return [...years.values()].sort((a, b) => b.year - a.year).map((Y) => ({
+      year: Y.year, total: Y.total, cash: Y.cash, card: Y.card, count: Y.count,
+      events: [...Y.ev.values()].sort((a, b) => (a.date || '').localeCompare(b.date || '')).map((E) => ({ id: E.id, name: E.name, date: E.date, total: E.total, count: E.count, circles: E.cids.size })),
+    }));
+  };
+
+  /**
+   * 家計簿アプリに取り込みやすい CSV（1行＝1回の支出）。year を省くと全期間。
+   * 列：日付, 時刻, 内容, 金額, 支払方法, カテゴリ, メモ（イベント名・スペース）
+   */
+  S.kakeiboCsv = (year) => {
+    const q = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+    const lines = [['日付', '時刻', '内容', '金額', '支払方法', 'カテゴリ', 'メモ'].map(q).join(',')];
+    const rows = [];
+    Object.keys(S.state.data).forEach((id) => {
+      const ev = S.ev(id);
+      if (!ev) return;
+      const date = ev.date || (S.state.data[id] && S.state.data[id].date) || '';
+      S.logOf(id).forEach((r) => {
+        const day = r.t ? U.today(r.t) : date;
+        if (!day || (year && Number(day.slice(0, 4)) !== year)) return;
+        rows.push({ day, time: r.t ? U.time(r.t) : '', r, ev });
+      });
+    });
+    rows.sort((a, b) => (a.day + a.time).localeCompare(b.day + b.time));
+    rows.forEach(({ day, time, r, ev }) => {
+      const what = r.cid ? `${r.name || '購入品'}${r.qty > 1 ? ' ×' + r.qty : ''}（${r.circle}）` : (r.name || 'サークル外の支出');
+      lines.push([day.replace(/-/g, '/'), time, what, r.cost, r.pay === 'card' ? 'キャッシュレス' : '現金', '趣味・娯楽', `${ev.name}${r.space ? ' ' + r.space : ''}`].map(q).join(','));
+    });
+    return '\ufeff' + lines.join('\r\n');
   };
 
   S.csv = () => {
