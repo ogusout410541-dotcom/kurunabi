@@ -55,13 +55,15 @@ EventData = { budget, cash（財布の現金。cashBreak があるとその合�
               order: [cid], entries: {[cid]: Entry}, extras: [Extra],
               addCircles: [Circle], start: 'door-r'|sid, focus: cid|null, date, updated,
               openAt: 'HH:MM'（自分の入場時刻）, endAt: 'HH:MM'（終了）, startedAt: ms（「いま開始」の時刻）,
-              cashSettled: 現金の支出のうち金種に反映済みの額, cashStart: 買い物前の金種（リセットで戻す）, routedAt: 最後にルートを作った時刻}
+              cashSettled: 現金の支出のうち金種に反映済みの額, cashStart: 買い物前の金種（リセットで戻す）, routedAt: 最後にルートを作った時刻,
+              here: いまいる場所 {x,y,label,t}, requesters: 代行の依頼者 [{id, name, settledAt}]}
 // 同梱イベント側の openAt/endAt/schedule が既定値。EventData の値が空ならそちらを使う（S.times()）
 Entry = { cid, pri: 1必須|2優先|3通常|4余裕, items: [Item], memo, menu(お品書きURL),
           status: 'todo'|'later'|'done'|'soldout'|'skip', doneAt, snap: {name, tw, space}, addedAt,
           cashPaid: いくら財布（金種）から引いたか。二重に引かないための控え（共有リンクには乗せない） }
 Item  = { id, name, price(予定単価, 0=未定), qty, status: 'todo'|'bought'|'soldout'|'skip',
-          paid(実際の支払総額 or null=予定通り), pay: 'cash'|'card', planned(false=当日の追加購入), t }
+          paid(実際の支払総額 or null=予定通り), pay: 'cash'|'card', planned(false=当日の追加購入), t,
+          for(代行の依頼者 id。無ければ自分の分) }
 Extra = { id, name, cost, qty, pay, t }     // サークル外の支出（企業ブース・飲食など）
 Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv数字ID or URL), web }
 ```
@@ -118,6 +120,13 @@ Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv�
   ルートは `routedAt`（自動ルート・ドラッグ並べ替え・スペース順で更新）より後に追加したサークルがあると「作り直し」を促す。
   スマホでホーム画面から開いていないと「ホーム画面に追加」（`A.a2hs`。iPhone は必須扱い＝Safari はしばらく開かないとデータを消すことがあるため。
   ホーム画面のアプリは Safari とデータが別なので、同期の QR か共有リンクで移すよう案内する）、同期を使っていなければ「バックアップ」を出す
+- **代行**（1.5.0。知り合いの分を立て替えて買い、あとで精算する）：依頼者は `EventData.requesters`、品物の `for` にその id。
+  **代行の分は自分の予算に入れない**（`S.stats()` の spent/plannedLeft/plannedTotal/mustLeft・試算・年間の集計・家計簿CSVから外す）が、
+  **財布の現金（cashSpent）には数える**（実際に財布から出すため。`proxySpent`/`proxyLeft` を別に返す）。
+  `S.entryPlanned/entrySpent/entryLeft(e, who)`：who 省略で全部（その場で払う額）、`'own'` で自分の分だけ。`confirmOver(額, 支払方法, 自分の分)` も予算は自分の分だけで見る。
+  サークル詳細で「追加する品物：自分の分／◯◯の分」（`app.itemFor`）を選んでから品物を足す。品物ごとの「誰の分」ボタン（`A.itemFor`）で付け替え。
+  同じ品名の数量+1・まとめて登録は、選んでいる人の分だけが対象。リストと記録タブに「代行」のカード（`V.proxyCard`）→ 精算の画面（`A.proxySheet`）で
+  立て替えた合計・買えた／買えなかった件数・品物の一覧、報告の文章のコピー（`proxyText`）、精算済みの印。スリム形式は item の `f` と data の `requesters`
 - **予算を超えるときの確認**（1.4.0、`confirmOver(金額, 支払方法)`）：記録する前に、予算の残りを超える瞬間（すでに超えていれば聞かない）と、
   現金払いで財布の現金が足りないときに確認を出す。チェック・完了・テンキー（支払額の修正は増えたぶんだけ）・追加購入・サークル外の支出のすべてで通す
 - **支出の集計**（1.4.0）：`S.logOf(id)`（S.log のイベント指定版）を全イベントで集め、`S.yearly()` が年ごと（購入の時刻の年、無ければ開催日の年）に
@@ -287,7 +296,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## 版の更新（ここを間違えると「いつまでも古い版のまま」になる）
 
-- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.4.0）。
+- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.5.0）。
   **`js/changelog.js` の先頭にもその版の内容を1件足す**（tag: new=新機能 / up=改善 / fix=修正。利用者向けの自然な文で）。
   更新後の初回起動で、前に開いた版（`localStorage['kurunavi.version']`）より新しい分を「新しくなったこと」として自動で出す（`A.changelog({since})`）
 - **SW の install はブラウザのHTTPキャッシュを避けて取り込む**（`freshRequests()`＝`cache:'reload'` ＋ `?v=CACHE`）。
@@ -354,6 +363,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 - [x] いまいる場所（入口・スペース番号・地図のサークル）から組み直す、横の通路を実際に通れる3本に修正、シートを開いている間のトーストが画面を覆う不具合を修正（1.3.4）
 - [x] 同じ通路を通る区間のルート線を車線に分けて重ならないように、先の区間ほど薄く（1.3.5）
 - [x] 年間の集計・家計簿CSV、予算を超えるときの確認、バージョン履歴（設定から＋更新後に自動表示）（1.4.0）
+- [x] 代行（依頼者ごとに品物を分けて立て替え、精算の画面と報告の文章。自分の予算とは別に数える）（1.5.0）
 - [ ] サークル画像の取り込み：URLをもらってから。**目的のサークルのみ**・**アプリに同梱**（`data/cuts/`）で本人合意済み（2026-09-24）。
       CORSのため端末側での直接取得は不可なので、こちらで取得→長辺800pxのWebPに縮小→同梱→一覧・詳細・当日カードに表示する
 - 運用方針（2026-09-24 本人確認）：スマホは **GitHub Pages に公開**して開く／当日の記録は**チェックだけ**が基本（予定額で自動計上、違ったときだけ金額を直す）

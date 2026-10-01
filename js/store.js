@@ -82,6 +82,7 @@
     cashSettled: 0, // 現金の支出のうち、すでに金種（財布の中身）に反映したぶん。二重に引かないため
     cashStart: null, // 買い物を始める前の金種。「当日の記録だけリセット」で戻す
     routedAt: 0,    // 最後にルートを作った時刻（そのあと追加したサークルがあれば準備欄で知らせる）
+    requesters: [], // 代行の依頼者 [{ id, name, settledAt }]。品物の for に id を入れると、その人の分になる
     here: null,     // 当日に指定した「いまいる場所」{ x, y, label, t }。最後に回ったサークルより新しければルートの出発点になる
     updated: Date.now(),
   });
@@ -506,9 +507,63 @@
   S.isUnknown = (it) => !it.price && !S.isFree(it);
 
   S.itemCost = (it) => (it.paid != null ? it.paid : (it.price || 0) * (it.qty || 1));
-  S.entryPlanned = (e) => U.sum(e.items.filter((i) => i.planned !== false), (i) => (i.price || 0) * (i.qty || 1));
-  S.entrySpent = (e) => U.sum(e.items.filter((i) => i.status === 'bought'), S.itemCost);
-  S.entryLeft = (e) => U.sum(e.items.filter((i) => i.status === 'todo'), (i) => (i.price || 0) * (i.qty || 1));
+  // who：省くと代行分も含めた全部（その場で払う額）、'own' で自分の分だけ（予算の計算用）
+  const whose = (who) => (i) => (who === 'own' ? !i.for : who ? i.for === who : true);
+  S.entryPlanned = (e, who) => U.sum(e.items.filter((i) => i.planned !== false && whose(who)(i)), (i) => (i.price || 0) * (i.qty || 1));
+  S.entrySpent = (e, who) => U.sum(e.items.filter((i) => i.status === 'bought' && whose(who)(i)), S.itemCost);
+  S.entryLeft = (e, who) => U.sum(e.items.filter((i) => i.status === 'todo' && whose(who)(i)), (i) => (i.price || 0) * (i.qty || 1));
+
+  // ------------------------------------------------------------------ 代行（知り合いの分を立て替えて買う）
+  /** 依頼者の一覧（このイベント） */
+  S.requesters = () => S.d().requesters || [];
+  S.requester = (rid) => S.requesters().find((r) => r.id === rid) || null;
+  S.addRequester = (name) => {
+    const r = { id: 'r' + U.uid(), name: String(name).trim() || '依頼者', settledAt: 0 };
+    S.mutate('依頼者を追加', (d) => { d.requesters = [...(d.requesters || []), r]; });
+    return r;
+  };
+  S.renameRequester = (rid, name) => S.mutate('依頼者の名前', (d) => { const r = (d.requesters || []).find((x) => x.id === rid); if (r) r.name = String(name).trim() || r.name; });
+  /** 依頼者を消す。その人の分だった品物は自分の分に戻す */
+  S.removeRequester = (rid) => S.mutate('依頼者を削除', (d) => {
+    d.requesters = (d.requesters || []).filter((x) => x.id !== rid);
+    Object.values(d.entries).forEach((e) => e.items.forEach((i) => { if (i.for === rid) delete i.for; }));
+  });
+  /** 品物を誰の分にするか（rid が空なら自分） */
+  S.setItemFor = (cid, iid, rid) => S.mutate('誰の分か', (d) => {
+    const it = d.entries[cid] && d.entries[cid].items.find((i) => i.id === iid);
+    if (!it) return;
+    if (rid) it.for = rid; else delete it.for;
+  });
+  S.setSettled = (rid, on) => S.mutate(on ? '精算済みにする' : '精算済みを戻す', (d) => {
+    const r = (d.requesters || []).find((x) => x.id === rid);
+    if (r) r.settledAt = on ? Date.now() : 0;
+  });
+  /**
+   * 依頼者ごとのまとめ（精算用）
+   * @returns { rows: [{cid, space, circle, name, qty, price, status, cost}], planned, bought, count, boughtCount, missCount, todoCount }
+   */
+  S.proxySummary = (rid) => {
+    const d = S.d();
+    const rows = [];
+    d.order.forEach((cid) => {
+      const e = d.entries[cid];
+      if (!e) return;
+      const c = S.circle(cid) || e.snap;
+      e.items.forEach((i) => {
+        if (i.for !== rid) return;
+        rows.push({ cid, space: c.space, circle: c.name, name: i.name || '（無題）', qty: i.qty || 1, price: i.price || 0, status: i.status, cost: i.status === 'bought' ? S.itemCost(i) : 0 });
+      });
+    });
+    return {
+      rows,
+      planned: U.sum(rows, (r) => r.price * r.qty),
+      bought: U.sum(rows, (r) => r.cost),
+      count: rows.length,
+      boughtCount: rows.filter((r) => r.status === 'bought').length,
+      missCount: rows.filter((r) => r.status === 'soldout' || r.status === 'skip').length,
+      todoCount: rows.filter((r) => r.status === 'todo').length,
+    };
+  };
 
   S.addToPlan = (cid, pri = 3) =>
     S.mutate('計画に追加', (d) => {
@@ -651,6 +706,7 @@
   S.stats = () => {
     const d = S.d();
     let spent = 0, cashSpent = 0, plannedLeft = 0, mustLeft = 0, plannedTotal = 0, unknown = 0;
+    let proxySpent = 0, proxyLeft = 0;   // 代行（立て替え）の分。自分の予算には入れない
     let doneCount = 0, activeCount = 0, mustTotal = 0, mustDone = 0;
     const pay = S.state.settings.defaultPay;
     Object.values(d.entries).forEach((e) => {
@@ -660,6 +716,14 @@
       if (e.pri === 1) { mustTotal++; if (!active) mustDone++; }
       e.items.forEach((i) => {
         const planned = (i.price || 0) * (i.qty || 1);
+        if (i.for) {
+          if (i.status === 'bought') {
+            const c = S.itemCost(i);
+            proxySpent += c;
+            if ((i.pay || pay) === 'cash') cashSpent += c;   // 財布からは実際に出ている
+          } else if (i.status === 'todo' && active) proxyLeft += planned;
+          return;
+        }
         if (i.planned !== false) plannedTotal += planned;
         if (i.status === 'bought') {
           const c = S.itemCost(i);
@@ -696,6 +760,8 @@
       projected: usable - spent - plannedLeft,
       cash: d.cash || 0,
       cashLeft,
+      proxySpent,
+      proxyLeft,
       unknown,
       doneCount,
       activeCount,
@@ -720,7 +786,7 @@
     const avg = known.length ? Math.round(U.sum(known) / known.length) : 0;
 
     const LABEL = ['必須だけ', '優先まで', '通常まで', 'すべて'];
-    let cum = 0, cumCount = 0, cumUnknown = 0;
+    let cum = 0, cumCount = 0, cumUnknown = 0, cumProxy = 0;
     const rows = [1, 2, 3, 4].map((tier) => {
       let add = 0, count = 0, unknown = 0;
       Object.values(d.entries).forEach((e) => {
@@ -728,6 +794,7 @@
         count++;
         e.items.forEach((i) => {
           if (i.status !== 'todo') return;
+          if (i.for) { cumProxy += (i.price || 0) * (i.qty || 1); return; }   // 代行分は予算に入れない
           if (i.price) add += i.price * (i.qty || 1);
           else if (S.isUnknown(i)) unknown++;
         });
@@ -743,7 +810,7 @@
         cum,
         total,
         budgetLeft: st.usable ? st.usable - total : null,
-        cashLeft: st.cashLeft != null ? st.cashLeft - (pay === 'cash' ? cum : 0) : null,
+        cashLeft: st.cashLeft != null ? st.cashLeft - (pay === 'cash' ? cum + cumProxy : 0) : null,
         unknown: cumUnknown,
         unknownEst: cumUnknown * avg,
       };
@@ -1059,12 +1126,13 @@
     if (i.paid != null) o.a = i.paid;
     if (i.pay) o.y = i.pay;
     if (i.planned === false) o.x = 1;
-    if (i.t) o.tt = i.t;   // 買った時刻（記録をそのまま持ち帰れるように）
+    if (i.t) o.tt = i.t;
+    if (i.for) o.f = i.for;   // 代行の依頼者   // 買った時刻（記録をそのまま持ち帰れるように）
     return o;
   };
   const fatItem = (o) =>
     typeof o === 'object' && o && 'n' in o
-      ? { id: U.uid(), name: o.n, price: o.p || 0, qty: o.q || 1, status: o.s || 'todo', paid: o.a != null ? o.a : null, pay: o.y || null, planned: !o.x, t: o.tt || null }
+      ? { id: U.uid(), name: o.n, price: o.p || 0, qty: o.q || 1, status: o.s || 'todo', paid: o.a != null ? o.a : null, pay: o.y || null, planned: !o.x, t: o.tt || null, ...(o.f ? { for: o.f } : {}) }
       : { ...S.newItem(), ...o };
 
   const slimEntry = (e, known) => {
@@ -1120,6 +1188,7 @@
           ...(d.date ? { date: d.date } : {}),
           ...(S.cashCount(d.cashBreak) ? { cashBreak: d.cashBreak, cashSettled: d.cashSettled || 0, ...(d.cashStart ? { cashStart: d.cashStart } : {}) } : {}),
           ...(d.routedAt ? { routedAt: d.routedAt } : {}),
+          ...(d.requesters && d.requesters.length ? { requesters: d.requesters } : {}),
           ...(d.extras && d.extras.length ? { extras: d.extras } : {}),
           ...(d.addCircles && d.addCircles.length ? { addCircles: d.addCircles } : {}),
           order: d.order.filter((cid) => d.entries[cid]),
@@ -1288,7 +1357,7 @@
     Object.values(d.entries || {}).forEach((e) => {
       const c = (ev && ev.byId.get(e.cid)) || e.snap || {};
       (e.items || []).forEach((i) => {
-        if (i.status === 'bought') rows.push({ t: i.t || e.doneAt || 0, space: c.space || '', circle: c.name || '', name: i.name, qty: i.qty, cost: S.itemCost(i), pay: i.pay || pay, planned: i.planned !== false, cid: e.cid });
+        if (i.status === 'bought') rows.push({ t: i.t || e.doneAt || 0, space: c.space || '', circle: c.name || '', name: i.name, qty: i.qty, cost: S.itemCost(i), pay: i.pay || pay, planned: i.planned !== false, cid: e.cid, for: i.for || '' });
       });
     });
     (d.extras || []).forEach((x) => rows.push({ t: x.t, space: '', circle: '（サークル外）', name: x.name, qty: x.qty || 1, cost: x.cost, pay: x.pay || pay, planned: false, xid: x.id }));
@@ -1313,6 +1382,7 @@
       if (!ev) return;
       const date = ev.date || (S.state.data[id] && S.state.data[id].date) || '';
       S.logOf(id).forEach((r) => {
+        if (r.for) return;   // 代行の立て替えは自分の支出ではない
         const y = r.t ? new Date(r.t).getFullYear() : (date ? Number(date.slice(0, 4)) : 0);
         if (!y) return;
         if (!years.has(y)) years.set(y, { year: y, total: 0, cash: 0, card: 0, count: 0, ev: new Map() });
@@ -1344,6 +1414,7 @@
       if (!ev) return;
       const date = ev.date || (S.state.data[id] && S.state.data[id].date) || '';
       S.logOf(id).forEach((r) => {
+        if (r.for) return;
         const day = r.t ? U.today(r.t) : date;
         if (!day || (year && Number(day.slice(0, 4)) !== year)) return;
         rows.push({ day, time: r.t ? U.time(r.t) : '', r, ev });

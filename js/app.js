@@ -9,7 +9,7 @@
   const P = HC.parser;
   const Lay = HC.layout;
 
-  HC.VERSION = '1.4.0';
+  HC.VERSION = '1.5.0';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -177,11 +177,12 @@
    * この記録で予算や財布の現金を超えるときは、記録する前に確認する。超えないときはそのまま true。
    * 予算はすでに超えているときは毎回は聞かない（超える瞬間だけ）。財布の現金は足りないたびに聞く
    */
-  const confirmOver = async (amount, pay) => {
+  // own：そのうち自分の分（代行分は予算に入れないため）。省くと全部が自分の分
+  const confirmOver = async (amount, pay, own = amount) => {
     if (!(amount > 0)) return true;
     const st = S.stats();
     const lines = [];
-    if (st.budget && st.left >= 0 && st.left - amount < 0) lines.push(`予算を ${U.yen(amount - st.left)} 超えます（予算の残りは ${U.yen(st.left)}）。`);
+    if (st.budget && st.left >= 0 && st.left - own < 0) lines.push(`予算を ${U.yen(own - st.left)} 超えます（予算の残りは ${U.yen(st.left)}）。`);
     if ((pay || S.state.settings.defaultPay) === 'cash' && st.cashLeft != null && st.cashLeft - amount < 0) {
       lines.push(`財布の現金では ${U.yen(amount - Math.max(0, st.cashLeft))} 足りません（財布の現金は ${U.yen(Math.max(0, st.cashLeft))}）。`);
     }
@@ -202,7 +203,8 @@
       allowZero: true,   // 無料でもらったものは 0 円で記録できる
       onOk: async (r) => {
         // 支払額を直すときは、増えたぶんだけで確かめる
-        if (!(await confirmOver(r.amount - (it.status === 'bought' ? S.itemCost(it) : 0), r.pay))) return;
+        const delta = r.amount - (it.status === 'bought' ? S.itemCost(it) : 0);
+        if (!(await confirmOver(delta, r.pay, it.for ? 0 : delta))) return;
         S.recordPurchase(cid, { iid: it.id, amount: r.amount, qty: r.qty, pay: r.pay });
         deductCash(r, cid);
         U.vibrate();
@@ -326,7 +328,8 @@
         onOk: async (r) => {
           // 価格の決まっている品物も一緒に購入済になるので、その分も足して確かめる
           const known = U.sum(e.items.filter((i) => i.status === 'todo' && !S.isUnknown(i)), (i) => (i.price || 0) * (i.qty || 1));
-          if (!(await confirmOver(r.amount + known, r.pay))) return;
+          const knownOwn = U.sum(e.items.filter((i) => i.status === 'todo' && !S.isUnknown(i) && !i.for), (i) => (i.price || 0) * (i.qty || 1));
+          if (!(await confirmOver(r.amount + known, r.pay, (unknown.some((i) => !i.for) ? r.amount : 0) + knownOwn))) return;
           S.mutate('購入完了', (d) => {
             const en = d.entries[cid];
             const now = S.now();
@@ -348,7 +351,7 @@
       });
       return;
     }
-    if (!(await confirmOver(S.entryLeft(e), S.state.settings.defaultPay))) return;
+    if (!(await confirmOver(S.entryLeft(e), S.state.settings.defaultPay, S.entryLeft(e, 'own')))) return;
     S.completeAll(cid);
     afterFinish(cid, '完了');
   };
@@ -359,7 +362,7 @@
     if (!it) return;
     if (it.status === 'todo' && S.isUnknown(it)) return numpadForItem(ds.cid, it);
     if (it.status === 'soldout' || it.status === 'skip') { S.setItemStatus(ds.cid, ds.iid, 'todo'); return; }
-    if (it.status === 'todo' && !(await confirmOver((it.price || 0) * (it.qty || 1), it.pay))) return;
+    if (it.status === 'todo' && !(await confirmOver((it.price || 0) * (it.qty || 1), it.pay, it.for ? 0 : (it.price || 0) * (it.qty || 1)))) return;
     S.toggleItem(ds.cid, ds.iid);
     U.vibrate(8);
     if (it.status === 'bought') checkAllChecked(ds.cid); // toggleItem は同じ参照を書き換えている
@@ -373,7 +376,8 @@
       { label: it.status === 'bought' ? '支払額を修正' : '支払額を入れて購入済に', icon: 'yen', act: () => numpadForItem(ds.cid, it) },
       it.status === 'bought'
         ? { label: '未購入に戻す', icon: 'undo', act: () => S.setItemStatus(ds.cid, ds.iid, 'todo') }
-        : { label: '予定価格で購入済に', icon: 'check', act: async () => { if (!(await confirmOver((it.price || 0) * (it.qty || 1), it.pay))) return; S.toggleItem(ds.cid, ds.iid); checkAllChecked(ds.cid); } },
+        : { label: '予定価格で購入済に', icon: 'check', act: async () => { if (!(await confirmOver((it.price || 0) * (it.qty || 1), it.pay, it.for ? 0 : (it.price || 0) * (it.qty || 1)))) return; S.toggleItem(ds.cid, ds.iid); checkAllChecked(ds.cid); } },
+      ...(S.requesters().length ? [{ label: it.for ? `誰の分か：${(S.requester(it.for) || {}).name || '代行'}` : '誰の分か：自分', icon: 'wallet', hint: '押すと変えられます', act: () => A.itemFor(ds) }] : []),
       { label: 'これは売り切れ', icon: 'ban', act: () => { S.setItemStatus(ds.cid, ds.iid, 'soldout'); UI.toast('売切にしました', { undo: true }); } },
       { label: '今回は買わない', icon: 'skip', act: () => S.setItemStatus(ds.cid, ds.iid, 'skip') },
       { label: 'この品物を削除', icon: 'trash', danger: true, act: () => { S.mutate('買うものを削除', (d) => { const en = d.entries[ds.cid]; en.items = en.items.filter((i) => i.id !== ds.iid); }); UI.toast('削除しました', { undo: true }); } },
@@ -447,7 +451,7 @@
     const name = ds.name || '';
     const e = S.entry(ds.cid);
     // 同じ品名が未購入で入っていたら、行を増やさず数量を足す（押し間違いではなく「2冊買う」ことが多い）
-    const same = name && e && e.items.find((i) => i.status === 'todo' && U.norm(i.name) === U.norm(name));
+    const same = name && e && e.items.find((i) => i.status === 'todo' && U.norm(i.name) === U.norm(name) && (i.for || '') === (app.itemFor || ''));
     if (same) {
       S.mutate('数量を増やす', (d) => {
         const it = d.entries[ds.cid].items.find((i) => i.id === same.id);
@@ -460,6 +464,100 @@
       return;
     }
     addItemRow(ds.cid, name);
+  };
+
+  // ---- 代行（知り合いの分を立て替えて買う）
+  app.itemFor = '';   // サークル詳細で、これから足す品物を誰の分にするか（空＝自分）
+
+  A.addRequester = async () => {
+    const name = await UI.prompt('代行の依頼者の名前', { placeholder: '例：Aさん', ok: '追加' });
+    if (name == null || !name.trim()) return;
+    const r = S.addRequester(name);
+    app.itemFor = r.id;   // すぐにその人の分を登録できるように
+    UI.toast(`${r.name}を追加しました。サークル詳細で「${r.name}の分」を選んで品物を登録してください`, { undo: true, ms: 6000 });
+  };
+  A.pickFor = (ds) => {
+    app.itemFor = ds.rid || '';
+    U.$$('[data-act="pickFor"]').forEach((b) => b.classList.toggle('on', (b.dataset.rid || '') === app.itemFor));
+  };
+  /** 品物を誰の分にするか選ぶ */
+  A.itemFor = (ds) => {
+    const e = S.entry(ds.cid);
+    const it = e && e.items.find((i) => i.id === ds.iid);
+    if (!it) return;
+    UI.menu(`${it.name || '品物'}は誰の分ですか`, [
+      { label: '自分の分', icon: it.for ? 'star' : 'check', active: !it.for, act: () => S.setItemFor(ds.cid, ds.iid, '') },
+      ...S.requesters().map((r) => ({ label: `${r.name}の分（代行）`, icon: it.for === r.id ? 'check' : 'wallet', active: it.for === r.id, act: () => S.setItemFor(ds.cid, ds.iid, r.id) })),
+      { label: '依頼者を追加', icon: 'plus', act: () => A.addRequester() },
+    ]);
+  };
+
+  /** 代行の報告の文章（LINE などにそのまま貼れる形） */
+  const proxyText = (rid) => {
+    const r = S.requester(rid);
+    const m = S.proxySummary(rid);
+    const line = (x) => `・${x.space} ${x.circle}：${x.name}${x.qty > 1 ? ' ×' + x.qty : ''}`;
+    const got = m.rows.filter((x) => x.status === 'bought');
+    const miss = m.rows.filter((x) => x.status === 'soldout' || x.status === 'skip');
+    const todo = m.rows.filter((x) => x.status === 'todo');
+    const out = [`【${S.ev().name} 代行のご報告】`, `${r.name}の分`, ''];
+    if (got.length) out.push('■ 買えたもの', ...got.map((x) => `${line(x)}　${U.yen(x.cost)}`), '');
+    if (miss.length) out.push('■ 買えなかったもの', ...miss.map((x) => `${line(x)}（${x.status === 'soldout' ? '売り切れ' : '見送り'}）`), '');
+    if (todo.length) out.push('■ まだ回っていないもの', ...todo.map(line), '');
+    out.push(`立て替えた合計：${U.yen(m.bought)}`);
+    if (m.bought) out.push('お支払いをお願いします。');
+    return out.join('\n');
+  };
+
+  /** 依頼者ごとの精算の画面 */
+  A.proxySheet = (ds) => {
+    const rid = ds.rid;
+    const r = S.requester(rid);
+    if (!r) return;
+    const m = S.proxySummary(rid);
+    const st = (x) => (x.status === 'bought' ? `<b>${U.yen(x.cost)}</b>` : `<span class="ps-st ${x.status}">${x.status === 'todo' ? 'まだ' : x.status === 'soldout' ? '売り切れ' : '見送り'}</span>`);
+    UI.sheet({
+      id: 'proxy',
+      side: true,
+      title: `${U.esc(r.name)}の代行`,
+      html: `<section class="year-sum proxy-sum">
+          <div class="ys-total"><span>立て替えた合計（あとでもらう額）</span><b>${U.yen(m.bought)}</b></div>
+          <div><span>買えた</span><b>${m.boughtCount}<small>件</small></b></div>
+          <div><span>買えなかった</span><b>${m.missCount}<small>件</small></b></div>
+          <div><span>まだ</span><b>${m.todoCount}<small>件</small></b></div>
+        </section>
+        ${r.settledAt ? `<p class="ok small">${U.icon('check', 'sm')}${U.esc(U.md(r.settledAt))} に精算済み</p>` : ''}
+        ${m.rows.length ? `<ul class="proxy-items">${m.rows.map((x) => `<li>
+            <button class="pi-main" data-act="openCircle" data-cid="${U.esc(x.cid)}"><b>${U.esc(x.space)}</b><span>${U.esc(x.circle)}<small>${U.esc(x.name)}${x.qty > 1 ? ' ×' + x.qty : ''}${x.price ? ` ・ 予定 ${U.yen(x.price * x.qty)}` : ''}</small></span></button>
+            <span class="pi-st">${st(x)}</span></li>`).join('')}</ul>`
+          : '<p class="muted small">まだ品物がありません。サークル詳細で「追加する品物」を「' + U.esc(r.name) + 'の分」にして登録してください。</p>'}
+        <div class="btn-grid2">
+          <button class="btn primary" data-copy>${U.icon('note')}報告の文章をコピー</button>
+          <button class="btn" data-settle>${U.icon('check')}${r.settledAt ? '精算済みを戻す' : '精算済みにする'}</button>
+          <button class="btn ghost" data-rename>${U.icon('edit')}名前を変える</button>
+          <button class="btn danger ghost" data-remove>${U.icon('trash')}依頼者を削除</button>
+        </div>
+        <p class="muted small">代行の分は自分の予算には入りません。現金で払った分は、財布の現金からは引かれます。</p>`,
+      onMount: (el) => {
+        U.$('[data-copy]', el).onclick = async () => {
+          const t = proxyText(rid);
+          if (await U.copy(t)) UI.toast('報告の文章をコピーしました。LINE などに貼り付けて送れます');
+          else UI.prompt('報告の文章（長押しでコピー）', { value: t, multiline: true, ok: '閉じる' });
+        };
+        U.$('[data-settle]', el).onclick = () => { S.setSettled(rid, !r.settledAt); A.proxySheet({ rid }); UI.toast(r.settledAt ? '精算済みにしました' : '精算済みを戻しました', { undo: true }); };
+        U.$('[data-rename]', el).onclick = async () => {
+          const v = await UI.prompt('依頼者の名前', { value: r.name, ok: '変更' });
+          if (v && v.trim()) { S.renameRequester(rid, v); setTimeout(() => A.proxySheet({ rid }), 250); }
+        };
+        U.$('[data-remove]', el).onclick = async () => {
+          if (!(await UI.confirm(`${r.name}を削除します。${r.name}の分だった品物は、自分の分に戻ります。`, { ok: '削除', danger: true }))) return;
+          UI.close('proxy');
+          if (app.itemFor === rid) app.itemFor = '';
+          S.removeRequester(rid);
+          UI.toast('削除しました', { undo: true });
+        };
+      },
+    });
   };
 
   /** 「買うものを登録しない」の切り替え（お品書き待ちの一覧から外す） */
@@ -489,7 +587,7 @@
         const it = d.entries[cid].items.find((i) => i.id === opt.restore);
         if (it) it.qty = Math.max(1, (it.qty || 2) - 1);
       }
-      const it = S.newItem(name, hint);
+      const it = S.newItem(name, hint, 1, app.itemFor ? { for: app.itemFor } : {});
       newId = it.id;
       d.entries[cid].items.push(it);
     });
@@ -533,9 +631,10 @@
   A.bulkItems = async (ds) => {
     const e = S.entry(ds.cid);
     if (!e) return;
-    const cur = e.items.filter((i) => i.status === 'todo' && i.planned !== false)
+    const who = app.itemFor || '';
+    const cur = e.items.filter((i) => i.status === 'todo' && i.planned !== false && (i.for || '') === who)
       .map((i) => `${i.name}${i.price ? ' ' + i.price : ''}${i.qty > 1 ? ' x' + i.qty : ''}`).join('\n');
-    const v = await UI.prompt('買うものをまとめて登録', {
+    const v = await UI.prompt(who ? `買うものをまとめて登録（${(S.requester(who) || {}).name || '代行'}の分）` : '買うものをまとめて登録', {
       value: cur,
       multiline: true,
       ok: '置き換える',
@@ -546,8 +645,8 @@
     S.mutate('買うものをまとめて登録', (d) => {
       const en = d.entries[ds.cid];
       // 購入済み・当日の追加分は残し、未購入の予定だけ入れ替える
-      const keep = en.items.filter((i) => i.status !== 'todo' || i.planned === false);
-      en.items = keep.concat(list.map((x) => S.newItem(x.name, x.price || S.priceHint(x.name), x.qty)));
+      const keep = en.items.filter((i) => i.status !== 'todo' || i.planned === false || (i.for || '') !== who);
+      en.items = keep.concat(list.map((x) => S.newItem(x.name, x.price || S.priceHint(x.name), x.qty, who ? { for: who } : {})));
     });
     UI.toast(`${list.length}件にしました`, { undo: true });
   };

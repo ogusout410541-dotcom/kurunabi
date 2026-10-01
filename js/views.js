@@ -36,7 +36,12 @@
       ${add ? `<button class="shot-add" data-act="addShot" data-cid="${esc(cid)}">${U.icon('image')}<span>画像を追加</span></button>` : ''}</div>`;
   };
 
-  const itemNames = (e) => e.items.map((i) => i.name || '（無題）').join('・');
+  const itemNames = (e) => e.items.map((i) => (i.name || '（無題）') + (i.for ? `（${(S().requester(i.for) || {}).name || '代行'}）` : '')).join('・');
+
+  /** 代行の依頼者ごとの色（5色をくり返す） */
+  V.rqClass = (rid) => 'rq-c' + Math.max(0, S().requesters().findIndex((r) => r.id === rid)) % 5;
+  /** 品物に付ける「◯◯の分」の印 */
+  V.forTag = (i) => (i.for ? `<span class="for-tag ${V.rqClass(i.for)}">${esc((S().requester(i.for) || {}).name || '代行')}の分</span>` : '');
   const priceTxt = (i) => (i.price ? U.yen(i.price) : S().isFree(i) ? '<span class="free">無料</span>' : '<span class="unk">¥?</span>') + (i.qty > 1 ? `<small>×${i.qty}</small>` : '');
 
   const emptyState = (icon, title, body, btn) =>
@@ -223,7 +228,7 @@
           ${shots.length > 1 ? `<div class="shots">${shots.slice(1).map((m) => `<button class="shot-thumb" data-act="viewShot" data-id="${esc(m.id)}" data-cid="${esc(cid)}" aria-label="お品書きを開く"><img src="${m.thumb}" alt="お品書き"></button>`).join('')}</div>` : ''}
         </div>` : (Sh && Sh.ready && !e.noShot ? '<p class="dc-noshot">お品書き画像は登録されていません</p>' : '')}
       ${V.payReady(planned - spent)}
-      <div class="cur-sum"><span>予定 ${U.yen(planned)}</span><span>支払 <b>${U.yen(spent)}</b></span></div>
+      <div class="cur-sum"><span>予定 ${U.yen(planned)}${s.entryPlanned(e) - s.entryPlanned(e, 'own') ? `<small>（うち代行 ${U.yen(s.entryPlanned(e) - s.entryPlanned(e, 'own'))}）</small>` : ''}</span><span>支払 <b>${U.yen(spent)}</b></span></div>
       ${near.length ? `<div class="near"><span class="near-l">${U.icon('compass', 'sm')}この近く</span>
         ${near.map((x) => {
           const nc = s.circle(x.cid) || d.entries[x.cid].snap;
@@ -282,7 +287,9 @@
           ${st.budget ? `<div><span>予算の残り</span><b class="${st.left < 0 ? 'neg' : ''}">${U.yen(st.left)}</b></div>` : ''}
           <div><span>財布の現金</span><b class="${st.cashLeft != null && st.cashLeft < 0 ? 'neg' : ''}">${st.cashLeft != null ? U.yen(st.cashLeft) : '未登録'}</b></div>
           <div><span>買ったもの</span><b>${log.length}<small>件</small></b></div>
+          ${st.proxySpent || s.requesters().length ? `<div class="ls-proxy"><span>代行の立て替え</span><b>${U.yen(st.proxySpent)}</b></div>` : ''}
         </section>
+        ${V.proxyCard()}
         <div class="btn-grid2 log-btns">
           <button class="btn lg" data-act="outsideBuy">${U.icon('plus')}サークル外の支出</button>
           <button class="btn lg" data-act="wallet">${U.icon('wallet')}財布の中身</button>
@@ -291,7 +298,7 @@
           <h3>${U.icon('yen')}購入の記録 <small>新しい順</small></h3>
           ${log.length ? `<ol class="log big">${log.map((r) => `<li>
             <span class="t">${U.time(r.t)}</span>
-            ${r.cid ? `<button class="w" data-act="openCircle" data-cid="${esc(r.cid)}">` : '<span class="w">'}<span class="wl">${r.space ? `<b>${esc(r.space)}</b> ` : ''}${esc(r.circle)}</span><small>${esc(r.name)}${r.qty > 1 ? ' ×' + r.qty : ''}${r.planned ? '' : ' ・追加'}${r.pay === 'card' ? ' ・キャッシュレス' : ''}</small>${r.cid ? '</button>' : '</span>'}
+            ${r.cid ? `<button class="w" data-act="openCircle" data-cid="${esc(r.cid)}">` : '<span class="w">'}<span class="wl">${r.space ? `<b>${esc(r.space)}</b> ` : ''}${esc(r.circle)}</span><small>${esc(r.name)}${r.qty > 1 ? ' ×' + r.qty : ''}${r.planned ? '' : ' ・追加'}${r.pay === 'card' ? ' ・キャッシュレス' : ''}${r.for ? ` ・${esc((s.requester(r.for) || {}).name || '代行')}の分` : ''}</small>${r.cid ? '</button>' : '</span>'}
             <span class="c">${U.yen(r.cost)}</span>
             ${r.xid ? `<button class="icon-btn sm" data-act="removeExtra" data-xid="${r.xid}" aria-label="削除">${U.icon('trash')}</button>` : ''}
           </li>`).join('')}</ol>` : '<p class="muted">まだ記録はありません。買ったらサークルのカードで「全部買えた」を押すと、ここに並びます。</p>'}
@@ -325,6 +332,7 @@
           ${tile('reroute', 'route', 'いる場所から組み直す')}
           ${T.schedule.length ? tile('schedule', 'cal', '進行表') : ''}
           ${tile('clockMenu', 'timer', '時刻の設定')}
+          ${s.requesters().length ? tile('nav', 'wallet', '代行の精算', 'data-view="list" data-scroll="proxy"') : ''}
           ${tile('nav', 'list', '計画のリスト', 'data-view="list"')}
           ${tile('nav', 'search', 'サークルを探す', 'data-view="circles"')}
           ${HC.sync.configured() ? tile('shotsPull', 'download', 'お品書き画像を受け取る') : ''}
@@ -557,7 +565,7 @@
       <li class="item it-${i.status}${i.planned === false ? ' extra' : ''}">
         <button class="item-main" data-act="toggleItem" data-cid="${cid}" data-iid="${i.id}">
           <span class="cb">${i.status === 'bought' ? U.icon('check') : i.status === 'soldout' ? '売' : i.status === 'skip' ? '－' : ''}</span>
-          <span class="nm">${esc(i.name || '（無題）')}${i.planned === false ? '<small>追加</small>' : ''}</span>
+          <span class="nm">${esc(i.name || '（無題）')}${i.planned === false ? '<small>追加</small>' : ''}${V.forTag(i)}</span>
           <span class="pr">${i.status === 'bought' && i.paid != null ? U.yen(i.paid) : priceTxt(i)}</span>
         </button>
         <button class="icon-btn" data-act="itemMenu" data-cid="${cid}" data-iid="${i.id}" aria-label="この品物の操作">${U.icon('more')}</button>
@@ -593,7 +601,7 @@
         }).join('')}</div>` : ''}
       <button class="cur-memo-add" data-act="editMemo" data-cid="${cid}">${U.icon('note', 'sm')}${e.memo ? 'メモを書き直す' : 'その場でメモ'}</button>
       ${V.payReady(planned - spent)}
-      <div class="cur-sum"><span>予定 ${U.yen(planned)}</span><span>支払 <b>${U.yen(spent)}</b></span></div>
+      <div class="cur-sum"><span>予定 ${U.yen(planned)}${s.entryPlanned(e) - s.entryPlanned(e, 'own') ? `<small>（うち代行 ${U.yen(s.entryPlanned(e) - s.entryPlanned(e, 'own'))}）</small>` : ''}</span><span>支払 <b>${U.yen(spent)}</b></span></div>
       ${hasTodo || !e.items.length
         ? `<button class="btn primary xl block" data-act="completeAll" data-cid="${cid}">${U.icon('check')}${e.items.length ? `全部買えた${U.icon('right', 'sm')}次へ` : '金額を入れて完了'}</button>`
         : `<button class="btn primary xl block" data-act="setStatus" data-st="done" data-cid="${cid}">${U.icon('check')}完了${U.icon('right', 'sm')}次へ</button>`}
@@ -625,7 +633,7 @@
         if (f === 'noimg') return noimgSet.has(cid);
         return true;
       });
-      const mustTotal = U.sum(Object.values(d.entries).filter((e) => e.pri === 1), (e) => s.entryPlanned(e));
+      const mustTotal = U.sum(Object.values(d.entries).filter((e) => e.pri === 1), (e) => s.entryPlanned(e, 'own'));
       const diff = st.usable - st.plannedTotal - U.sum(d.extras, (x) => x.cost);
       const pend = s.pendingCids();
       let html = `<section class="card plan-sum">
@@ -634,6 +642,7 @@
         <div><span>うち必須</span><b>${U.yen(mustTotal)}</b></div>
         ${st.budget ? `<div><span>予算との差</span><b class="${diff < 0 ? 'neg' : 'pos'}">${diff >= 0 ? '+' : ''}${U.yen(diff)}</b></div>` : `<div><button class="link-btn" data-act="budgetEdit">予算を設定</button></div>`}
       </section>
+      ${V.proxyCard()}
       ${s.state.settings.dayMode ? '' : V.pending(pend) + V.noShot(noimg)}
       ${V.sim()}
       <div class="toolbar">
@@ -653,6 +662,25 @@
       }
       el.innerHTML = `<div class="list-view">${html}</div>`;
     },
+  };
+
+  /** 代行のまとめ（依頼者ごとの立て替え額と、買えた件数）。押すと精算の画面 */
+  V.proxyCard = () => {
+    const s = S();
+    const rq = s.requesters();
+    if (!rq.length) return '';
+    return `<section class="card proxy-card" id="sec-proxy">
+      <h3>${U.icon('wallet')}代行 <small>立て替えて、あとで精算</small></h3>
+      <ul class="proxy-list">${rq.map((r) => {
+        const m = s.proxySummary(r.id);
+        return `<li><button class="proxy-row" data-act="proxySheet" data-rid="${esc(r.id)}">
+          <span class="rq-dot ${V.rqClass(r.id)}"></span>
+          <span class="pr-name"><b>${esc(r.name)}</b><small>${m.count}件中 買えた ${m.boughtCount}件${m.missCount ? ` ・ 買えなかった ${m.missCount}件` : ''}${m.todoCount ? ` ・ まだ ${m.todoCount}件` : ''}</small></span>
+          <span class="pr-money"><b>${U.yen(m.bought)}</b><small>${r.settledAt ? '精算済み' : `予定 ${U.yen(m.planned)}`}</small></span>
+        </button></li>`;
+      }).join('')}</ul>
+      <button class="link-btn" data-act="addRequester">${U.icon('plus', 'sm')}依頼者を追加</button>
+    </section>`;
   };
 
   // まとめカードのサークル一覧。多いときは14件までにして、押すとカードの中で全部を広げる
@@ -729,6 +757,8 @@
     const pend = s.pendingCids().length;
     const fit = sim.fitTier ? sim.rows[sim.fitTier - 1] : null;
     const notes = [];
+    const stp = s.stats();
+    if (stp.proxyLeft || stp.proxySpent) notes.push(`代行の分（${U.yen(stp.proxyLeft + stp.proxySpent)}）は予算に含めず、現金の残りにだけ含めています。`);
     if (sim.spent) notes.push(`合計には支払い済みの ${U.yen(sim.spent)}${sim.extras ? `（うちサークル外 ${U.yen(sim.extras)}）` : ''} を含みます。`);
     if (last.unknown) notes.push(`価格未定が ${last.unknown}件。平均 ${U.yen(sim.avg)} とみて <b>${U.yen(last.unknownEst)}</b> ほど増える見込みです。`);
     if (pend) notes.push(`<b class="pend-ink">お品書き待ちが ${pend}サークル。決まればここに乗ります。</b>`);
@@ -946,14 +976,17 @@
             <div class="ie-price"><span>¥</span><input class="input" data-f="iprice" data-cid="${cid}" data-iid="${i.id}" value="${i.price || ''}" inputmode="numeric" placeholder="価格" enterkeyhint="done"></div>
             <div class="stepper sm"><button class="icon-btn" data-act="qty" data-cid="${cid}" data-iid="${i.id}" data-d="-1">${U.icon('minus', 'sm')}</button><b>${i.qty}</b><button class="icon-btn" data-act="qty" data-cid="${cid}" data-iid="${i.id}" data-d="1">${U.icon('plus', 'sm')}</button></div>
             <button class="icon-btn" data-act="itemMenu" data-cid="${cid}" data-iid="${i.id}" aria-label="操作">${U.icon('more')}</button>
+            ${s.requesters().length ? `<button class="ie-for${i.for ? ' on ' + V.rqClass(i.for) : ''}" data-act="itemFor" data-cid="${cid}" data-iid="${i.id}">${U.icon('wallet', 'sm')}${i.for ? esc((s.requester(i.for) || {}).name || '代行') + 'の分（代行）' : '自分の分'}</button>` : ''}
             ${i.status !== 'todo' ? `<div class="ie-st">${i.status === 'bought' ? `購入済 ${U.yen(s.itemCost(i))}${i.t ? ' ' + U.time(i.t) : ''}` : s.STATUS[i.status === 'soldout' ? 'soldout' : 'skip'].label}</div>` : ''}
           </div>`).join('')}
         </div>
+        ${s.requesters().length ? `<div class="for-pick"><span>追加する品物：</span>${[{ id: '', name: '自分' }, ...s.requesters()].map((r) => `<button class="chip sm${(HC.app.itemFor || '') === r.id ? ' on' : ''}${r.id ? ' ' + V.rqClass(r.id) : ''}" data-act="pickFor" data-rid="${esc(r.id)}">${esc(r.name)}${r.id ? 'の分' : 'の分'}</button>`).join('')}</div>` : ''}
         <div class="chips wrap">${s.ITEM_PRESETS.map((p) => {
           const hint = s.priceHint(p);
           return `<button class="chip sm" data-act="addItem" data-cid="${cid}" data-name="${esc(p)}">${U.icon('plus', 'sm')}${esc(p)}${hint ? `<small>${U.yen(hint)}</small>` : ''}</button>`;
         }).join('')}<button class="chip sm" data-act="addItem" data-cid="${cid}" data-name="">${U.icon('plus', 'sm')}自由入力</button>
-        <button class="chip sm ghost" data-act="bulkItems" data-cid="${cid}">${U.icon('note', 'sm')}まとめて登録</button></div>
+        <button class="chip sm ghost" data-act="bulkItems" data-cid="${cid}">${U.icon('note', 'sm')}まとめて登録</button>
+        <button class="chip sm ghost" data-act="addRequester">${U.icon('plus', 'sm')}代行の依頼者を追加</button></div>
       </div>
       <div class="field"><label>メモ <small>（売切れ注意・特典・列の様子など）</small></label>
         <textarea class="input" rows="2" data-f="memo" data-cid="${cid}" placeholder="例：新刊は午前中に完売しがち／セット特典あり">${esc(e.memo)}</textarea></div>
