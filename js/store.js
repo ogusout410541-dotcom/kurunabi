@@ -125,8 +125,27 @@
       out[k] = { ...defaultData(), ...raw };
       // 1.1.2 以前：財布から引いた額はサークルごとの cashPaid にしか残っていない
       if (!('cashSettled' in raw)) out[k].cashSettled = U.sum(Object.values(raw.entries || {}), (e) => e.cashPaid || 0);
+      cleanFor(out[k]);
+      // 1.5.0 以前：サークル外の支出から引いた額は控えが無い。引いた合計との差を、現金のサークル外の支出に割り当てる
+      const d = out[k];
+      let gap = (d.cashSettled || 0) - U.sum(Object.values(d.entries || {}), (e) => e.cashPaid || 0) - U.sum(d.extras || [], (x) => x.cashPaid || 0);
+      (d.extras || []).forEach((x) => {
+        if (gap <= 0 || x.cashPaid || (x.pay || 'cash') !== 'cash') return;
+        x.cashPaid = Math.min(gap, x.cost || 0);
+        gap -= x.cashPaid;
+      });
     });
     return out;
+  };
+
+  /**
+   * 依頼者の一覧に無い「誰の分」（for）を消して自分の分に戻す。
+   * そのままだと自分の予算にも代行のまとめにも出ない金額ができてしまうため（読み込み・同期・起動のたびに通す）
+   */
+  const cleanFor = (d) => {
+    const ids = new Set((d.requesters || []).map((r) => r.id));
+    Object.values(d.entries || {}).forEach((e) => (e.items || []).forEach((i) => { if (i.for && !ids.has(i.for)) delete i.for; }));
+    return d;
   };
 
   let saveFailedNotified = false;
@@ -274,6 +293,36 @@
   S.undoLabel = () => (S.canUndo() ? undoStack[undoStack.length - 1].label : '');
 
   /** データ変更は必ずこれを通す。label があれば元に戻せる */
+  /** 財布から引いた額の控え（サークルごとの cashPaid ＋ サークル外の支出ごとの cashPaid）の合計 */
+  const cashTracked = (d) => U.sum(Object.values(d.entries || {}), (e) => e.cashPaid || 0) + U.sum(d.extras || [], (x) => x.cashPaid || 0);
+
+  /**
+   * 財布は「購入の記録」を正とする。変更で現金の記録が減った（チェックを外した・品物や支出を消した・計画から外した・
+   * キャッシュレスに変えた・支払額を下げた）ときは、引いてあった分を財布の中身に戻す（金種は大きい順に足す）。
+   * 控えより減った分のうち、変更そのものが cashSettled を減らした分（リセットなど）は除く
+   */
+  const reconcileCash = (d, tracked0, settled0) => {
+    const pay = S.state.settings.defaultPay;
+    Object.values(d.entries || {}).forEach((e) => {
+      if (!e.cashPaid) return;
+      const cash = U.sum(e.items.filter((i) => i.status === 'bought' && (i.pay || pay) === 'cash'), S.itemCost);
+      if (e.cashPaid > cash) e.cashPaid = cash;
+    });
+    (d.extras || []).forEach((x) => {
+      if (!x.cashPaid) return;
+      const cash = (x.pay || pay) === 'cash' ? x.cost || 0 : 0;
+      if (x.cashPaid > cash) x.cashPaid = cash;
+    });
+    const refund = (tracked0 - cashTracked(d)) - (settled0 - (d.cashSettled || 0));
+    if (!(refund > 0)) return;
+    const br = { ...d.cashBreak };
+    let left = refund;
+    S.DENOMS.forEach((den) => { while (left >= den) { br[den] = (br[den] || 0) + 1; left -= den; } });
+    d.cashBreak = br;
+    d.cash = S.cashTotal(br);
+    d.cashSettled = Math.max(0, (d.cashSettled || 0) - refund);
+  };
+
   S.mutate = (label, fn, opt = {}) => {
     const id = S.state.eventId;
     const d = S.d(id);
@@ -281,7 +330,9 @@
       undoStack.push({ label, eventId: id, json: JSON.stringify(d) });
       if (undoStack.length > 50) undoStack.shift();
     }
+    const tracked0 = cashTracked(d), settled0 = d.cashSettled || 0;
     const r = fn(d);
+    reconcileCash(d, tracked0, settled0);
     d.updated = Date.now();
     S._hints = null; // 価格のあたり（品名→よく入れている金額）を作り直す
     if (opt.circles) S.invalidate(id);
@@ -366,6 +417,7 @@
     d.cashSettled = spent;
     // サークルごとの「引いた額」も合わせる（完了トーストの「財布から引く」をもう出さない）
     Object.values(d.entries).forEach((e) => { e.cashPaid = U.sum(e.items.filter((i) => i.status === 'bought' && (i.pay || S.state.settings.defaultPay) === 'cash'), S.itemCost); });
+    d.extras.forEach((x) => { x.cashPaid = (x.pay || S.state.settings.defaultPay) === 'cash' ? x.cost || 0 : 0; });
     // まだ何も買っていないうちの中身を「始める前の財布」として覚えておく（リハーサル後のリセット用）
     // 買い物の記録があるあとで入れ直したときは「始める前」が分からないので、古い控えは捨てる（リセットで古い中身に戻さないように）
     d.cashStart = spent ? null : { ...d.cashBreak };
@@ -466,6 +518,8 @@
       d.cashSettled = (d.cashSettled || 0) + paid;   // この支払いは財布に反映した
       const e = cid && d.entries[cid];
       if (e) e.cashPaid = (e.cashPaid || 0) + paid;
+      const x = opt.xid && (d.extras || []).find((v) => v.id === opt.xid);
+      if (x) x.cashPaid = (x.cashPaid || 0) + paid;
     });
 
   /** そのサークルで、まだ財布から引いていない現金の額 */
@@ -644,8 +698,9 @@
     S.mutate(iid ? '金額を修正' : '追加購入', (d) => {
       const now = S.now();
       if (!cid) {
-        d.extras.push({ id: U.uid(), name: name || 'その他', cost: amount, qty: qty || 1, pay, t: now });
-        return;
+        const id = U.uid();
+        d.extras.push({ id, name: name || 'その他', cost: amount, qty: qty || 1, pay, t: now });
+        return id;   // 財布から引くときに、この支出に控えを付けるため
       }
       const e = d.entries[cid];
       if (!e) return;
@@ -782,7 +837,7 @@
     const extras = U.sum(d.extras, (x) => x.cost);
     // 価格未定を見積もるための平均単価（今の計画で分かっている値から）
     const known = [];
-    Object.values(d.entries).forEach((e) => e.items.forEach((i) => { if (i.status === 'todo' && i.price) known.push(i.price); }));
+    Object.values(d.entries).forEach((e) => e.items.forEach((i) => { if (i.status === 'todo' && i.price && !i.for) known.push(i.price); }));
     const avg = known.length ? Math.round(U.sum(known) / known.length) : 0;
 
     const LABEL = ['必須だけ', '優先まで', '通常まで', 'すべて'];
@@ -1080,7 +1135,7 @@
       if (eid === S.state.eventId) return;
       Object.values(d.entries || {}).forEach((e) => {
         if (!e.snap) return;
-        const rec = { eventId: eid, event: names[eid] || eid, spent: S.entrySpent(e), status: e.status };
+        const rec = { eventId: eid, event: names[eid] || eid, spent: S.entrySpent(e, 'own'), status: e.status };
         S.keysOf(e.snap).forEach((k) => (idx[k] = idx[k] || []).push(rec));
       });
     });
@@ -1165,6 +1220,7 @@
     });
     d.entries = entries;
     d.order = (d.order || []).filter((cid) => entries[cid]);
+    cleanFor(d);
     Object.keys(entries).forEach((cid) => { if (!d.order.includes(cid)) d.order.push(cid); });
     return d;
   };
@@ -1278,6 +1334,7 @@
     d.extras = [];
     d.focus = null;
     d.here = null;
+    (d.requesters || []).forEach((r) => { r.settledAt = 0; });
     // 試しに財布から引いたぶんも、買い物を始める前の中身に戻す
     if (wallet && d.cashStart) { d.cashBreak = { ...d.cashStart }; d.cash = S.cashTotal(d.cashBreak); }
     d.cashSettled = 0;
@@ -1431,7 +1488,7 @@
   S.csv = () => {
     const q = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
     const d = S.d();
-    const head = ['順番', 'スペース', 'サークル', '優先度', '状態', '品名', '予定単価', '数量', '支払額', '支払方法', '購入時刻', 'メモ'];
+    const head = ['順番', 'スペース', 'サークル', '優先度', '状態', '品名', '予定単価', '数量', '支払額', '支払方法', '購入時刻', 'メモ', '誰の分'];
     const lines = [head.map(q).join(',')];
     d.order.forEach((cid, i) => {
       const e = d.entries[cid];
@@ -1444,7 +1501,7 @@
           it ? it.name : '', it ? it.price : '', it ? it.qty : '',
           it && it.status === 'bought' ? S.itemCost(it) : '',
           it && it.status === 'bought' ? (it.pay === 'card' ? 'キャッシュレス' : '現金') : '',
-          it && it.t ? U.time(it.t) : '', e.memo,
+          it && it.t ? U.time(it.t) : '', e.memo, it && it.for ? ((S.requester(it.for) || {}).name || '代行') : '自分',
         ].map(q).join(','));
       });
     });

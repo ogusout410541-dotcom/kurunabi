@@ -980,7 +980,7 @@
             ${i.status !== 'todo' ? `<div class="ie-st">${i.status === 'bought' ? `購入済 ${U.yen(s.itemCost(i))}${i.t ? ' ' + U.time(i.t) : ''}` : s.STATUS[i.status === 'soldout' ? 'soldout' : 'skip'].label}</div>` : ''}
           </div>`).join('')}
         </div>
-        ${s.requesters().length ? `<div class="for-pick"><span>追加する品物：</span>${[{ id: '', name: '自分' }, ...s.requesters()].map((r) => `<button class="chip sm${(HC.app.itemFor || '') === r.id ? ' on' : ''}${r.id ? ' ' + V.rqClass(r.id) : ''}" data-act="pickFor" data-rid="${esc(r.id)}">${esc(r.name)}${r.id ? 'の分' : 'の分'}</button>`).join('')}</div>` : ''}
+        ${s.requesters().length ? `<div class="for-pick"><span>追加する品物：</span>${[{ id: '', name: '自分' }, ...s.requesters()].map((r) => `<button class="chip sm${HC.app.curFor() === r.id ? ' on' : ''}${r.id ? ' ' + V.rqClass(r.id) : ''}" data-act="pickFor" data-rid="${esc(r.id)}">${esc(r.name)}${r.id ? 'の分' : 'の分'}</button>`).join('')}</div>` : ''}
         <div class="chips wrap">${s.ITEM_PRESETS.map((p) => {
           const hint = s.priceHint(p);
           return `<button class="chip sm" data-act="addItem" data-cid="${cid}" data-name="${esc(p)}">${U.icon('plus', 'sm')}${esc(p)}${hint ? `<small>${U.yen(hint)}</small>` : ''}</button>`;

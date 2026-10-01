@@ -9,7 +9,7 @@
   const P = HC.parser;
   const Lay = HC.layout;
 
-  HC.VERSION = '1.5.0';
+  HC.VERSION = '1.5.1';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -158,10 +158,12 @@
    * 多めに出しておつりをもらっても、財布の合計は代金ぶんだけ減るので、本人に「引く」操作はさせない。
    * 取り消し（元に戻す）は直前の購入の記録とまとめて戻る
    */
-  const deductCash = (r, cid) => {
-    if (!r || r.pay !== 'cash' || !(r.amount > 0) || !S.hasCashBreak()) return;
+  const deductCash = (r, cid, xid) => {
+    if (!r || !S.hasCashBreak()) return;
+    if (cid) return settleCash(cid);   // そのサークルの「現金で買った額 − すでに引いた額」だけ引く
+    if (!xid || r.pay !== 'cash' || !(r.amount > 0)) return;
     const plan = S.payPlan(r.amount);
-    if (plan && plan.best) S.applyPay(plan.best, cid, { noUndo: true });
+    if (plan && plan.best) S.applyPay(plan.best, null, { noUndo: true, xid });
   };
   app.deductCash = deductCash;
 
@@ -405,8 +407,8 @@
       title: 'サークル外の支出（企業ブース・飲食など）',
       onOk: async (r) => {
         if (!(await confirmOver(r.amount, r.pay))) return;
-        S.recordPurchase(null, { name: r.name || 'その他', amount: r.amount, qty: r.qty, pay: r.pay });
-        deductCash(r);
+        const xid = S.recordPurchase(null, { name: r.name || 'その他', amount: r.amount, qty: r.qty, pay: r.pay });
+        deductCash(r, null, xid);
         UI.toast(`${U.yen(r.amount)} を記録`, { undo: true });
       },
     });
@@ -451,7 +453,7 @@
     const name = ds.name || '';
     const e = S.entry(ds.cid);
     // 同じ品名が未購入で入っていたら、行を増やさず数量を足す（押し間違いではなく「2冊買う」ことが多い）
-    const same = name && e && e.items.find((i) => i.status === 'todo' && U.norm(i.name) === U.norm(name) && (i.for || '') === (app.itemFor || ''));
+    const same = name && e && e.items.find((i) => i.status === 'todo' && U.norm(i.name) === U.norm(name) && (i.for || '') === app.curFor());
     if (same) {
       S.mutate('数量を増やす', (d) => {
         const it = d.entries[ds.cid].items.find((i) => i.id === same.id);
@@ -468,6 +470,8 @@
 
   // ---- 代行（知り合いの分を立て替えて買う）
   app.itemFor = '';   // サークル詳細で、これから足す品物を誰の分にするか（空＝自分）
+  /** いまのイベントにいる依頼者なら、その id。いなければ自分（空） */
+  app.curFor = () => (app.itemFor && S.requester(app.itemFor) ? app.itemFor : '');
 
   A.addRequester = async () => {
     const name = await UI.prompt('代行の依頼者の名前', { placeholder: '例：Aさん', ok: '追加' });
@@ -587,7 +591,7 @@
         const it = d.entries[cid].items.find((i) => i.id === opt.restore);
         if (it) it.qty = Math.max(1, (it.qty || 2) - 1);
       }
-      const it = S.newItem(name, hint, 1, app.itemFor ? { for: app.itemFor } : {});
+      const it = S.newItem(name, hint, 1, app.curFor() ? { for: app.curFor() } : {});
       newId = it.id;
       d.entries[cid].items.push(it);
     });
@@ -631,7 +635,7 @@
   A.bulkItems = async (ds) => {
     const e = S.entry(ds.cid);
     if (!e) return;
-    const who = app.itemFor || '';
+    const who = app.curFor();
     const cur = e.items.filter((i) => i.status === 'todo' && i.planned !== false && (i.for || '') === who)
       .map((i) => `${i.name}${i.price ? ' ' + i.price : ''}${i.qty > 1 ? ' x' + i.qty : ''}`).join('\n');
     const v = await UI.prompt(who ? `買うものをまとめて登録（${(S.requester(who) || {}).name || '代行'}の分）` : '買うものをまとめて登録', {
@@ -659,7 +663,7 @@
   A.removePlan = async (ds) => {
     const e = S.entry(ds.cid);
     if (e && e.items.some((i) => i.status === 'bought')) {
-      if (!(await UI.confirm('購入記録があるサークルです。計画から外すと記録も消えます。よろしいですか？', { ok: '外す', danger: true }))) return;
+      if (!(await UI.confirm('購入記録があるサークルです。計画から外すと記録も消え、現金で払った分は財布の中身に戻ります。よろしいですか？', { ok: '外す', danger: true }))) return;
     }
     UI.close('circle');
     S.removeFromPlan(ds.cid);
@@ -692,7 +696,7 @@
       const e = d.entries[cid];
       if (!e) return '';
       const c = S.circle(cid) || e.snap;
-      const items = e.items.map((it) => `${U.esc(it.name || '（無題）')}${it.qty > 1 ? ` ×${it.qty}` : ''}${it.price ? ` ${U.yen(it.price)}` : ''}`).join('、');
+      const items = e.items.map((it) => `${U.esc(it.name || '（無題）')}${it.qty > 1 ? ` ×${it.qty}` : ''}${it.price ? ` ${U.yen(it.price)}` : ''}${it.for ? `【${U.esc((S.requester(it.for) || {}).name || '代行')}】` : ''}`).join('、');
       return `<tr>
         <td class="n">${i + 1}</td>
         <td class="sp">${U.esc(c.space)}${S.isWall(cid) ? ' <small>壁</small>' : ''}</td>
