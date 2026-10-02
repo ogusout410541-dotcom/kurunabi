@@ -38,7 +38,7 @@
 
   const itemNames = (e) => e.items.map((i) => (i.name || '（無題）') + (i.for ? `（${(S().requester(i.for) || {}).name || '代行'}）` : '')).join('・');
 
-  /** 同じ品物を自分と依頼者（または複数の依頼者）で買うとき、ブースで一度に頼めるように合計の数を出す */
+  /** （1.5.4 で品物の一覧の「まとめ」に置き換え。残しているのは古い呼び出し用） */
   V.mergeHint = (e) => {
     const g = new Map();
     e.items.filter((i) => i.status === 'todo').forEach((i) => {
@@ -90,7 +90,7 @@
   };
   /** 品物に付ける「◯◯の分」の印 */
   V.forTag = (i) => (i.for ? `<span class="for-tag ${V.rqClass(i.for)}">${esc((S().requester(i.for) || {}).name || '代行')}の分</span>` : '');
-  const priceTxt = (i) => (i.price ? U.yen(i.price) : S().isFree(i) ? '<span class="free">無料</span>' : '<span class="unk">¥?</span>') + (i.qty > 1 ? `<small>×${i.qty}</small>` : '');
+  const priceTxt = (i) => (i.price ? U.yen(i.price) : S().isFree(i) ? '<span class="free">無料</span>' : '<span class="unk">¥?</span>') + `<small>×${i.qty || 1}</small>`;
 
   const emptyState = (icon, title, body, btn) =>
     `<div class="empty">${U.icon(icon)}<h3>${title}</h3><p>${body}</p>${btn || ''}</div>`;
@@ -128,6 +128,7 @@
       </div>
       <div class="w-side">
         <div><span>残り予定</span><b>${U.yen(st.plannedLeft)}</b></div>
+        ${st.proxyLeft ? `<div><span>代行込み</span><b>${U.yen(st.plannedLeft + st.proxyLeft)}</b></div>` : ''}
         <div><span>見込み残</span><b class="${st.projected < 0 ? 'neg' : 'pos'}">${U.yen(st.projected)}</b></div>
         ${st.cashLeft != null ? `<div><span>財布の現金</span><b class="w-cash ${st.cashLeft < 0 ? 'neg' : ''}">${U.yen(st.cashLeft)}</b></div>` : ''}
         <button class="link-btn w-wallet" data-act="wallet">${U.icon('wallet', 'sm')}${S().hasCashBreak() ? `金種 ${S().cashCount()}枚` : '金種を登録'}</button>
@@ -263,7 +264,6 @@
       <button class="dc-space" data-act="dayMap">${V.space(c, 'xxl')}</button>
       <div class="cur-name">${esc(c.name)}</div>
       ${e.memo ? `<div class="cur-memo">${esc(e.memo).replace(/\n/g, '<br>')}</div>` : ''}
-      ${V.mergeHint(e)}
       ${e.items.length ? `<ul class="items">${V.itemRows(cid, e)}</ul>`
         : (s.isPending(e)
           ? `<p class="cur-pend">${U.icon('clock', 'sm')}買うものは登録されていません。買ったものは下の「追加で買ったもの」から記録できます</p>`
@@ -339,6 +339,7 @@
           <div><span>買ったもの</span><b>${log.length}<small>件</small></b></div>
           ${st.proxySpent || s.requesters().length ? `<div class="ls-proxy"><span>代行の立て替え</span><b>${U.yen(st.proxySpent)}</b></div>` : ''}
         </section>
+        ${V.carryCard()}
         ${V.proxyCard()}
         <div class="btn-grid2 log-btns">
           <button class="btn lg" data-act="outsideBuy">${U.icon('plus')}サークル外の支出</button>
@@ -485,7 +486,11 @@
       { ok: !pend, label: 'お品書き待ち', note: pend ? `買うものを登録していないサークルが${pend}件あります` : 'すべて登録済みです', act: 'nav', data: 'data-view="list" data-scroll="pend"', btn: '見る' },
       { ok: !unknownCids.length, label: '価格未定', note: unknownCids.length ? `金額が未定の品物があるサークルが${unknownCids.length}件あります` : 'すべての品物に金額があります', act: 'openCircle', data: `data-cid="${esc(unknownCids[0] || '')}"`, btn: '登録' },
       { ok: !!d.routedAt && !addedAfter, label: 'ルート', note: !d.routedAt ? 'まだ作っていません' : addedAfter ? `ルートを作ったあとに${addedAfter}サークル追加しています` : `${U.md(d.routedAt)} ${U.time(d.routedAt)} に作成`, act: 'routeMenu', btn: '作る' },
-      { ok: s.hasCashBreak(), label: '財布の中身', note: s.hasCashBreak() ? `${U.yen(s.cashTotal())}（${s.cashCount()}枚）` : '金種ごとの枚数を登録すると、支払いで出す硬貨とお札を案内します', act: 'wallet', btn: '登録', optional: true },
+      (() => {
+        const cy = s.carry();
+        const short = s.hasCashBreak() && cy.cash != null && cy.cash < cy.total;
+        return { ok: s.hasCashBreak() && !short, label: '財布の中身', note: s.hasCashBreak() ? `${U.yen(s.cashTotal())}（${s.cashCount()}枚）・必要な目安 ${U.yen(cy.total)}${cy.proxy ? '（代行込み）' : ''}${short ? `・あと ${U.yen(cy.total - cy.cash)} 足りません` : ''}` : `必要な目安 ${U.yen(cy.total)}${cy.proxy ? '（代行込み）' : ''}。金種ごとの枚数を登録すると、足りるかどうかと出す硬貨・お札を案内します`, act: 'wallet', btn: short ? '見直す' : '登録', optional: !short };
+      })(),
       sw ? { ok: !!navigator.serviceWorker.controller, label: 'オフライン保存', note: navigator.serviceWorker.controller ? '圏外でも開けます' : 'まだ保存されていません', act: 'offlineRefresh', btn: '保存' } : null,
       // スマホで、ホーム画面から開いていないとき（iPhone の Safari は、しばらく開かないとデータを消すことがある）
       matchMedia('(pointer: coarse)').matches && sw && !HC.app.standalone()
@@ -612,15 +617,37 @@
   };
 
   /** 当日カードの品物の行（通常・当日モード共通） */
-  V.itemRows = (cid, e) => e.items.map((i) => `
+  /**
+   * 当日カードの品物の一覧。自分と依頼者で同じ品物（品名と単価が同じ）を買うときは、
+   * 「新刊 ×2 合計 ¥2,000（自分 ×1・Aさん ×1）」の見出しの下に1人ずつの行を並べる。見出しを押すと全員分をまとめてチェック
+   */
+  V.itemRows = (cid, e) => S().itemGroups(e).map((g) => {
+    if (!g.merged) return V.itemRow(cid, g.items[0]);
+    const s = S();
+    const todo = g.items.filter((i) => i.status === 'todo');
+    const bought = g.items.filter((i) => i.status === 'bought');
+    const state = !todo.length ? (bought.length ? 'bought' : 'off') : bought.length ? 'part' : 'todo';
+    const who = g.items.map((i) => `${i.for ? esc((s.requester(i.for) || {}).name || '代行') : '自分'} ×${i.qty || 1}`).join('・');
+    const price = g.items[0].price;
+    return `<li class="item-group ig-${state}">
+        <button class="ig-head" data-act="toggleGroup" data-cid="${cid}" data-iids="${g.items.map((i) => esc(i.id)).join(',')}">
+          <span class="cb">${state === 'bought' ? U.icon('check') : state === 'part' ? '<i class="cb-part"></i>' : ''}</span>
+          <span class="nm"><span class="ig-line">${esc(g.items[0].name)} <b class="ig-qty">×${g.qty}</b></span><small class="ig-who">${who}</small></span>
+          <span class="pr">${g.unknown ? '<span class="unk">¥?</span>' : `<small>合計</small>${U.yen(g.total)}`}<small>${price ? `${U.yen(price)}×${g.qty}` : ''}</small></span>
+        </button>
+        <ul class="ig-items">${g.items.map((i) => V.itemRow(cid, i)).join('')}</ul>
+      </li>`;
+  }).join('');
+
+  V.itemRow = (cid, i) => `
       <li class="item it-${i.status}${i.planned === false ? ' extra' : ''}">
         <button class="item-main" data-act="toggleItem" data-cid="${cid}" data-iid="${i.id}">
           <span class="cb">${i.status === 'bought' ? U.icon('check') : i.status === 'soldout' ? '売' : i.status === 'skip' ? '－' : ''}</span>
           <span class="nm">${esc(i.name || '（無題）')}${i.planned === false ? '<small>追加</small>' : ''}${V.forTag(i)}</span>
-          <span class="pr">${i.status === 'bought' && i.paid != null ? U.yen(i.paid) : priceTxt(i)}</span>
+          <span class="pr">${i.status === 'bought' && i.paid != null ? `${U.yen(i.paid)}<small>×${i.qty || 1}</small>` : priceTxt(i)}</span>
         </button>
         <button class="icon-btn" data-act="itemMenu" data-cid="${cid}" data-iid="${i.id}" aria-label="この品物の操作">${U.icon('more')}</button>
-      </li>`).join('');
+      </li>`;
 
   V.curCardBody = (cid, q, e, c, idx, near, planned, spent, hasTodo, items) => {
     const s = S();
@@ -694,6 +721,7 @@
         <div><span>うち必須</span><b>${U.yen(mustTotal)}</b></div>
         ${st.budget ? `<div><span>予算との差</span><b class="${diff < 0 ? 'neg' : 'pos'}">${diff >= 0 ? '+' : ''}${U.yen(diff)}</b></div>` : `<div><button class="link-btn" data-act="budgetEdit">予算を設定</button></div>`}
       </section>
+      ${V.carryCard()}
       ${V.proxyCard()}
       ${s.state.settings.dayMode ? '' : V.pending(pend) + V.noShot(noimg)}
       ${V.sim()}
@@ -714,6 +742,24 @@
       }
       el.innerHTML = `<div class="list-view">${html}</div>`;
     },
+  };
+
+  /** 当日持っていく金額の目安（これから払う予定。自分の分＋代行の分）と、財布の現金との差 */
+  V.carryCard = () => {
+    const s = S();
+    if (!Object.keys(s.d().entries).length) return '';
+    const c = s.carry();
+    const diff = c.cash != null ? c.cash - c.total : null;
+    return `<section class="card carry-card" id="sec-carry">
+      <h3>${U.icon('wallet')}当日持っていく金額 <small>これから払う予定${c.proxy ? '（代行の分を含む）' : ''}</small></h3>
+      <div class="carry-rows">
+        <div><span>自分の分</span><b>${U.yen(c.own)}</b></div>
+        ${c.byReq.map((r) => `<div><span><i class="rq-dot ${V.rqClass(r.id)}"></i>${esc(r.name)}の代行</span><b>${U.yen(r.left)}</b></div>`).join('')}
+        <div class="carry-total"><span>合計</span><b>${U.yen(c.total)}</b></div>
+      </div>
+      ${diff != null ? `<p class="carry-diff ${diff < 0 ? 'neg' : 'pos'}">${U.icon(diff < 0 ? 'warn' : 'check', 'sm')}財布の現金 ${U.yen(c.cash)}：${diff < 0 ? `あと <b>${U.yen(-diff)}</b> 足りません` : `足ります（${U.yen(diff)} 残る見込み）`}</p>` : '<p class="muted small">財布の中身（金種）を登録すると、足りるかどうかも出ます。</p>'}
+      ${c.unknown ? `<p class="muted small">価格未定の品物が ${c.unknown}件あり、その分は含んでいません。</p>` : ''}
+    </section>`;
   };
 
   /** 代行のまとめ（依頼者ごとの立て替え額と、買えた件数）。押すと精算の画面 */

@@ -9,7 +9,7 @@
   const P = HC.parser;
   const Lay = HC.layout;
 
-  HC.VERSION = '1.5.3';
+  HC.VERSION = '1.5.4';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -371,6 +371,32 @@
     if (it.status === 'bought') checkAllChecked(ds.cid); // toggleItem は同じ参照を書き換えている
   };
 
+  A.toggleGroup = async (ds) => {
+    const e = S.entry(ds.cid);
+    if (!e) return;
+    const ids = String(ds.iids || '').split(',');
+    const its = e.items.filter((i) => ids.includes(i.id));
+    if (!its.length) return;
+    const todo = its.filter((i) => i.status === 'todo');
+    if (!todo.length) {
+      // 全部買えている → 全部を未購入に戻す
+      S.mutate('購入チェック', (d) => { d.entries[ds.cid].items.forEach((i) => { if (ids.includes(i.id) && i.status === 'bought') { i.status = 'todo'; i.t = null; i.paid = null; } }); });
+      return UI.toast('チェックを外しました', { undo: true });
+    }
+    if (todo.some((i) => S.isUnknown(i))) return UI.toast('価格未定の品物は、1つずつ押して金額を入れてください', { error: true });
+    const amount = U.sum(todo, (i) => (i.price || 0) * (i.qty || 1));
+    const own = U.sum(todo.filter((i) => !i.for), (i) => (i.price || 0) * (i.qty || 1));
+    if (!(await confirmOver(amount, S.state.settings.defaultPay, own))) return;
+    const now = S.now();
+    S.mutate('購入チェック', (d) => {
+      d.entries[ds.cid].items.forEach((i) => {
+        if (ids.includes(i.id) && i.status === 'todo') { i.status = 'bought'; i.t = now; i.pay = i.pay || S.state.settings.defaultPay; }
+      });
+    });
+    U.vibrate(8);
+    checkAllChecked(ds.cid);
+  };
+
   A.itemMenu = (ds) => {
     const e = S.entry(ds.cid);
     const it = e && e.items.find((i) => i.id === ds.iid);
@@ -581,7 +607,7 @@
   const proxyText = (rid) => {
     const r = S.requester(rid);
     const m = S.proxySummary(rid);
-    const line = (x) => `・${x.space} ${x.circle}：${x.name}${x.qty > 1 ? ' ×' + x.qty : ''}`;
+    const line = (x) => `・${x.space} ${x.circle}：${x.name} ×${x.qty || 1}`;
     const got = m.rows.filter((x) => x.status === 'bought');
     const miss = m.rows.filter((x) => x.status === 'soldout' || x.status === 'skip');
     const todo = m.rows.filter((x) => x.status === 'todo');

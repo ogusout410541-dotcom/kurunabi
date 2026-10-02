@@ -1236,3 +1236,32 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .map-svg .badge.pxo circle { fill: var(--rq) !important; }
 .map-svg .badge.pxm circle { stroke: var(--rq) !important; stroke-width: 4; }
 .map-legend .px { background: #8b5cf6; }
+
+/* 自分と代行で同じ品物：見出しの下に1人ずつの行 */
+.item-group { border-bottom: 1px solid var(--line); background: color-mix(in srgb, #8b5cf6 6%, transparent); }
+.ig-head { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 6px 0; text-align: left; }
+.ig-head .cb { width: 30px; height: 30px; border-radius: 50%; border: 2.5px solid var(--cell-line); flex: none; display: grid; place-items: center; color: #fff; }
+.ig-bought .ig-head .cb { background: var(--ok); border-color: var(--ok); }
+.ig-part .ig-head .cb { border-color: var(--ok); }
+.cb-part { width: 12px; height: 12px; border-radius: 50%; background: var(--ok); }
+.ig-head .cb .ic { width: 18px; height: 18px; stroke-width: 3.2; }
+.ig-head .nm { flex: 1; min-width: 0; font-weight: 750; font-size: 1.02rem; display: flex; flex-direction: column; }
+.ig-qty { color: #8b5cf6; }
+.ig-who { font-size: .76rem; color: var(--muted); font-weight: 650; }
+.ig-head .pr { display: flex; flex-direction: column; align-items: flex-end; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ig-head .pr small { color: var(--muted); font-weight: 600; font-size: .72rem; }
+.ig-items { list-style: none; margin: 0 0 0 22px; padding: 0; border-left: 2px solid color-mix(in srgb, #8b5cf6 40%, transparent); }
+.ig-items .item:last-child { border-bottom: 0; }
+.ig-items .item-main { min-height: 48px; }
+.day-card .ig-head .nm, .day-card .ig-head .pr { font-size: 1.1rem; }
+/* 当日持っていく金額 */
+.carry-card { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.carry-rows { display: flex; flex-direction: column; margin-bottom: 8px; }
+.carry-rows > div { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.carry-rows span { display: inline-flex; align-items: center; gap: 6px; }
+.carry-rows b { font-variant-numeric: tabular-nums; }
+.carry-total { border-bottom: 0 !important; font-size: 1.1rem; }
+.carry-total b { font-size: 1.3rem; }
+.carry-diff { display: flex; align-items: center; gap: 6px; font-weight: 700; margin: 4px 0; }
+.carry-diff.neg { color: var(--danger); } .carry-diff.pos { color: var(--ok); }
+.ig-line { display: block; }

@@ -616,6 +616,57 @@
     if (r) r.settledAt = on ? Date.now() : 0;
   });
   /**
+   * 「同じ品物」とみなすためのキー。品名は全角・半角、大文字・小文字、空白の違いだけを同じとみなし（記号や長音は区別する）、
+   * 単価も一致したときだけ同じにする（「新刊」¥1,000 と「新刊」¥1,500 は別の本かもしれないため）
+   */
+  S.sameItemKey = (i) => U.toHalf(i.name || '').toLowerCase().replace(/\s+/g, ' ').trim() + '|' + (i.price || 0);
+
+  /**
+   * サークルの品物を、表示用にまとめる。自分と依頼者（または依頼者どうし）で同じ品物を買うときだけ1つの組にする
+   * （同じ人の同じ品名は「別の行にする」で分けたものなので、まとめない）。並びは品物の順のまま
+   * @returns [{ items:[Item], merged:boolean, key, qty, total, unknown }]
+   */
+  S.itemGroups = (e) => {
+    const byKey = new Map();
+    e.items.forEach((i) => {
+      const k = S.sameItemKey(i);
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k).push(i);
+    });
+    const seen = new Set();
+    const out = [];
+    e.items.forEach((i) => {
+      const k = S.sameItemKey(i);
+      if (seen.has(k)) return;
+      const arr = byKey.get(k);
+      const owners = new Set(arr.map((x) => x.for || ''));
+      if (arr.length > 1 && owners.size > 1 && (i.name || '').trim()) {
+        seen.add(k);
+        out.push({ key: k, merged: true, items: arr, qty: U.sum(arr, (x) => x.qty || 1), total: U.sum(arr, (x) => (x.price || 0) * (x.qty || 1)), unknown: arr.some((x) => S.isUnknown(x)) });
+      } else {
+        out.push({ key: k + '#' + i.id, merged: false, items: [i], qty: i.qty || 1, total: (i.price || 0) * (i.qty || 1), unknown: S.isUnknown(i) });
+      }
+    });
+    return out;   // 同じキーでも「まとめない」もの（同じ人の別の行）は1件ずつ並ぶ
+  };
+
+  /**
+   * 当日持っていく金額の目安（これから払う予定。代行の分も含める）
+   * @returns { own, proxy, total, byReq:[{id,name,left}], unknown（価格未定の数）, cash（財布の現金。未登録なら null） }
+   */
+  S.carry = () => {
+    const st = S.stats();
+    const d = S.d();
+    let unknown = 0;
+    Object.values(d.entries).forEach((e) => {
+      if (!(e.status === 'todo' || e.status === 'later')) return;
+      e.items.forEach((i) => { if (i.status === 'todo' && S.isUnknown(i)) unknown++; });
+    });
+    const byReq = S.requesters().map((r) => ({ id: r.id, name: r.name, left: S.proxySummary(r.id).left })).filter((x) => x.left);
+    return { own: st.plannedLeft, proxy: st.proxyLeft, total: st.plannedLeft + st.proxyLeft, byReq, unknown, cash: st.cashLeft };
+  };
+
+  /**
    * 依頼者ごとのまとめ（精算用）
    * @returns { rows: [{cid, space, circle, name, qty, price, status, cost}], planned, bought, count, boughtCount, missCount, todoCount }
    */
