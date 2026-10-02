@@ -284,7 +284,8 @@
   };
 
   // ------------------------------------------------------------------ 入力ダイアログ
-  UI.prompt = (title, { value = '', placeholder = '', type = 'text', ok = 'OK', multiline = false } = {}) =>
+  // plain=true：自動の大文字化・修正・スペルチェックをしない（URL や合言葉の入力用。iPad は先頭を勝手に大文字にする）
+  UI.prompt = (title, { value = '', placeholder = '', type = 'text', ok = 'OK', multiline = false, plain = false, note = '' } = {}) =>
     new Promise((resolve) => {
       let done = false;
       const id = 'prompt-' + U.uid();
@@ -294,7 +295,8 @@
         title: U.esc(title),
         html: `${multiline
           ? `<textarea class="input" rows="6" placeholder="${U.esc(placeholder)}">${U.esc(value)}</textarea>`
-          : `<input class="input" type="${type}" ${type === 'number' ? 'inputmode="numeric"' : ''} placeholder="${U.esc(placeholder)}" value="${U.esc(value)}">`}
+          : `<input class="input" type="${type}" ${type === 'number' ? 'inputmode="numeric"' : ''}${plain ? ' autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off"' : ''} placeholder="${U.esc(placeholder)}" value="${U.esc(value)}">`}
+          ${note ? `<p class="muted small">${note}</p>` : ''}
           <div class="btn-row"><button class="btn ghost" data-close>キャンセル</button><button class="btn primary" data-ok>${U.esc(ok)}</button></div>`,
         onClose: () => { if (!done) { done = true; resolve(null); } },
         onMount: (el) => {

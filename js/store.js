@@ -578,9 +578,32 @@
   };
   S.renameRequester = (rid, name) => S.mutate('依頼者の名前', (d) => { const r = (d.requesters || []).find((x) => x.id === rid); if (r) r.name = String(name).trim() || r.name; });
   /** 依頼者を消す。その人の分だった品物は自分の分に戻す */
-  S.removeRequester = (rid) => S.mutate('依頼者を削除', (d) => {
+  /** 依頼者を消す。dropItems=true ならその人の品物も消す（代行だけのサークルは計画からも外す）。false なら自分の分に戻す */
+  S.removeRequester = (rid, dropItems) => S.mutate('依頼者を削除', (d) => {
     d.requesters = (d.requesters || []).filter((x) => x.id !== rid);
-    Object.values(d.entries).forEach((e) => e.items.forEach((i) => { if (i.for === rid) delete i.for; }));
+    Object.values(d.entries).forEach((e) => {
+      if (dropItems) {
+        const had = e.items.length;
+        e.items = e.items.filter((i) => i.for !== rid);
+        if (had && !e.items.length) { delete d.entries[e.cid]; d.order = d.order.filter((x) => x !== e.cid); }
+      } else e.items.forEach((i) => { if (i.for === rid) delete i.for; });
+    });
+  });
+
+  /**
+   * 代行の品物を1つ登録する（専用の画面から）。サークルが計画に無ければ「通常」で足す。
+   * 同じ人・同じ品名がまだ買っていない状態であれば、行を増やさず数量を足す
+   */
+  S.addProxyItem = (rid, cid, name, price, qty) => S.mutate('代行の品物を登録', (d) => {
+    const c = S.circle(cid);
+    if (!c || !S.requester(rid)) return null;
+    if (!d.entries[cid]) { d.entries[cid] = S.newEntry(c, 3); d.order.push(cid); }
+    const e = d.entries[cid];
+    const same = e.items.find((i) => i.for === rid && i.status === 'todo' && U.norm(i.name) === U.norm(name));
+    if (same) { same.qty = U.clamp((same.qty || 1) + (qty || 1), 1, 99); if (price && !same.price) same.price = price; return same.id; }
+    const it = S.newItem(name || '購入品', price || 0, qty || 1, { for: rid });
+    e.items.push(it);
+    return it.id;
   });
   /** 品物を誰の分にするか（rid が空なら自分） */
   S.setItemFor = (cid, iid, rid) => S.mutate('誰の分か', (d) => {
@@ -605,7 +628,9 @@
       const c = S.circle(cid) || e.snap;
       e.items.forEach((i) => {
         if (i.for !== rid) return;
-        rows.push({ cid, space: c.space, circle: c.name, name: i.name || '（無題）', qty: i.qty || 1, price: i.price || 0, status: i.status, cost: i.status === 'bought' ? S.itemCost(i) : 0 });
+        // サークルごと売り切れ・見送り・完了にしたのに買っていない品物は、まだではなく「買えなかった」
+        const st = i.status === 'todo' && !(e.status === 'todo' || e.status === 'later') ? (e.status === 'soldout' ? 'soldout' : 'skip') : i.status;
+        rows.push({ cid, space: c.space, circle: c.name, name: i.name || '（無題）', qty: i.qty || 1, price: i.price || 0, status: st, cost: i.status === 'bought' ? S.itemCost(i) : 0 });
       });
     });
     return {

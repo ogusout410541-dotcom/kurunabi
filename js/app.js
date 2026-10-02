@@ -9,7 +9,7 @@
   const P = HC.parser;
   const Lay = HC.layout;
 
-  HC.VERSION = '1.5.1';
+  HC.VERSION = '1.5.2';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -114,6 +114,7 @@
   const openCircle = (cid) => {
     const c = S.circle(cid);
     if (!c) return;
+    if (cid !== app.sheetCid) app.itemFor = '';   // 別のサークルを開いたら「追加する品物」は自分の分から（代行と取り違えないように）
     app.sheetCid = cid;
     UI.sheet({
       id: 'circle',
@@ -380,7 +381,12 @@
         ? { label: '未購入に戻す', icon: 'undo', act: () => S.setItemStatus(ds.cid, ds.iid, 'todo') }
         : { label: '予定価格で購入済に', icon: 'check', act: async () => { if (!(await confirmOver((it.price || 0) * (it.qty || 1), it.pay, it.for ? 0 : (it.price || 0) * (it.qty || 1)))) return; S.toggleItem(ds.cid, ds.iid); checkAllChecked(ds.cid); } },
       ...(S.requesters().length ? [{ label: it.for ? `誰の分か：${(S.requester(it.for) || {}).name || '代行'}` : '誰の分か：自分', icon: 'wallet', hint: '押すと変えられます', act: () => A.itemFor(ds) }] : []),
-      { label: 'これは売り切れ', icon: 'ban', act: () => { S.setItemStatus(ds.cid, ds.iid, 'soldout'); UI.toast('売切にしました', { undo: true }); } },
+      { label: 'これは売り切れ', icon: 'ban', act: () => {
+        S.setItemStatus(ds.cid, ds.iid, 'soldout');
+        // 同じ品名でほかの人（自分・依頼者）の分がまだなら、まとめて売り切れにできるように
+        const others = S.entry(ds.cid).items.filter((i) => i.id !== ds.iid && i.status === 'todo' && U.norm(i.name) === U.norm(it.name) && (i.for || '') !== (it.for || ''));
+        UI.toast('売切にしました', others.length ? { undo: true, action: { label: `ほかの人の「${it.name}」も売切にする`, fn: () => S.mutate('同じ品物を売切', (d) => { d.entries[ds.cid].items.forEach((i) => { if (others.some((o) => o.id === i.id)) i.status = 'soldout'; }); }) } } : { undo: true });
+      } },
       { label: '今回は買わない', icon: 'skip', act: () => S.setItemStatus(ds.cid, ds.iid, 'skip') },
       { label: 'この品物を削除', icon: 'trash', danger: true, act: () => { S.mutate('買うものを削除', (d) => { const en = d.entries[ds.cid]; en.items = en.items.filter((i) => i.id !== ds.iid); }); UI.toast('削除しました', { undo: true }); } },
     ]);
@@ -477,8 +483,12 @@
     const name = await UI.prompt('代行の依頼者の名前', { placeholder: '例：Aさん', ok: '追加' });
     if (name == null || !name.trim()) return;
     const r = S.addRequester(name);
-    app.itemFor = r.id;   // すぐにその人の分を登録できるように
-    UI.toast(`${r.name}を追加しました。サークル詳細で「${r.name}の分」を選んで品物を登録してください`, { undo: true, ms: 6000 });
+    if (UI.isOpen('circle') && app.sheetCid) {
+      app.itemFor = r.id;   // 開いているサークルで、そのままその人の分を登録できるように
+      UI.toast(`${r.name}を追加しました。「追加する品物：${r.name}の分」が選ばれています`, { undo: true, ms: 6000 });
+    } else {
+      A.proxyAdd({ rid: r.id });
+    }
   };
   A.pickFor = (ds) => {
     app.itemFor = ds.rid || '';
@@ -494,6 +504,77 @@
       ...S.requesters().map((r) => ({ label: `${r.name}の分（代行）`, icon: it.for === r.id ? 'check' : 'wallet', active: it.for === r.id, act: () => S.setItemFor(ds.cid, ds.iid, r.id) })),
       { label: '依頼者を追加', icon: 'plus', act: () => A.addRequester() },
     ]);
+  };
+
+  /**
+   * 代行の品物を登録する画面。スペース番号・品名・価格・数量を入れて「登録」。続けて何件でも登録できる。
+   * サークルが計画に無ければ自動で足す（自分の買うものとは混ざらない）
+   */
+  A.proxyAdd = (ds) => {
+    const r = S.requester(ds.rid);
+    if (!r) return;
+    const added = [];
+    const draw = (el, spaceVal = '') => {
+      U.$('.pa-list', el).innerHTML = added.length ? added.map((x) => `<li><b>${U.esc(x.space)}</b> ${U.esc(x.circle)}<small>${U.esc(x.name)}${x.qty > 1 ? ' ×' + x.qty : ''}${x.price ? ' ' + U.yen(x.price * x.qty) : ' 価格未定'}</small></li>`).join('') : '';
+      if (spaceVal != null) U.$('[name="space"]', el).value = spaceVal;
+    };
+    UI.sheet({
+      id: 'proxyAdd',
+      center: true,
+      title: `${U.esc(r.name)}の品物を登録`,
+      html: `<div class="grid1 pa-form">
+          <label class="field"><span>スペース番号</span><input class="input" name="space" placeholder="例：G23" autocapitalize="characters" autocomplete="off" value="${U.esc((S.circle(ds.cid) || {}).space || '')}"><small class="pa-hit muted"></small></label>
+          <label class="field"><span>品名</span><input class="input" name="name" placeholder="例：新刊" autocomplete="off"></label>
+          <div class="chips wrap pa-chips">${S.ITEM_PRESETS.map((p) => `<button type="button" class="chip sm" data-nm="${U.esc(p)}">${U.esc(p)}</button>`).join('')}</div>
+          <div class="grid2">
+            <label class="field"><span>価格（1個あたり）</span><div class="yen-input"><span>¥</span><input class="input" name="price" inputmode="numeric" placeholder="未定なら空"></div></label>
+            <label class="field"><span>数量</span><input class="input" name="qty" inputmode="numeric" value="1"></label>
+          </div>
+          <button class="btn primary block" data-ok>${U.icon('plus')}登録</button>
+          <ol class="pa-list"></ol>
+          <p class="muted small">続けて登録できます。サークルが計画に無ければ自動で足します。自分の買うものとは別に「${U.esc(r.name)}の分」として記録します。</p>
+          <button class="btn block" data-close>終わる</button>
+        </div>`,
+      onMount: (el) => {
+        const q = (n) => U.$(`[name="${n}"]`, el);
+        const hit = U.$('.pa-hit', el);
+        const find = () => {
+          const sq = P.parseSpaceQuery(q('space').value);
+          const c = sq && S.ev().circles.find((x) => x.block === sq.block && x.nums.includes(sq.num));
+          hit.textContent = !q('space').value.trim() ? '' : c ? `${c.space} ${c.name}${S.isPlanned(c.id) ? '（計画にあります）' : '（計画に足します）'}` : '見つかりません（例：G23）';
+          return c;
+        };
+        q('space').addEventListener('input', find);
+        find();
+        U.$$('[data-nm]', el).forEach((b) => (b.onclick = () => {
+          q('name').value = b.dataset.nm;
+          const h = S.priceHint(b.dataset.nm);
+          if (h && !q('price').value) q('price').value = h;
+        }));
+        U.$('[data-ok]', el).onclick = () => {
+          const c = find();
+          if (!c) return UI.toast('スペース番号を確かめてください（例：G23）', { error: true });
+          const name = q('name').value.trim();
+          if (!name) return UI.toast('品名を入れてください', { error: true });
+          const price = U.parseYen(q('price').value);
+          const qty = U.clamp(U.parseYen(q('qty').value) || 1, 1, 99);
+          S.addProxyItem(r.id, c.id, name, price, qty);
+          added.unshift({ space: c.space, circle: c.name, name, price, qty });
+          q('name').value = ''; q('price').value = ''; q('qty').value = '1';
+          draw(el, null);
+          find();
+          q('name').focus();
+          U.vibrate(8);
+        };
+      },
+      onClose: () => { if (UI.isOpen('proxy')) setTimeout(() => A.proxySheet({ rid: r.id }), 250); },
+    });
+  };
+  /** サークル詳細（計画に無いサークル）から、代行の品物を登録する */
+  A.proxyAddFor = (ds) => {
+    const rq = S.requesters();
+    if (rq.length === 1) return A.proxyAdd({ rid: rq[0].id, cid: ds.cid });
+    UI.menu('誰の品物を登録しますか', rq.map((r) => ({ label: `${r.name}の分`, icon: 'wallet', act: () => A.proxyAdd({ rid: r.id, cid: ds.cid }) })));
   };
 
   /** 代行の報告の文章（LINE などにそのまま貼れる形） */
@@ -524,7 +605,8 @@
       id: 'proxy',
       side: true,
       title: `${U.esc(r.name)}の代行`,
-      html: `<section class="year-sum proxy-sum">
+      html: `<button class="btn primary block proxy-add" data-add>${U.icon('plus')}${U.esc(r.name)}の品物を登録</button>
+        <section class="year-sum proxy-sum">
           <div class="ys-total"><span>立て替えた合計（あとでもらう額）</span><b>${U.yen(m.bought)}</b></div>
           <div><span>買えた</span><b>${m.boughtCount}<small>件</small></b></div>
           <div><span>買えなかった</span><b>${m.missCount}<small>件</small></b></div>
@@ -543,6 +625,7 @@
         </div>
         <p class="muted small">代行の分は自分の予算には入りません。現金で払った分は、財布の現金からは引かれます。</p>`,
       onMount: (el) => {
+        U.$('[data-add]', el).onclick = () => A.proxyAdd({ rid });
         U.$('[data-copy]', el).onclick = async () => {
           const t = proxyText(rid);
           if (await U.copy(t)) UI.toast('報告の文章をコピーしました。LINE などに貼り付けて送れます');
@@ -553,12 +636,12 @@
           const v = await UI.prompt('依頼者の名前', { value: r.name, ok: '変更' });
           if (v && v.trim()) { S.renameRequester(rid, v); setTimeout(() => A.proxySheet({ rid }), 250); }
         };
-        U.$('[data-remove]', el).onclick = async () => {
-          if (!(await UI.confirm(`${r.name}を削除します。${r.name}の分だった品物は、自分の分に戻ります。`, { ok: '削除', danger: true }))) return;
-          UI.close('proxy');
-          if (app.itemFor === rid) app.itemFor = '';
-          S.removeRequester(rid);
-          UI.toast('削除しました', { undo: true });
+        U.$('[data-remove]', el).onclick = () => {
+          const del = (drop) => { UI.close('proxy'); if (app.itemFor === rid) app.itemFor = ''; S.removeRequester(rid, drop); UI.toast(`${r.name}を削除しました`, { undo: true }); };
+          UI.menu(`${r.name}を削除します。${r.name}の分の品物はどうしますか`, [
+            { label: '品物も消す', icon: 'trash', danger: true, hint: '代行のためだけに入れていたサークルは計画からも外します', act: () => del(true) },
+            { label: '品物は自分の分にする', icon: 'star', hint: '自分の予算に入るようになります', act: () => del(false) },
+          ]);
         };
       },
     });
@@ -662,6 +745,8 @@
 
   A.removePlan = async (ds) => {
     const e = S.entry(ds.cid);
+    const px = e ? [...new Set(e.items.filter((i) => i.for).map((i) => (S.requester(i.for) || {}).name || '代行'))] : [];
+    if (px.length && !(await UI.confirm(`このサークルには ${px.join('・')} の代行の品物があります。計画から外すと、代行の品物も消えます。よろしいですか？`, { ok: '外す', danger: true }))) return;
     if (e && e.items.some((i) => i.status === 'bought')) {
       if (!(await UI.confirm('購入記録があるサークルです。計画から外すと記録も消え、現金で払った分は財布の中身に戻ります。よろしいですか？', { ok: '外す', danger: true }))) return;
     }
@@ -876,27 +961,55 @@
 
   A.syncSetup = async () => {
     const c = S.state.sync;
-    const url = await UI.prompt('同期用のURL（GASウェブアプリの .../exec）', {
-      value: c.url, placeholder: 'https://script.google.com/macros/s/.../exec',
-      ok: '次へ', type: 'url',
+    const raw = await UI.prompt('同期用のURL（GASウェブアプリの …/exec）', {
+      value: c.url, placeholder: 'https://script.google.com/macros/s/…/exec',
+      ok: '次へ', type: 'url', plain: true,
+      note: '新しい端末では、手で打つより、PCの「設定 → 同期 → 設定をスマホへ（QR）」を使うほうが確実です（URL が長く、打ち間違えやすいため）。',
     });
-    if (url == null) return;
-    const phrase = await UI.prompt('合言葉（PCとスマホで同じものを入れます）', {
-      value: c.phrase, placeholder: '例：holocle-12th-ogu',
-      ok: '保存',
+    if (raw == null) return;
+    const nu = HC.sync.normalizeUrl(raw);
+    if (!nu) return UI.toast('URLの形が正しくありません。「https://script.google.com/macros/s/…/exec」の形のURLを貼り付けてください', { error: true, ms: 7000 });
+    if (nu.dev) return UI.toast('これはテスト用のURL（…/dev）です。GASの「デプロイを管理」に出るウェブアプリのURL（…/exec）を使ってください', { error: true, ms: 7000 });
+    const phrase = await UI.prompt('合言葉（PCとスマホで同じもの）', {
+      value: c.phrase, placeholder: '例：holocle-12th-ogu', ok: '接続を確かめる', plain: true,
+      note: '大文字・小文字も区別します。設定のあとに出る「確認コード」が、ほかの端末と同じなら合っています。',
     });
     if (phrase == null) return;
-    c.url = String(url).trim();
-    c.phrase = String(phrase).trim();
+    const p = String(phrase).trim();
+    if (!p) return UI.toast('合言葉を入れてください', { error: true });
+    UI.toast('接続を確かめています…', { ms: 20000 });
+    const t = await HC.sync.test(nu.url, p);
+    if (t.error) return UI.toast('同期を設定できませんでした：' + t.error, { error: true, ms: 9000 });
+    c.url = nu.url;
+    c.phrase = p;
     c.syncedAt = 0;
-    c.dirty = true;
+    c.dirty = false;
+    c.code = await HC.sync.code(p);
+    S.save();
+    await firstSync(t);
+  };
+
+  /**
+   * 同期を始めるとき（設定・QR の両方）。サーバーに別の端末の内容があれば、先に取り込む（新しい端末の空の内容で上書きしないため）。
+   * 両方に計画があるときは、どちらを残すか選んでもらう
+   */
+  const firstSync = async (t) => {
+    const localHas = Object.values(S.state.data).some((d) => Object.keys(d.entries || {}).length);
+    if (t.empty) {
+      if (!localHas) { UI.toast('同期の準備ができました（まだデータはありません）'); return app.refresh(); }
+      const p = await HC.sync.push({ force: true });
+      UI.toast(p.ok ? 'この端末の内容で同期を始めました' : syncMsg(p), { error: !p.ok });
+      return app.refresh();
+    }
+    if (!localHas) {
+      const r = await HC.sync.pull({ force: true });
+      UI.toast(r.ok ? `${t.device ? t.device + ' の' : ''}内容を取り込みました` : syncMsg(r), { error: !r.ok });
+      return app.refresh();
+    }
+    S.state.sync.dirty = true;   // 両方にある：選んでもらう
     S.save();
     app.refresh();
-    if (!c.url || !c.phrase) return UI.toast('URLと合言葉の両方が要ります', { error: true });
-    UI.toast('保存しました。いまの内容を送ります…');
-    const r = await HC.sync.push({ force: true });
-    UI.toast(r.ok ? '同期の準備ができました' : syncMsg(r), { error: !r.ok });
-    app.refresh();
+    askConflict({ device: t.device, updated: t.updated });
   };
 
   A.syncNow = async () => {
@@ -960,6 +1073,7 @@
       html: `<p class="small">スマホのカメラでこのQRを読むと、同じ合言葉で同期できるようになります。</p>
         ${svg ? `<div class="qrbox">${svg}</div>` : '<p class="warn small">QRを作れませんでした</p>'}
         <p class="muted small">このQRには合言葉が入っています。人に見せないでください。</p>
+        <p class="muted small">ホーム画面に追加したアプリで使う場合、カメラで読むと Safari のほうで開いてしまいます（ホーム画面のアプリとはデータが別）。その場合は「リンクをコピー」して AirDrop などで送り、アプリの「設定 → リンク／テキストを貼って読み込み」に貼ってください。</p>
         <div class="btn-row"><button class="btn" data-copy>${U.icon('link')}リンクをコピー</button></div>`,
       onMount: (el) => { U.$('[data-copy]', el).onclick = async () => UI.toast((await U.copy(url)) ? 'コピーしました' : 'コピーできませんでした'); },
     });
@@ -1870,17 +1984,15 @@
     if (obj && obj.kind === 'sync') {
       if (!(await UI.confirm('同期の設定を受け取りました。この端末でも同じ合言葉で同期しますか？', { ok: '設定する' }))) return;
       try {
-        HC.sync.importConfig(obj);
-        UI.toast('設定しました。取り込んでいます…');
-        const r = await HC.sync.pull({ force: true });
-        if (r.ok && r.empty && Object.keys(S.d().entries).length) {
-          // 保管場所が空なら、この端末の内容で始める
-          const p = await HC.sync.push({ force: true });
-          UI.toast(p.ok ? 'この端末の内容で同期を始めました' : ('送れませんでした：' + (p.error || '')), { error: !p.ok });
-        } else {
-          UI.toast(r.ok ? (r.empty ? '同期の準備ができました（まだデータはありません）' : '取り込みました') : ('取り込めませんでした：' + (r.error || '')), { error: !!r.error });
-        }
-        app.refresh();
+        const nu = HC.sync.normalizeUrl(obj.url);
+        if (!nu || nu.dev) throw new Error('受け取ったURLが正しくありません。PCの同期の設定を確かめてください');
+        UI.toast('接続を確かめています…', { ms: 20000 });
+        const t = await HC.sync.test(nu.url, String(obj.phrase || ''));
+        if (t.error) throw new Error('同期を設定できませんでした：' + t.error);
+        HC.sync.importConfig({ ...obj, url: nu.url });
+        S.state.sync.code = await HC.sync.code();
+        S.save();
+        await firstSync(t);
       } catch (e) {
         UI.toast(e.message, { error: true });
       }

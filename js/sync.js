@@ -17,7 +17,10 @@
   const niceError = (e) => {
     const m = String((e && e.message) || e || '');
     if (/failed to fetch|networkerror|load failed|network request/i.test(m)) return 'つながりませんでした（URLと電波を確認してください）';
+    // 404 は URL の打ち間違い・途中で切れた・末尾の余分な文字（新しい端末で手入力したときに多い）
+    if (/応答が 404/.test(m)) return 'URLが見つかりませんでした。途中で切れている・余分な文字が入っている可能性があります（PCの「設定をスマホへ（QR）」かリンクで渡すのが確実です）';
     if (/応答が 40[0-9]/.test(m)) return 'アクセスを断られました（GASのデプロイを「アクセスできるユーザー：全員」にしてください）';
+    if (/応答がJSONではない/.test(m)) return 'GASのウェブアプリのURLではないようです（デプロイの「ウェブアプリ」に出る …/exec のURLを使ってください）';
     if (/応答が 5\d\d/.test(m)) return 'サーバー側でエラーが出ています（少し待って、もう一度）';
     return m;
   };
@@ -53,7 +56,12 @@
     const url = `${conf().url}?k=${encodeURIComponent(k)}${q}&t=${Date.now()}`;
     const res = await fetch(url, { method: 'GET', redirect: 'follow' });
     if (!res.ok) throw new Error('サーバーの応答が ' + res.status);
-    return res.json();
+    return readJson(res);
+  };
+  /** ログイン画面などの HTML が返ってきたときに、分かる言葉で知らせる */
+  const readJson = async (res) => {
+    const t = await res.text();
+    try { return JSON.parse(t); } catch (_) { throw new Error('サーバーの応答がJSONではない'); }
   };
   const post = async (payload) => {
     // text/plain で送ると事前確認（preflight）が起きず、GAS でもそのまま受け取れる
@@ -64,7 +72,7 @@
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('サーバーの応答が ' + res.status);
-    return res.json();
+    return readJson(res);
   };
 
   // ---- 送る・取り込む --------------------------------------------------
@@ -197,7 +205,9 @@
 
   /** 起動時：軽く様子を見る（失敗しても画面は普通に使える） */
   Sy.boot = async () => {
-    if (!Sy.configured() || !navigator.onLine) return;
+    if (!Sy.configured()) return;
+    if (!conf().code) { conf().code = await Sy.code(); S().save(); }   // 確認コード（1.5.2 より前の設定にも付ける）
+    if (!navigator.onLine) return;
     lastPullAt = Date.now();
     const r = await Sy.pull();
     if (r && r.conflict) U.emit('sync', { conflict: r.server });
@@ -338,6 +348,34 @@
       const skip = HC.shots.skipped();
       return list.filter((x) => !have.has(x.id) && !skip.has(x.id)).length;
     } catch (_) { return 0; }
+  };
+
+  /**
+   * 貼り付け・手入力された URL を整える。全角・空白・改行・末尾の / を取り、ウェブアプリの URL の部分だけを抜き出す。
+   * @returns {{url, dev:boolean}|null}  dev=テスト用の …/dev（ほかの端末からは使えない）
+   */
+  Sy.normalizeUrl = (raw) => {
+    const t = U.toHalf(String(raw || '')).replace(/[\s\u200b\u3000]+/g, '');
+    const m = t.match(/https:\/\/script\.google\.com\/(?:a\/[^/]+\/)?macros\/s\/[A-Za-z0-9_-]{20,}\/(exec|dev)/);
+    return m ? { url: m[0], dev: m[1] === 'dev' } : null;
+  };
+
+  /** 端末どうしで見比べるための確認コード（合言葉から作る。合言葉そのものは分からない） */
+  Sy.code = async (phrase = conf().phrase) => (phrase ? (await keyOf(phrase)).slice(0, 4).toUpperCase() : '');
+
+  /** 保存する前の接続テスト。サーバーに何が置かれているかも返す */
+  Sy.test = async (url, phrase) => {
+    if (!navigator.onLine) return { error: 'オフラインです。電波のあるところで設定してください' };
+    try {
+      const k = await keyOf(phrase);
+      const res = await fetch(`${url}?k=${encodeURIComponent(k)}&t=${Date.now()}`, { method: 'GET', redirect: 'follow' });
+      if (!res.ok) throw new Error('サーバーの応答が ' + res.status);
+      const r = await readJson(res);
+      if (!r.ok) throw new Error(r.error || '読み込めませんでした');
+      return { ok: true, empty: !r.updated || !r.data, updated: r.updated, device: r.device };
+    } catch (e) {
+      return { error: niceError(e) };
+    }
   };
 
   /** 設定の受け渡し（QR用）。合言葉ごと渡すので、スマホ側は読み取るだけで済む */

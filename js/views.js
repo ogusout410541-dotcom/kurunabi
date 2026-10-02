@@ -38,6 +38,23 @@
 
   const itemNames = (e) => e.items.map((i) => (i.name || '（無題）') + (i.for ? `（${(S().requester(i.for) || {}).name || '代行'}）` : '')).join('・');
 
+  /** 同じ品物を自分と依頼者（または複数の依頼者）で買うとき、ブースで一度に頼めるように合計の数を出す */
+  V.mergeHint = (e) => {
+    const g = new Map();
+    e.items.filter((i) => i.status === 'todo').forEach((i) => {
+      const k = U.norm(i.name);
+      if (!k) return;
+      if (!g.has(k)) g.set(k, []);
+      g.get(k).push(i);
+    });
+    const lines = [...g.values()].filter((arr) => new Set(arr.map((i) => i.for || '')).size > 1).map((arr) => {
+      const total = U.sum(arr, (i) => i.qty || 1);
+      const by = arr.map((i) => `${i.for ? esc((S().requester(i.for) || {}).name || '代行') : '自分'} ${i.qty || 1}`).join('・');
+      return `<b>${esc(arr[0].name)}</b> 合わせて ${total}個（${by}）`;
+    });
+    return lines.length ? `<div class="dc-merge">${U.icon('wallet', 'sm')}<span>まとめて買う：${lines.join(' ／ ')}</span></div>` : '';
+  };
+
   /** 代行の依頼者ごとの色（5色をくり返す） */
   V.rqClass = (rid) => 'rq-c' + Math.max(0, S().requesters().findIndex((r) => r.id === rid)) % 5;
   /** 品物に付ける「◯◯の分」の印 */
@@ -214,6 +231,7 @@
       <button class="dc-space" data-act="dayMap">${V.space(c, 'xxl')}</button>
       <div class="cur-name">${esc(c.name)}</div>
       ${e.memo ? `<div class="cur-memo">${esc(e.memo).replace(/\n/g, '<br>')}</div>` : ''}
+      ${V.mergeHint(e)}
       ${e.items.length ? `<ul class="items">${V.itemRows(cid, e)}</ul>`
         : (s.isPending(e)
           ? `<p class="cur-pend">${U.icon('clock', 'sm')}買うものは登録されていません。買ったものは下の「追加で買ったもの」から記録できます</p>`
@@ -956,7 +974,7 @@
     if (!e) {
       html += `<div class="field"><label>計画に追加（優先度を選ぶ）</label>
         <div class="pri-pick">${[1, 2, 3, 4].map((p) => `<button class="pri-big p${p}" data-act="addPlan" data-cid="${cid}" data-pri="${p}"><b>${s.PRI[p].label}</b><small>${['絶対に買う', 'できれば買う', '余裕があれば', '見るだけ・予備'][p - 1]}</small></button>`).join('')}</div></div>
-        <div class="cd-actions"><button class="btn" data-act="showOnMap" data-cid="${cid}">${U.icon('map')}地図で見る</button></div>`;
+        <div class="cd-actions"><button class="btn" data-act="showOnMap" data-cid="${cid}">${U.icon('map')}地図で見る</button>${s.requesters().length ? `<button class="btn" data-act="proxyAddFor" data-cid="${cid}">${U.icon('wallet')}代行の品物を登録</button>` : ''}</div>`;
       return html + '</div>';
     }
     const planned = s.entryPlanned(e), spent = s.entrySpent(e);
@@ -1191,6 +1209,7 @@
                 <span>${U.icon(c.dirty ? 'upload' : 'check', 'sm')}${c.dirty ? 'まだ送っていない変更があります' : 'この端末の内容は送信済みです'}</span>
                 ${c.lastAt ? `<small>最終 ${esc(U.time(c.lastAt))}</small>` : ''}
               </div>
+              <p class="sync-id muted small">URL：${esc(c.url.replace(/^https:\/\/script\.google\.com\/(?:a\/[^/]+\/)?macros\/s\/(.{6}).*(.{4})\/(exec|dev)$/, '…/s/$1…$2/$3'))} ・ 確認コード：<b>${esc(c.code || '----')}</b><br>ほかの端末とこの2つが同じなら、同じ保管場所につながっています。</p>
               ${st.error ? `<p class="warn small">${U.icon('warn', 'sm')} ${esc(st.error)}</p>` : ''}
               <label class="toggle-row"><span>自動で送る<small>変更の数秒後に送ります</small></span><input type="checkbox" data-f="syncAuto" ${c.auto ? 'checked' : ''}><i></i></label>
               <div class="btn-grid2">

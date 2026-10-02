@@ -1182,3 +1182,17 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .ps-st.soldout { background: var(--warn-bg); color: var(--warn-ink); }
 .log-sum .ls-proxy { grid-column: 1 / -1; background: color-mix(in srgb, #8b5cf6 12%, var(--surface2)); }
 .cur-sum small { color: var(--muted); font-size: .78rem; margin-left: 4px; }
+
+/* 代行の品物の登録 */
+.proxy-add { margin-bottom: 12px; }
+.pa-hit { display: block; margin-top: 4px; min-height: 1.2em; }
+.pa-chips { margin-top: -4px; }
+.pa-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.pa-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.pa-list small { color: var(--muted); width: 100%; }
+/* 同じ品物を自分と依頼者で買うとき */
+.dc-merge { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; font-size: .88rem;
+  background: color-mix(in srgb, #8b5cf6 12%, transparent); border: 1px solid color-mix(in srgb, #8b5cf6 35%, transparent); }
+.dc-merge .ic { color: #8b5cf6; flex: none; margin-top: 2px; }
+.sync-id b { font-family: ui-monospace, monospace; letter-spacing: .08em; }
+.pa-form { text-align: left; }
