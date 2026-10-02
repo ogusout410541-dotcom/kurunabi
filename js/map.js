@@ -173,11 +173,16 @@
         const c = S.circle(cid);
         const cls = ['cell', 'has'];
         if (e) cls.push('pl', 'p' + e.pri, 'st-' + e.status);
+        let rqColor = '';
+        if (e && HC.views.band) {
+          const b = HC.views.band(e);
+          if (b.rids.length) { cls.push(b.own ? 'pxm' : 'pxo'); rqColor = HC.views.RQ_COLORS[HC.views.rqIndex(b.rids[0])]; }
+        }
         if (cid === q.current) cls.push('next');
         if (cid === inst.sel) cls.push('sel');
         if (c && S.isFav(c)) cls.push('fav');
         const s = cls.join(' ');
-        els.forEach((g) => g.setAttribute('class', s));
+        els.forEach((g) => { g.setAttribute('class', s); if (rqColor) g.style.setProperty('--rq', rqColor); else g.style.removeProperty('--rq'); });
       });
 
       // 巡回番号バッジ
@@ -188,7 +193,10 @@
         const p = c && Lay.centerOf(L, c);
         if (!p) return;
         const e = d.entries[cid];
-        badges.push(`<g class="badge p${e.pri}${cid === q.current ? ' next' : ''}${e.status === 'later' ? ' later' : ''}" data-cid="${cid}"><circle cx="${p.x}" cy="${p.y}" r="12"/><text x="${p.x}" y="${p.y + 0.5}"${textRot(p.x, p.y)}>${i + 1}</text></g>`);
+        // 代行の分があるサークルは、番号の丸も依頼者の色（代行だけなら塗り、自分の分もあれば縁取り）
+        const bd = HC.views.band ? HC.views.band(e) : { rids: [] };
+        const px = bd.rids.length ? ` ${bd.own ? 'pxm' : 'pxo'}" style="--rq:${HC.views.RQ_COLORS[HC.views.rqIndex(bd.rids[0])]}` : '';
+        badges.push(`<g class="badge p${e.pri}${cid === q.current ? ' next' : ''}${e.status === 'later' ? ' later' : ''}${px}" data-cid="${cid}"><circle cx="${p.x}" cy="${p.y}" r="12"/><text x="${p.x}" y="${p.y + 0.5}"${textRot(p.x, p.y)}>${i + 1}</text></g>`);
       });
       U.$('.badge-layer', svg).innerHTML = badges.join('');
 

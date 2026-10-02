@@ -641,6 +641,7 @@
       boughtCount: rows.filter((r) => r.status === 'bought').length,
       missCount: rows.filter((r) => r.status === 'soldout' || r.status === 'skip').length,
       todoCount: rows.filter((r) => r.status === 'todo').length,
+      left: U.sum(rows.filter((r) => r.status === 'todo'), (r) => r.price * r.qty),   // まだ買っていない分の予定額
     };
   };
 

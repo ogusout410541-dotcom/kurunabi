@@ -55,8 +55,39 @@
     return lines.length ? `<div class="dc-merge">${U.icon('wallet', 'sm')}<span>まとめて買う：${lines.join(' ／ ')}</span></div>` : '';
   };
 
-  /** 代行の依頼者ごとの色（5色をくり返す） */
-  V.rqClass = (rid) => 'rq-c' + Math.max(0, S().requesters().findIndex((r) => r.id === rid)) % 5;
+  /** 代行の依頼者ごとの色（5色をくり返す）。優先度の色（赤・橙・青・灰）と見分けられる色にしている */
+  V.RQ_COLORS = ['#8b5cf6', '#0d9488', '#c026d3', '#65a30d', '#a16207'];
+  V.rqIndex = (rid) => Math.max(0, S().requesters().findIndex((r) => r.id === rid)) % 5;
+  V.rqClass = (rid) => 'rq-c' + V.rqIndex(rid);
+
+  /**
+   * 左の帯の色。自分の分だけなら優先度の色（今までどおり、CSS の p1〜p4）。
+   * 代行の分があるときは依頼者の色を使い、自分の分もあるサークルは斜めに2色（優先度の色と依頼者の色）に分ける。
+   * 品物の「誰の分」から毎回決めるので、データと見た目が食い違うことはない
+   * @returns {{cls:string, style:string, rids:string[], own:boolean}}
+   */
+  /** 代行の印（依頼者の色）。代行だけのサークルでは優先度の代わりに出す */
+  // compact：リストの行のように狭いところでは、2人以上を「代行（2人）」の1つにまとめる（色は依頼者の色を斜めに並べる）
+  V.pxChip = (rids, compact) => {
+    if (compact && rids.length > 1) {
+      const stops = rids.map((id, i) => `${V.RQ_COLORS[V.rqIndex(id)]} ${Math.round((i * 100) / rids.length)}% ${Math.round(((i + 1) * 100) / rids.length)}%`).join(', ');
+      return `<span class="pri-chip px-chip" style="background: linear-gradient(150deg, ${stops}) !important">代行（${rids.length}人）</span>`;
+    }
+    return rids.map((id) => `<span class="pri-chip px-chip ${V.rqClass(id)}">${esc((S().requester(id) || {}).name || '代行')}の代行</span>`).join('');
+  };
+
+  V.band = (e) => {
+    const rq = S().requesters();
+    const rids = rq.map((r) => r.id).filter((id) => e.items.some((i) => i.for === id));
+    if (!rids.length) return { cls: '', style: '', rids, own: true };
+    const own = !e.items.length || e.items.some((i) => !i.for);
+    const colors = [...(own ? [`var(--p${e.pri})`] : []), ...rids.map((id) => V.RQ_COLORS[V.rqIndex(id)])];
+    const step = 100 / colors.length;
+    const stops = colors.map((c, i) => `${c} ${(i * step).toFixed(1)}% ${((i + 1) * step).toFixed(1)}%`).join(', ');
+    // 2色以上は斜めに区切る（細い帯でも区切りが斜めに見えるよう 150deg）
+    const band = colors.length === 1 ? colors[0] : `linear-gradient(150deg, ${stops})`;
+    return { cls: own ? ' band-x band-mix' : ' band-x band-px', style: ` style="--band:${band}"`, rids, own };
+  };
   /** 品物に付ける「◯◯の分」の印 */
   V.forTag = (i) => (i.for ? `<span class="for-tag ${V.rqClass(i.for)}">${esc((S().requester(i.for) || {}).name || '代行')}の分</span>` : '');
   const priceTxt = (i) => (i.price ? U.yen(i.price) : S().isFree(i) ? '<span class="free">無料</span>' : '<span class="unk">¥?</span>') + (i.qty > 1 ? `<small>×${i.qty}</small>` : '');
@@ -220,9 +251,10 @@
     const Sh = HC.shots;
     const shots = Sh && Sh.ready ? Sh.list(s.state.eventId, cid) : [];
     const enter = HC.app.curGuard && Date.now() < HC.app.curGuard ? ' enter' : '';
-    return `<section class="card cur day-card p${e.pri} st-${e.status}${enter}">
+    const b = V.band(e);
+    return `<section class="card cur day-card p${e.pri} st-${e.status}${enter}${b.cls}"${b.style}>
       <div class="cur-top">
-        <span class="order">${idx >= 0 ? `${idx + 1} / ${all.length}` : ''}</span>${V.pri(e.pri)}${V.status(e.status)}
+        <span class="order">${idx >= 0 ? `${idx + 1} / ${all.length}` : ''}</span>${b.own ? V.pri(e.pri) : ''}${b.rids.length ? V.pxChip(b.rids) : ''}${V.status(e.status)}
         ${s.isWall(cid) ? '<span class="tag wall">壁</span>' : ''}
         <span class="grow"></span>
         <button class="btn sm" data-act="dayMap">${U.icon('map')}道順</button>
@@ -544,7 +576,8 @@
     const e = s.entry(cid);
     const c = s.circle(cid) || e.snap;
     const cost = e.status === 'done' ? s.entrySpent(e) : s.entryPlanned(e);
-    return `<li class="qrow p${e.pri} st-${e.status}">
+    const b = V.band(e);
+    return `<li class="qrow p${e.pri} st-${e.status}${b.cls}"${b.style}>
       <button data-act="focus" data-cid="${cid}">
         <span class="qn">${badge}</span>${V.space(c)}<span class="qname">${esc(c.name)}</span>
         <span class="qcost">${cost ? U.yen(cost) : ''}</span>
@@ -594,7 +627,8 @@
     const d = s.d();
     // 直前に完了して切り替わったところなら、しばらく押せないようにする（連打の保険）
     const enter = HC.app.curGuard && Date.now() < HC.app.curGuard ? ' enter' : '';
-    return `<section class="card cur p${e.pri} st-${e.status}${enter}">
+    const b = V.band(e);
+    return `<section class="card cur p${e.pri} st-${e.status}${enter}${b.cls}"${b.style}>
       <div class="cur-top">
         <span class="order">${idx >= 0 ? `残り${q.todo.length + q.later.length}件の${idx + 1}件目` : ''}</span>${V.pri(e.pri)}${V.status(e.status)}
         ${s.isWall(cid) ? '<span class="tag wall">壁</span>' : ''}
@@ -689,14 +723,21 @@
     if (!rq.length) return '';
     return `<section class="card proxy-card" id="sec-proxy">
       <h3>${U.icon('wallet')}代行 <small>立て替えて、あとで精算</small></h3>
-      <ul class="proxy-list">${rq.map((r) => {
-        const m = s.proxySummary(r.id);
-        return `<li><button class="proxy-row" data-act="proxySheet" data-rid="${esc(r.id)}">
-          <span class="rq-dot ${V.rqClass(r.id)}"></span>
-          <span class="pr-name"><b>${esc(r.name)}</b><small>${m.count}件中 買えた ${m.boughtCount}件${m.missCount ? ` ・ 買えなかった ${m.missCount}件` : ''}${m.todoCount ? ` ・ まだ ${m.todoCount}件` : ''}</small></span>
-          <span class="pr-money"><b>${U.yen(m.bought)}</b><small>${r.settledAt ? '精算済み' : `予定 ${U.yen(m.planned)}`}</small></span>
-        </button></li>`;
-      }).join('')}</ul>
+      ${(() => {
+        const ms = rq.map((r) => ({ r, m: s.proxySummary(r.id) }));
+        const tot = (k) => U.sum(ms, (x) => x.m[k]);
+        return `<table class="proxy-table">
+          <thead><tr><th>依頼者</th><th>予定</th><th>立て替え</th><th>まだ</th></tr></thead>
+          <tbody>${ms.map(({ r, m }) => `<tr data-act="proxySheet" data-rid="${esc(r.id)}">
+            <td class="pt-name"><span class="rq-dot ${V.rqClass(r.id)}"></span><span><b>${esc(r.name)}</b><small>${m.count}件・買えた${m.boughtCount}${m.missCount ? `・買えなかった${m.missCount}` : ''}${r.settledAt ? '・精算済み' : ''}</small></span></td>
+            <td class="mo">${U.yen(m.planned)}</td>
+            <td class="mo"><b>${U.yen(m.bought)}</b></td>
+            <td class="mo">${m.left ? U.yen(m.left) : '—'}</td></tr>`).join('')}</tbody>
+          ${ms.length > 1 ? `<tfoot><tr><td>合計</td><td class="mo">${U.yen(tot('planned'))}</td><td class="mo"><b>${U.yen(tot('bought'))}</b></td><td class="mo">${tot('left') ? U.yen(tot('left')) : '—'}</td></tr></tfoot>` : ''}
+        </table>`;
+      })()}
+      <p class="band-legend muted small">左の帯の色：<span class="lg-own">自分の分（優先度の色）</span>${rq.map((r) => `<span><i class="rq-dot ${V.rqClass(r.id)}"></i>${esc(r.name)}</span>`).join('')}<span><i class="lg-mix"></i>両方あるサークルは斜めに2色</span></p>
+      <p class="muted small">「立て替え」は買えた分（あとでもらう額）、「まだ」はまだ買っていない分の予定です。行を押すと精算の画面を開きます。</p>
       <button class="link-btn" data-act="addRequester">${U.icon('plus', 'sm')}依頼者を追加</button>
     </section>`;
   };
@@ -835,7 +876,9 @@
     const planned = s.entryPlanned(e), spent = s.entrySpent(e);
     const unknown = e.items.filter((i) => S().isUnknown(i) && i.status === 'todo').length;
     const money = e.status === 'done' || spent ? `<b>${U.yen(spent)}</b>${planned && planned !== spent ? `<small>/${U.yen(planned)}</small>` : ''}` : `${U.yen(planned)}${unknown ? '<small>+?</small>' : ''}`;
-    return `<li class="prow p${e.pri} st-${e.status}" data-cid="${cid}">
+    const b = V.band(e);
+    const pxAmt = s.entryPlanned(e) - s.entryPlanned(e, 'own');
+    return `<li class="prow p${e.pri} st-${e.status}${b.cls}" data-cid="${cid}"${b.style}>
       ${canDrag ? `<span class="drag" aria-label="ドラッグして並べ替え">${U.icon('grip')}</span>` : ''}
       <span class="ord">${n}</span>
       <button class="prow-main" data-act="openCircle" data-cid="${cid}">
@@ -845,8 +888,8 @@
           : (e.items.length ? esc(itemNames(e)) : '<i>買うもの未登録</i>')}${e.memo ? ` ・ ${U.icon('note', 'sm')}` : ''}${V.shotMark(cid, e)}</span>
       </button>
       <span class="prow-side">
-        <button class="pri-btn" data-act="priMenu" data-cid="${cid}">${V.pri(e.pri)}</button>
-        <span class="money">${money}</span>
+        <button class="pri-btn" data-act="priMenu" data-cid="${cid}">${b.own ? V.pri(e.pri) : V.pxChip(b.rids, true)}</button>
+        <span class="money">${money}${pxAmt ? `<small class="px-amt">うち代行 ${U.yen(pxAmt)}</small>` : ''}</span>
         ${V.status(e.status)}
       </span>
     </li>`;
@@ -943,7 +986,8 @@
           e && s.isPending(e) ? `<span class="pend">${U.icon('clock', 'sm')}お品書き待ち</span>`
             : (e && e.items.length ? `<span class="it">${esc(itemNames(e))}</span>` : ''),
         ].filter(Boolean).join(' ・ ');
-        out.push(`<div class="crow ${e ? `planned p${e.pri} st-${e.status}` : ''}">
+        const b = e ? V.band(e) : { cls: '', style: '' };
+        out.push(`<div class="crow ${e ? `planned p${e.pri} st-${e.status}${b.cls}` : ''}"${b.style}>
           <button class="crow-main" data-act="openCircle" data-cid="${c.id}">${V.space(c)}<span class="crow-text"><span class="nm">${esc(c.name)}</span>${sub ? `<span class="sub">${sub}</span>` : ''}</span></button>
           <button class="add-btn ${e ? 'on' : ''}" data-act="quickAdd" data-cid="${c.id}" aria-label="${e ? '編集' : '計画に追加'}">${e ? V.pri(e.pri) : U.icon('plus')}</button>
         </div>`);
@@ -1050,7 +1094,7 @@
             <button class="icon-btn solid" data-act="mapRoute" title="ルート線">${U.icon('route')}</button>
             <button class="icon-btn solid" data-act="mapImage" title="公式配置図に切替">${U.icon('image')}</button>
           </div>
-          <div class="map-legend"><span class="lg p1">必須</span><span class="lg p2">優先</span><span class="lg p3">通常</span><span class="lg p4">余裕</span><span class="lg done">済</span><span class="lg next">次</span></div>
+          <div class="map-legend"><span class="lg p1">必須</span><span class="lg p2">優先</span><span class="lg p3">通常</span><span class="lg p4">余裕</span><span class="lg done">済</span><span class="lg next">次</span>${s.requesters().length ? '<span class="lg px">代行</span>' : ''}</div>
           <button class="route-off" id="route-off" data-act="mapRoute" hidden>${U.icon('route', 'sm')}ルート線は非表示です。押すと表示します</button>
           <div class="map-seg" id="mapseg" hidden></div>
           <div class="map-card" id="mapcard" hidden></div>

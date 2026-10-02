@@ -1196,3 +1196,43 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .dc-merge .ic { color: #8b5cf6; flex: none; margin-top: 2px; }
 .sync-id b { font-family: ui-monospace, monospace; letter-spacing: .08em; }
 .pa-form { text-align: left; }
+
+/* 代行の色：優先度の色（赤・橙・青・灰）と見分けられる5色 */
+.rq-c0 { --rq: #8b5cf6; } .rq-c1 { --rq: #0d9488; } .rq-c2 { --rq: #c026d3; } .rq-c3 { --rq: #65a30d; } .rq-c4 { --rq: #a16207; }
+/* 左の帯：代行の分があるサークル。自分の分もあれば斜めに2色（js/views.js の V.band） */
+.band-x { position: relative; }
+.band-x::before { content: ''; position: absolute; top: 0; bottom: 0; left: var(--bl, -6px); width: var(--bw, 6px); background: var(--band); pointer-events: none; z-index: 1; }
+.prow.band-x { border-left: 6px solid transparent; --bl: -6px; --bw: 6px; }
+.prow { border-left-width: 6px; }
+.card.cur.band-x { border-left-color: transparent; --bl: -6px; --bw: 6px; overflow: visible; }
+.card.cur.band-x::before { border-radius: var(--radius) 0 0 var(--radius); }
+.crow.planned.band-x { box-shadow: none; --bl: 0px; --bw: 5px; }
+.qrow.band-x .qn { background: var(--band) !important; color: #fff; }
+.px-amt { display: block; font-size: .7rem; color: #8b5cf6; font-weight: 700; }
+/* 地図：代行だけのサークルは依頼者の色で塗り、両方あるサークルは依頼者の色の枠 */
+.map-svg .cell.pxo rect { fill: var(--rq) !important; fill-opacity: .8; }
+.map-svg .cell.pxm rect { stroke: var(--rq) !important; stroke-width: 3; }
+/* 依頼者ごとの金額の一覧 */
+.proxy-table { width: 100%; border-collapse: collapse; font-size: .88rem; margin-bottom: 8px; }
+.proxy-table th { font-size: .74rem; color: var(--muted); font-weight: 650; text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.proxy-table th:first-child { text-align: left; }
+.proxy-table td { padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.proxy-table tbody tr { cursor: pointer; }
+.proxy-table tbody tr:hover { background: var(--surface2); }
+.proxy-table .mo { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.proxy-table .pt-name { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.proxy-table .pt-name span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.proxy-table .pt-name small { color: var(--muted); font-size: .72rem; }
+.proxy-table tfoot td { font-weight: 800; border-bottom: 0; }
+.band-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.band-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.band-legend .rq-dot { display: inline-block; }
+.lg-own::before { content: ''; display: inline-block; width: 6px; height: 14px; border-radius: 2px; background: linear-gradient(var(--p1) 0 25%, var(--p2) 25% 50%, var(--p3) 50% 75%, var(--p4) 75%); }
+.lg-mix { display: inline-block; width: 6px; height: 14px; border-radius: 2px; background: linear-gradient(150deg, var(--p3) 0 50%, #8b5cf6 50%); }
+.px-chip { background: var(--rq) !important; color: #fff !important; }
+/* 当日カードの上の行：代行の印が増えても折り返して、編集ボタンを画面の外に押し出さない */
+.cur-top { flex-wrap: wrap; row-gap: 6px; }
+.cur-top .order { white-space: nowrap; }
+.map-svg .badge.pxo circle { fill: var(--rq) !important; }
+.map-svg .badge.pxm circle { stroke: var(--rq) !important; stroke-width: 4; }
+.map-legend .px { background: #8b5cf6; }
