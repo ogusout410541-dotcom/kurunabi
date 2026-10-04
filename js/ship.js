@@ -120,8 +120,9 @@
       cls: 'ship-work',   // PC では中央の大きな作業画面。スマホはふつうの下からのシート
       title: `${esc(r.name)}の梱包・発送伝票<small class="sf-saved">自動で保存されます</small>`,
       html: `<div class="ship-work-in"><div class="ship-form">
-        <section class="sf-sec">
-          <h4>${U.icon('pin', 'sm')}お届け先様</h4>
+        <nav class="sf-nav" aria-label="入力の進み具合"></nav>
+        <section class="sf-sec" id="sf-to">
+          <h4><span class="sf-no">1</span>お届け先様</h4>
           ${known ? `<button class="btn sm block" data-known>${U.icon('undo', 'sm')}前回の宛先を使う（${esc(known.name || '')} 〒${esc(known.postal || '')}）</button>` : ''}
           <div class="grid2">
             ${f('name', 'お名前（「様」は自動で付きます）', v.ship.name, 'autocomplete="off" data-ship placeholder="例：山田 花子"')}
@@ -129,14 +130,14 @@
           </div>
           <div class="grid2">
             ${f('postal', '郵便番号', v.ship.postal, 'inputmode="numeric" placeholder="例：100-0001" autocomplete="off" data-ship')}
-            ${f('phone', '電話番号', v.ship.phone, 'inputmode="tel" autocomplete="off" data-ship placeholder="任意"')}
+            ${f('phone', '電話番号（任意）', v.ship.phone, 'inputmode="tel" autocomplete="off" data-ship')}
           </div>
           ${f('addr1', 'ご住所（都道府県から番地まで）', v.ship.addr1, 'autocomplete="off" data-ship placeholder="例：東京都千代田区千代田1-1"')}
           ${f('addr2', '建物名・部屋番号（任意）', v.ship.addr2, 'autocomplete="off" data-ship')}
-          <p class="muted small">伝票の「OC名」には、依頼者の名前（${esc(r.name)}）が入ります。</p>
+          <p class="muted small">伝票の「OC名」には、依頼者の名前（${esc(r.name)}）が入ります。お名前や住所が分からないときは空けたままにして、あとから入力できます。</p>
         </section>
-        <section class="sf-sec">
-          <h4>${U.icon('route', 'sm')}発送</h4>
+        <section class="sf-sec" id="sf-ship">
+          <h4><span class="sf-no">2</span>発送</h4>
           <div class="field"><span>発送方法</span><div class="chips wrap sf-methods">${Sh.METHODS.map((x) => `<button type="button" class="chip sm${v.ship.method === x ? ' on' : ''}" data-method="${esc(x)}">${esc(x)}</button>`).join('')}</div></div>
           <div class="field"><span>送料</span><div class="seg sm sf-fee">${Object.entries(FEE).map(([k, l]) => `<button type="button" class="${v.ship.feeMode === k ? 'on' : ''}" data-fee="${k}">${l}</button>`).join('')}</div></div>
           <label class="field sf-fee-amt"${v.ship.feeMode === 'charge' ? '' : ' hidden'}><span>送料の金額</span><div class="yen-input"><span>¥</span><input class="input" data-k="fee" inputmode="numeric" value="${v.ship.fee || ''}" placeholder="例：430" data-ship></div></label>
@@ -144,10 +145,20 @@
             ${f('date', '梱包日', v.ship.date, 'type="date" data-ship')}
             ${f('tracking', '追跡番号（任意）', v.ship.tracking, 'inputmode="numeric" autocomplete="off" data-ship', '入力すると梱包伝票に印刷されます')}
           </div>
-          ${t('note', 'メモ・備考', v.ship.note, 'data-ship')}
+          ${t('note', 'メモ・備考（発送伝票に載ります）', v.ship.note, 'data-ship')}
         </section>
-        <details class="sf-sec sf-sender"${snd.name ? '' : ' open'}>
-          <summary><h4>${U.icon('door', 'sm')}発送元（自分）<small>${snd.name ? esc(snd.name) : '未入力'} ・ 全員の伝票で共通</small></h4></summary>
+        <section class="sf-sec sf-parts-sec" id="sf-parts"></section>
+        <section class="sf-sum" aria-live="polite"></section>
+        <section class="sf-sec sf-docs">
+          <h4>${U.icon('print', 'sm')}印刷するもの</h4>
+          <ol class="sf-steps">
+            <li><b>梱包伝票</b>：箱詰めのときに、品物を1点ずつ検品します。金額は載らないので、そのまま同封できます</li>
+            <li><b>発送伝票</b>：品物と金額の明細です。箱に同封してください</li>
+          </ol>
+          ${kindBtns(Sh.kind())}
+        </section>
+        <details class="sf-sec sf-sender" id="sf-from"${snd.name ? '' : ' open'}>
+          <summary><h4><span class="sf-no">4</span>発送元（自分）<small>${snd.name ? esc(snd.name) : '未入力'} ・ 全員の伝票で共通</small></h4></summary>
           <div class="grid2">
             ${f('name', '名前', snd.name, 'autocomplete="off" data-sender placeholder="例：屋号・ハンドルネーム"')}
             ${f('x', 'X（任意）', snd.x, 'autocomplete="off" data-sender placeholder="例：@kurunavi"')}
@@ -156,26 +167,16 @@
           ${f('tagline', '見出しの下に入る文', snd.tagline, 'autocomplete="off" data-sender')}
           ${f('nextNo', '次の伝票番号', snd.nextNo, 'inputmode="numeric" data-sender', '印刷するたびに、この番号から順に付けます')}
         </details>
-        <section class="sf-sec sf-parts-sec"></section>
-        <section class="sf-sum" aria-live="polite"></section>
-        <section class="sf-sec sf-docs">
-          <h4>${U.icon('print', 'sm')}印刷</h4>
-          <ol class="sf-steps">
-            <li><b>梱包伝票</b>：箱詰めのときに、品物と数量を照らし合わせて検品します。金額は載らないので、そのまま同封できます</li>
-            <li><b>発送伝票</b>：品物と金額の明細です。箱に同封してください</li>
-          </ol>
-          ${kindSeg(Sh.kind())}
-          <div class="btn-grid2">
-            <button class="btn" data-preview>${U.icon('note')}プレビュー</button>
-            <button class="btn primary" data-print>${U.icon('print')}印刷する</button>
-          </div>
-        </section>
-        <button class="btn block" data-keep>${U.icon('check')}一時保存して閉じる</button>
         <button class="btn block ghost" data-shipped>${U.icon('check')}${r.ship && r.ship.shippedAt ? `発送済みを取り消す（${esc(U.md(r.ship.shippedAt))}に発送）` : '発送済みにする'}</button>
-        <p class="muted small">入力した内容は自動で保存されます。お名前や住所が分からないときは空けたまま閉じて、あとから続きを入力できます。宛先は、次の代行でも「前回の宛先を使う」から呼び出せます。用紙は A4縦です。黒い帯が印刷されないときは、印刷の設定で「背景のグラフィック」をオンにしてください。</p>
+        <p class="muted small">入力した内容は自動で保存されます。宛先は、次の代行でも「前回の宛先を使う」から呼び出せます。用紙は A4縦です。黒い帯が印刷されないときは、印刷の設定で「背景のグラフィック」をオンにしてください。</p>
+        <div class="sf-actions">
+          <button class="btn" data-keep>${U.icon('save')}一時保存して閉じる</button>
+          <button class="btn" data-preview>${U.icon('note')}プレビュー</button>
+          <button class="btn primary" data-print>${U.icon('print')}印刷</button>
+        </div>
       </div>
       <aside class="ship-pv" aria-label="印刷のプレビュー">
-        <div class="spv-head"><b>${U.icon('note', 'sm')}プレビュー</b>${kindBtns(Sh.kind())}<button class="btn primary" data-print2>${U.icon('print')}印刷する</button></div>
+        <div class="spv-head"><b>${U.icon('note', 'sm')}プレビュー</b>${kindBtns(Sh.kind())}<button class="btn" data-keep>${U.icon('save')}一時保存して閉じる</button><button class="btn primary" data-print2>${U.icon('print')}印刷する</button></div>
         <div class="spv-pages slip-preview"></div>
         <p class="spv-note muted small">梱包伝票は箱詰めの検品に、発送伝票は箱に同封する明細に使います。どちらも A4縦で印刷します。</p>
       </aside></div>`,
@@ -201,15 +202,40 @@
             ${(() => { const n = d.got.filter((x) => !x.parts && Sh.isSetLike(x.name)).length; return n ? `<p class="muted small">セットの内容が未登録の品物が ${n}件あります（未登録のままでも印刷できます）。</p>` : ''; })()}
             ${d.lacks.length ? `<p class="sf-lack">${U.icon('warn', 'sm')}未入力：${d.lacks.map(esc).join('・')}</p>` : d.got.length ? `<p class="sf-ok">${U.icon('check', 'sm')}必要な項目はすべて入力済みです</p>` : ''}`;
           pvLater();
+          paintNav(d);
+        };
+        const nav = U.$('.sf-nav', el);
+        const paintNav = (d) => {
+          const has = (k) => d.lacks.includes(k);
+          const to = ['お名前', '郵便番号', 'ご住所'].filter(has);
+          const sets = d.got.filter((x) => !x.parts && Sh.isSetLike(x.name)).length;
+          const items = [
+            ['sf-to', 1, 'お届け先', to.length ? `未入力 ${to.length}件` : '', to.length ? `未入力：${to.join('・')}` : ''],
+            ['sf-ship', 2, '発送', has('送料') ? '送料が未入力' : '', ''],
+            ['sf-parts', 3, 'セットの内容', sets ? `未登録 ${sets}件` : '', ''],
+            ['sf-from', 4, '発送元', has('発送元の名前') ? '名前が未入力' : '', ''],
+          ];
+          nav.innerHTML = items.map(([id, n, label, warn, tip]) => `<button type="button" class="sf-nav-i${warn ? ' warn' : ' ok'}" data-go="${id}" title="${esc(tip || warn || '入力済み')}"><span class="sf-no">${n}</span><span><b>${label}</b><small>${warn ? esc(warn) : '入力済み'}</small></span></button>`).join('');
+        };
+        nav.onclick = (e) => {
+          const b = e.target.closest('[data-go]');
+          const sec = b && U.$('#' + b.dataset.go, el);
+          if (!sec) return;
+          if (sec.tagName === 'DETAILS') sec.open = true;
+          // 上に固定した進み具合の帯に隠れないよう、その高さぶん下げて見せる（PC は入力の列、スマホはシートがスクロールする）
+          const sc = [U.$('.ship-form', el), U.$('.sheet-body', el)].find((x) => x && /auto|scroll/.test(getComputedStyle(x).overflowY) && x.scrollHeight > x.clientHeight);
+          if (sc) sc.scrollTo({ top: sc.scrollTop + sec.getBoundingClientRect().top - sc.getBoundingClientRect().top - nav.offsetHeight - 8, behavior: 'smooth' });
+          const first = U.$$('input, textarea', sec).find((i) => !i.value);
+          if (first && matchMedia('(pointer: fine)').matches) setTimeout(() => first.focus({ preventScroll: true }), 350);
         };
         const later = U.debounce(paintSum, 120);
         // 保存した時刻を見出しに出す（入力のたびに保存しているのを見て分かるように）
         const mark = () => { const t = U.$('.sf-saved', el); if (t) t.textContent = `保存しました（${U.time(Date.now())}）`; };
-        U.$('[data-keep]', el).onclick = () => {
+        U.$$('[data-keep]', el).forEach((b) => (b.onclick = () => {
           const lacks = Sh.data(rid).lacks;
           UI().close('ship');
           UI().toast(lacks.length ? `保存しました。続きは精算の画面の「梱包・発送伝票を作る」から入力できます（未入力：${lacks.join('・')}）` : '保存しました');
-        };
+        }));
         // セットの内容：品物ごとに中身を登録すると、梱包伝票で1点ずつ検品できる
         const partsSec = U.$('.sf-parts-sec', el);
         // 入力中の行（品名が空）も含めた、保存されているそのままの内容
@@ -221,7 +247,7 @@
           const d = Sh.data(rid, 'pack');
           partsSec.hidden = !d.got.length;
           if (!d.got.length) return;
-          partsSec.innerHTML = `<h4>${U.icon('note', 'sm')}セットの内容<small>セットの品物は中身を1つずつ登録すると、梱包伝票で1点ずつ検品できます</small></h4>
+          partsSec.innerHTML = `<h4><span class="sf-no">3</span>セットの内容<small>セットの品物は中身を登録すると、梱包伝票で中身を1点ずつ検品できます</small></h4>
             <div class="spc-list">${d.got.map((x) => {
               const raw = rawParts(x.cid, x.iid);
               const need = !raw.length && Sh.isSetLike(x.name);
@@ -383,16 +409,25 @@
   // ------------------------------------------------------------------ 伝票の中身（画面のプレビューと印刷で共通）
   const addr = (o) => `${esc(o.addr1 || '')}${o.addr2 ? `<br>${esc(o.addr2)}` : ''}`;
   const isRandom = (name) => /ランダム|ガチャ|ブラインド|シークレット/.test(name || '');
+  /** 同じサークルの品物をひとまとめにする（スペースとサークルのセルを結合するため。並びはスペース番号の順なので続いている） */
+  const byCircle = (list) => list.reduce((gs, x) => {
+    const g = gs[gs.length - 1];
+    if (g && g.cid === x.cid) g.items.push(x); else gs.push({ cid: x.cid, space: x.space, circle: x.circle, items: [x] });
+    return gs;
+  }, []);
+  /** 数量ぶんの検品の □（多いときは24個まで出して残りの数を添える） */
+  const BOX_MAX = 24;
+  const boxes = (n) => `<span class="pk-boxes">${'<i class="pk-box"></i>'.repeat(Math.min(n, BOX_MAX))}${n > BOX_MAX ? `<em>ほか${n - BOX_MAX}点</em>` : ''}</span>`;
 
   Sh.slipHTML = (rid) => {
     const d = Sh.data(rid);
     const ev = S().ev();
     const sh = d.ship, snd = d.snd;
     const no = noTxt(sh.no);
-    const rows = d.got.map((x) => `<tr>
-        <td class="sp">${esc(x.space)}</td><td class="ci">${esc(x.circle)}</td>
+    const rows = byCircle(d.got).map((g) => `<tbody class="grp">${g.items.map((x, k) => `<tr>
+        ${k === 0 ? `<td class="sp grp-c" rowspan="${g.items.length}">${esc(g.space)}</td><td class="ci grp-c" rowspan="${g.items.length}">${esc(g.circle)}</td>` : ''}
         <td class="nm">${esc(x.name)}${x.parts ? '<span class="tag-set">セット</span>' : ''}${isRandom(x.name) ? '<span class="tag-rand">ランダム</span>' : ''}${x.parts ? `<div class="parts">${x.qty > 1 ? '内容（1セットあたり）' : '内容'}：${x.parts.map((p) => `${esc(p.n)} ×${p.q}`).join('、')}</div>` : ''}</td>
-        <td class="qt">×${x.qty}</td><td class="mo">${U.num(x.qty ? Math.round(x.cost / x.qty) : x.cost)}円</td><td class="mo">${U.num(x.cost)}円</td></tr>`).join('');
+        <td class="qt">×${x.qty}</td><td class="mo">${U.num(x.qty ? Math.round(x.cost / x.qty) : x.cost)}円</td><td class="mo">${U.num(x.cost)}円</td></tr>`).join('')}</tbody>`).join('');
     const feeRow = sh.feeMode === 'charge' ? `<tr><th>B 送料</th><td>${U.num(d.fee)}円</td></tr>`
       : sh.feeMode === 'cod' ? '<tr><th>B 送料</th><td>着払い</td></tr>' : '';
     return `<article class="slip">
@@ -427,7 +462,7 @@
         <div class="sv-order">
           <table class="sv-items">
             <thead><tr><th class="sp">スペース</th><th class="ci">サークル</th><th class="nm">商 品 名</th><th class="qt">数量</th><th class="mo">単価</th><th class="mo">小計</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="6" class="empty">明細はありません</td></tr>'}</tbody>
+            ${rows || '<tbody><tr><td colspan="6" class="empty">明細はありません</td></tr></tbody>'}
             <tfoot><tr><td colspan="5">商品代金 小計</td><td class="mo">${U.num(d.items)}円</td></tr></tfoot>
           </table>
           ${d.miss.length ? `<div class="sv-miss"><div class="lb">ご用意できなかった品物（代金はいただいておりません）</div>
@@ -446,7 +481,7 @@
     </article>`;
   };
 
-  /** 梱包伝票。品物ごとの検品欄・検品数・備考、検品・梱包チェック、追跡番号の記入欄 */
+  /** 梱包伝票。品物ごとに数量ぶんの検品の □・備考（セットは中身ごと）、検品・梱包チェック、追跡番号の記入欄 */
   Sh.packHTML = (rid) => {
     const d = Sh.data(rid, 'pack');
     const sh = d.ship, snd = d.snd;
@@ -455,25 +490,27 @@
     const rand = d.got.some((x) => isRandom(x.name) || (x.parts || []).some((p) => isRandom(p.n)));
     const box = (t) => `<li><i class="pk-box"></i>${t}</li>`;
     const rtag = (nm) => (isRandom(nm) ? '<span class="tag-rand">ランダム</span>' : '');
-    // 品物ごとに tbody を分ける（セットの見出しと中身がページの境目で離れないように）
-    const rows = d.got.map((x, i) => {
-      if (!x.parts) {
-        return `<tbody class="grp"><tr>
-          <td class="ck"><i class="pk-box"></i></td><td class="no">${i + 1}</td>
-          <td class="sp">${esc(x.space)}</td><td class="ci">${esc(x.circle)}</td>
-          <td class="nm">${esc(x.name)}${rtag(x.name)}</td>
-          <td class="qt">×${x.qty}</td><td class="cnt"><span>／${x.qty}</span></td><td class="memo"></td></tr></tbody>`;
-      }
-      const span = x.parts.length + 1;
-      return `<tbody class="grp"><tr class="set">
-          <td class="ck"></td><td class="no">${i + 1}</td>
-          <td class="sp" rowspan="${span}">${esc(x.space)}</td><td class="ci" rowspan="${span}">${esc(x.circle)}</td>
-          <td class="nm">${esc(x.name)}<span class="tag-set">セット</span>${rtag(x.name)}<small>内容 ${x.parts.length}種類</small></td>
-          <td class="qt">×${x.qty}</td><td class="cnt"></td><td class="memo"></td></tr>
-        ${x.parts.map((p, j) => `<tr class="part">
-          <td class="ck"><i class="pk-box"></i></td><td class="no">${i + 1}-${j + 1}</td>
-          <td class="nm">${esc(p.n)}${rtag(p.n)}</td>
-          <td class="qt">×${p.q * x.qty}</td><td class="cnt"><span>／${p.q * x.qty}</span></td><td class="memo"></td></tr>`).join('')}</tbody>`;
+    // サークルごとに tbody を分ける（同じサークルの品物とセットの中身がページの境目で離れないように）
+    let no1 = 0;
+    const rows = byCircle(d.got).map((g) => {
+      const span = U.sum(g.items, (x) => 1 + (x.parts ? x.parts.length : 0));
+      const head = `<td class="sp grp-c" rowspan="${span}">${esc(g.space)}</td><td class="ci grp-c" rowspan="${span}">${esc(g.circle)}</td>`;
+      let first = true;
+      const lead = () => (first ? ((first = false), head) : '');
+      return `<tbody class="grp">${g.items.map((x) => {
+        const n = ++no1;
+        if (!x.parts) {
+          return `<tr><td class="no">${n}</td>${lead()}
+            <td class="nm">${esc(x.name)}${rtag(x.name)}</td>
+            <td class="qt">×${x.qty}</td><td class="bx">${boxes(x.qty)}</td><td class="memo"></td></tr>`;
+        }
+        return `<tr class="set"><td class="no">${n}</td>${lead()}
+            <td class="nm">${esc(x.name)}<span class="tag-set">セット</span>${rtag(x.name)}<small>中身 ${x.parts.length}種類を下で検品</small></td>
+            <td class="qt">×${x.qty}</td><td class="bx"></td><td class="memo"></td></tr>
+          ${x.parts.map((p, j) => `<tr class="part"><td class="no">${n}-${j + 1}</td>
+            <td class="nm">${esc(p.n)}${rtag(p.n)}</td>
+            <td class="qt">×${p.q * x.qty}</td><td class="bx">${boxes(p.q * x.qty)}</td><td class="memo"></td></tr>`).join('')}`;
+      }).join('')}</tbody>`;
     }).join('');
     const to = sh.addr1 ? `〒${esc(Sh.postal(sh.postal))}　${esc(sh.addr1)}${sh.addr2 ? ' ' + esc(sh.addr2) : ''}` : '';
     return `<article class="slip pack">
@@ -501,9 +538,9 @@
         <div class="sv-bar sq">梱包明細<span class="pk-count">${d.got.length}品目　計 ${qty}点</span></div>
         <div class="sv-order">
           <table class="sv-items pk-items">
-            <thead><tr><th class="ck">検品</th><th class="no">No.</th><th class="sp">スペース</th><th class="ci">サークル</th><th class="nm">商 品 名</th><th class="qt">数量</th><th class="cnt">検品数</th><th class="memo">備　考</th></tr></thead>
-            ${rows || '<tbody><tr><td colspan="8" class="empty">明細はありません</td></tr></tbody>'}
-            <tfoot><tr><td colspan="5">合計</td><td class="qt">${qty}点</td><td class="cnt"><span>／${qty}</span></td><td></td></tr></tfoot>
+            <thead><tr><th class="no">No.</th><th class="sp">スペース</th><th class="ci">サークル</th><th class="nm">商 品 名</th><th class="qt">数量</th><th class="bx">検品（1点ずつ）</th><th class="memo">備　考</th></tr></thead>
+            ${rows || '<tbody><tr><td colspan="7" class="empty">明細はありません</td></tr></tbody>'}
+            <tfoot><tr><td colspan="4">合計</td><td class="qt">${qty}点</td><td class="bx"><span class="pk-sumbox"><i class="pk-box"></i>全${qty}点そろった</span></td><td></td></tr></tfoot>
           </table>
           ${d.miss.length ? `<div class="sv-miss"><div class="lb">ご用意できなかった品物（同梱しておりません）</div>
             <ul>${d.miss.map((x) => `<li><b>${esc(x.space)}</b> ${esc(x.circle)}：${esc(x.name)} ×${x.qty}<span>${x.status === 'soldout' ? '売り切れ' : '見送り'}</span></li>`).join('')}</ul></div>` : ''}
