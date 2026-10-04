@@ -21,11 +21,12 @@
   const Sh = (HC.ship = {});
 
   Sh.METHODS = ['レターパックライト', 'レターパックプラス', 'ゆうパケット', 'ゆうパケットプラス', 'ゆうパック', 'クリックポスト', '宅急便', '宅急便コンパクト', 'ネコポス', '定形外郵便', '手渡し'];
-  const FEE = { charge: '請求に含める', cod: '着払い', none: '書かない' };
+  const FEE = { charge: '請求に含める', cod: '着払い', none: '記載しない' };
   const DEF = {
-    note: '梱包内容をご確認ください。\n商品の破損・内容不一致の場合はXのDMまたはメールにてご連絡ください。',
+    note: 'お手数ですが、到着後に内容をご確認ください。\n破損や内容の相違がございましたら、XのDMまたはメールにてご連絡ください。',
     firstNo: 17,   // 以前の代行で 0016 まで使っていたので、その続きから
   };
+  const OLD_NOTE = '梱包内容をご確認ください。\n商品の破損・内容不一致の場合はXのDMまたはメールにてご連絡ください。';   // 1.6.1 までの既定（そのままなら新しい文面に）
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
   const KINDS = { both: '両方', pack: '梱包伝票', ship: '発送伝票' };
   const KIND_KEY = 'kurunavi.slipKind';
@@ -67,6 +68,7 @@
     const s = S();
     const r = s.requester(rid);
     const ship = { method: 'レターパックライト', feeMode: 'charge', fee: 0, date: U.today(), note: DEF.note, ...(r.ship || {}) };
+    if (ship.note === OLD_NOTE) ship.note = DEF.note;
     const m = s.proxySummary(rid);
     // 伝票はスペース番号の順（箱詰めのときに上から照らし合わせやすいように）
     const rows = m.rows.slice().sort((x, y) => x.space.localeCompare(y.space, 'ja', { numeric: true }));
@@ -75,16 +77,13 @@
     const fee = ship.feeMode === 'charge' ? Math.max(0, +ship.fee || 0) : 0;
     const snd = Sh.sender();
     const lacks = [];
-    if (kind === 'pack') {
-      if (!got.length) lacks.push('買えた品物（1つもありません）');
-      return { r, ship, snd, got, miss, items: m.bought, fee, total: m.bought + fee, lacks };
-    }
-    if (!(ship.name || '').trim()) lacks.push('お届け先のお名前');
-    if (!postalOk(ship.postal)) lacks.push('郵便番号（7桁）');
-    if (!(ship.addr1 || '').trim()) lacks.push('お届け先の住所');
-    if (!(snd.name || '').trim()) lacks.push('発送元（自分）の名前');
-    if (ship.feeMode === 'charge' && !fee) lacks.push('送料の金額');
-    if (!got.length) lacks.push('買えた品物（1つもありません）');
+    const out = { r, ship, snd, got, miss, items: m.bought, fee, total: m.bought + fee, lacks };
+    if (kind === 'pack') return out;
+    if (!(ship.name || '').trim()) lacks.push('お名前');
+    if (!postalOk(ship.postal)) lacks.push('郵便番号');
+    if (!(ship.addr1 || '').trim()) lacks.push('ご住所');
+    if (!(snd.name || '').trim()) lacks.push('発送元の名前');
+    if (ship.feeMode === 'charge' && !fee) lacks.push('送料');
     return { r, ship, snd, got, miss, items: m.bought, fee, total: m.bought + fee, lacks };
   };
 
@@ -107,7 +106,7 @@
           <h4>${U.icon('pin', 'sm')}お届け先様</h4>
           ${known ? `<button class="btn sm block" data-known>${U.icon('undo', 'sm')}前回の宛先を使う（${esc(known.name || '')} 〒${esc(known.postal || '')}）</button>` : ''}
           <div class="grid2">
-            ${f('name', 'お名前（本名。「様」は自動）', v.ship.name, 'autocomplete="off" data-ship placeholder="例：山田 花子"')}
+            ${f('name', 'お名前（「様」は自動で付きます）', v.ship.name, 'autocomplete="off" data-ship placeholder="例：山田 花子"')}
             ${f('kana', 'フリガナ（任意）', v.ship.kana, 'autocomplete="off" data-ship placeholder="例：ヤマダ ハナコ"')}
           </div>
           <div class="grid2">
@@ -116,7 +115,7 @@
           </div>
           ${f('addr1', 'ご住所（都道府県から番地まで）', v.ship.addr1, 'autocomplete="off" data-ship placeholder="例：東京都千代田区千代田1-1"')}
           ${f('addr2', '建物名・部屋番号（任意）', v.ship.addr2, 'autocomplete="off" data-ship')}
-          <p class="muted small">OC名（伝票の「OC名」）は依頼者の名前「${esc(r.name)}」を使います。</p>
+          <p class="muted small">伝票の「OC名」には、依頼者の名前（${esc(r.name)}）が入ります。</p>
         </section>
         <section class="sf-sec">
           <h4>${U.icon('route', 'sm')}発送</h4>
@@ -125,26 +124,26 @@
           <label class="field sf-fee-amt"${v.ship.feeMode === 'charge' ? '' : ' hidden'}><span>送料の金額</span><div class="yen-input"><span>¥</span><input class="input" data-k="fee" inputmode="numeric" value="${v.ship.fee || ''}" placeholder="例：430" data-ship></div></label>
           <div class="grid2">
             ${f('date', '梱包日', v.ship.date, 'type="date" data-ship')}
-            ${f('tracking', '追跡番号（任意）', v.ship.tracking, 'inputmode="numeric" autocomplete="off" data-ship', '入れておくと梱包伝票に印刷します')}
+            ${f('tracking', '追跡番号（任意）', v.ship.tracking, 'inputmode="numeric" autocomplete="off" data-ship', '入力すると梱包伝票に印刷されます')}
           </div>
           ${t('note', 'メモ・備考', v.ship.note, 'data-ship')}
         </section>
         <details class="sf-sec sf-sender"${snd.name ? '' : ' open'}>
           <summary><h4>${U.icon('door', 'sm')}発送元（自分）<small>${snd.name ? esc(snd.name) : '未入力'} ・ 全員の伝票で共通</small></h4></summary>
           <div class="grid2">
-            ${f('name', '名前', snd.name, 'autocomplete="off" data-sender placeholder="例：屋号やハンドルネーム"')}
+            ${f('name', '名前', snd.name, 'autocomplete="off" data-sender placeholder="例：屋号・ハンドルネーム"')}
             ${f('x', 'X（任意）', snd.x, 'autocomplete="off" data-sender placeholder="例：@kurunavi"')}
           </div>
           ${f('mail', 'Mail（任意）', snd.mail, 'type="email" autocomplete="off" data-sender')}
-          ${f('tagline', '伝票の見出しの下に出す文', snd.tagline, 'autocomplete="off" data-sender')}
-          ${f('nextNo', '次の伝票番号', snd.nextNo, 'inputmode="numeric" data-sender', '印刷したときに割り当てて1つ進みます')}
+          ${f('tagline', '見出しの下に入る文', snd.tagline, 'autocomplete="off" data-sender')}
+          ${f('nextNo', '次の伝票番号', snd.nextNo, 'inputmode="numeric" data-sender', '印刷するたびに、この番号から順に付けます')}
         </details>
         <section class="sf-sum" aria-live="polite"></section>
         <section class="sf-sec sf-docs">
           <h4>${U.icon('print', 'sm')}印刷</h4>
           <ol class="sf-steps">
-            <li><b>梱包伝票</b>：箱に詰めるときに、品物と数量にチェックを入れて確かめます（同封できます。金額は載りません）</li>
-            <li><b>発送伝票</b>：品物と金額の明細です。箱に同封します</li>
+            <li><b>梱包伝票</b>：箱詰めのときに、品物と数量を照らし合わせて検品します。金額は載らないので、そのまま同封できます</li>
+            <li><b>発送伝票</b>：品物と金額の明細です。箱に同封してください</li>
           </ol>
           ${kindSeg(Sh.kind())}
           <div class="btn-grid2">
@@ -152,16 +151,17 @@
             <button class="btn primary" data-print>${U.icon('print')}印刷する</button>
           </div>
         </section>
-        <button class="btn block ghost" data-shipped>${U.icon('check')}${r.ship && r.ship.shippedAt ? `発送済み（${esc(U.md(r.ship.shippedAt))}）を戻す` : '発送済みにする'}</button>
-        <p class="muted small">入力した内容は自動で保存されます。宛先は次の代行でも「前回の宛先を使う」で呼び出せます。印刷は A4縦です。印刷の設定で「余白：デフォルト」「背景のグラフィック：オン」にすると、黒い帯もきれいに出ます。</p>
+        <button class="btn block ghost" data-shipped>${U.icon('check')}${r.ship && r.ship.shippedAt ? `発送済みを取り消す（${esc(U.md(r.ship.shippedAt))}に発送）` : '発送済みにする'}</button>
+        <p class="muted small">入力した内容は自動で保存されます。宛先は、次の代行でも「前回の宛先を使う」から呼び出せます。用紙は A4縦です。黒い帯が印刷されないときは、印刷の設定で「背景のグラフィック」をオンにしてください。</p>
       </div>`,
       onMount: (el) => {
         const sum = U.$('.sf-sum', el);
         const paintSum = () => {
           const d = Sh.data(rid);
           sum.innerHTML = `<div class="sf-total"><span>品物 ${U.sum(d.got, (x) => x.qty)}点 ${U.yen(d.items)}${d.ship.feeMode === 'charge' ? ` ＋ 送料 ${U.yen(d.fee)}` : d.ship.feeMode === 'cod' ? '（送料は着払い）' : ''}</span><b>${U.yen(d.total)}</b></div>
-            ${d.miss.length ? `<p class="muted small">買えなかった ${d.miss.length}点は「ご用意できなかったもの」として載せます。</p>` : ''}
-            ${d.lacks.length ? `<p class="sf-lack">${U.icon('warn', 'sm')}まだ入っていない項目：${d.lacks.map(esc).join('・')}</p>` : `<p class="sf-ok">${U.icon('check', 'sm')}伝票に必要な項目はそろっています</p>`}`;
+            ${d.miss.length ? `<p class="muted small">買えなかった ${d.miss.length}点は、伝票の「ご用意できなかった品物」に載ります。</p>` : ''}
+            ${!d.got.length ? `<p class="sf-lack">${U.icon('warn', 'sm')}買えた品物がまだありません</p>` : ''}
+            ${d.lacks.length ? `<p class="sf-lack">${U.icon('warn', 'sm')}未入力：${d.lacks.map(esc).join('・')}</p>` : d.got.length ? `<p class="sf-ok">${U.icon('check', 'sm')}必要な項目はすべて入力済みです</p>` : ''}`;
         };
         const later = U.debounce(paintSum, 120);
         U.$$('[data-ship]', el).forEach((inp) => inp.addEventListener('input', () => {
@@ -210,7 +210,7 @@
           const on = !(S().requester(rid).ship || {}).shippedAt;
           S().setShipped(rid, on);
           Sh.open(rid);
-          UI().toast(on ? '発送済みにしました' : '発送済みを戻しました', { undo: true });
+          UI().toast(on ? '発送済みにしました' : '発送済みを取り消しました', { undo: true });
         };
         // 既定値をまだ保存していなければ保存しておく（画面と印刷を一致させる）
         const r0 = S().requester(rid).ship || {};
@@ -247,7 +247,7 @@
           <div class="sv-title">
             <h1>発 送 伝 票</h1>
             <div class="sv-tag">${esc(snd.tagline || '')}</div>
-            <div class="sv-lead">代行購入した品物をお届けします。ご確認をお願いいたします。</div>
+            <div class="sv-lead">このたびはご依頼いただき、ありがとうございました。下記のとおりお届けいたします。</div>
           </div>
           <div class="sv-from">
             <div class="sv-fname">${esc(snd.name || '')}</div>
@@ -273,10 +273,10 @@
         <div class="sv-order">
           <table class="sv-items">
             <thead><tr><th class="sp">スペース</th><th class="ci">サークル</th><th class="nm">商 品 名</th><th class="qt">数量</th><th class="mo">単価</th><th class="mo">小計</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="6" class="empty">お送りする品物はありません</td></tr>'}</tbody>
+            <tbody>${rows || '<tr><td colspan="6" class="empty">明細はありません</td></tr>'}</tbody>
             <tfoot><tr><td colspan="5">商品代金 小計</td><td class="mo">${U.num(d.items)}円</td></tr></tfoot>
           </table>
-          ${d.miss.length ? `<div class="sv-miss"><div class="lb">ご用意できなかったもの（代金はいただいていません）</div>
+          ${d.miss.length ? `<div class="sv-miss"><div class="lb">ご用意できなかった品物（代金はいただいておりません）</div>
             <ul>${d.miss.map((x) => `<li><b>${esc(x.space)}</b> ${esc(x.circle)}：${esc(x.name)} ×${x.qty}<span>${x.status === 'soldout' ? '売り切れ' : '見送り'}</span></li>`).join('')}</ul></div>` : ''}
         </div>
         <div class="sv-bottom">
@@ -292,7 +292,7 @@
     </article>`;
   };
 
-  /** 梱包伝票。品物ごとのチェック欄・数えた数・状態のメモ、梱包のチェック、追跡番号の記入欄 */
+  /** 梱包伝票。品物ごとの検品欄・検品数・備考、検品・梱包チェック、追跡番号の記入欄 */
   Sh.packHTML = (rid) => {
     const d = Sh.data(rid, 'pack');
     const sh = d.ship, snd = d.snd;
@@ -312,7 +312,7 @@
           <div class="sv-title">
             <h1>梱 包 伝 票</h1>
             <div class="sv-tag">${esc(snd.tagline || '')}</div>
-            <div class="sv-lead">梱包のときに、品物と数量を1点ずつ確認した記録です。</div>
+            <div class="sv-lead">下記の品物を検品のうえ、梱包いたしました。</div>
           </div>
           <div class="sv-from">
             <div class="sv-fname">${esc(snd.name || '')}</div>
@@ -328,30 +328,29 @@
           <div class="sv-no"><span class="pill">No.</span><b>${esc(no)}</b></div>
         </div>
         <div class="pk-to"><span class="lb">お届け先</span><b>${esc(sh.name || '')}${sh.name ? '　様' : ''}</b><span>${to}</span></div>
-        <div class="sv-bar sq">梱包する品物<span class="pk-count">${d.got.length}種類・合計 ${qty}点</span></div>
+        <div class="sv-bar sq">梱包明細<span class="pk-count">${d.got.length}品目　計 ${qty}点</span></div>
         <div class="sv-order">
           <table class="sv-items pk-items">
-            <thead><tr><th class="ck">確認</th><th class="no">#</th><th class="sp">スペース</th><th class="ci">サークル</th><th class="nm">商 品 名</th><th class="qt">数量</th><th class="cnt">数えた数</th><th class="memo">状態・メモ</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="8" class="empty">梱包する品物はありません</td></tr>'}</tbody>
+            <thead><tr><th class="ck">検品</th><th class="no">No.</th><th class="sp">スペース</th><th class="ci">サークル</th><th class="nm">商 品 名</th><th class="qt">数量</th><th class="cnt">検品数</th><th class="memo">備　考</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="8" class="empty">明細はありません</td></tr>'}</tbody>
             <tfoot><tr><td colspan="5">合計</td><td class="qt">${qty}点</td><td class="cnt"><span>／${qty}</span></td><td></td></tr></tfoot>
           </table>
-          ${d.miss.length ? `<div class="sv-miss"><div class="lb">ご用意できなかったもの（同封していません）</div>
+          ${d.miss.length ? `<div class="sv-miss"><div class="lb">ご用意できなかった品物（同梱しておりません）</div>
             <ul>${d.miss.map((x) => `<li><b>${esc(x.space)}</b> ${esc(x.circle)}：${esc(x.name)} ×${x.qty}<span>${x.status === 'soldout' ? '売り切れ' : '見送り'}</span></li>`).join('')}</ul></div>` : ''}
         </div>
         <div class="pk-bottom">
           <div class="pk-check">
-            <div class="lb">■ 梱包のチェック</div>
+            <div class="lb">■ 検品・梱包チェック</div>
             <ul>
-              ${box('品物と数量が明細と合っている')}
-              ${box('破損・汚れ・折れがない')}
-              ${rand ? box('ランダム商品は未開封のまま') : ''}
-              ${box('OPP袋・緩衝材で保護した（紙ものは防水）')}
+              ${box('品名・数量が明細と一致')}
+              ${box('破損・汚れ・折れなし')}
+              ${rand ? box('ランダム商品は未開封') : ''}
+              ${box('OPP袋・緩衝材で保護（紙類は防水）')}
             </ul>
           </div>
           <div class="pk-fill">
             <div class="lb">■ 追跡番号</div>
             <div class="pk-trk">${esc(sh.tracking || '')}</div>
-            <div class="pk-trk-note">発送したあとに書き写しておくと、問い合わせのときに便利です</div>
           </div>
         </div>
         <div class="pk-memo"><div class="lb">■ メモ</div><div class="pk-lines"><i></i><i></i><i></i><i></i><i></i></div></div>
@@ -366,9 +365,13 @@
   /** 入力の足りないところがあれば、印刷の前に確かめる */
   const checkLacks = async (rids, kind) => {
     const k = kind === 'pack' ? 'pack' : 'ship';
-    const lacks = rids.map((rid) => ({ r: S().requester(rid), l: Sh.data(rid, k).lacks })).filter((x) => x.l.length);
-    if (!lacks.length) return true;
-    return UI().confirm(`次の項目がまだ入っていません。このまま印刷しますか？\n\n${lacks.map((x) => `${x.r.name}：${x.l.join('・')}`).join('\n')}`, { ok: '印刷する', cancel: '戻って入れる', title: '入力の確認' });
+    const lines = rids.map((rid) => {
+      const d = Sh.data(rid, k);
+      const why = [d.lacks.length ? `${d.lacks.join('・')}が未入力` : '', d.got.length ? '' : '買えた品物がありません'].filter(Boolean);
+      return why.length ? `${d.r.name}：${why.join('／')}` : '';
+    }).filter(Boolean);
+    if (!lines.length) return true;
+    return UI().confirm(`入力が済んでいない伝票があります。このまま印刷しますか？\n\n${lines.join('\n')}`, { ok: '印刷する', cancel: '入力に戻る', title: '印刷の前に' });
   };
 
   Sh.preview = (rids, kind = Sh.kind()) => {
@@ -380,7 +383,7 @@
       title: `伝票のプレビュー<small>${rids.length}人・${n}枚</small>`,
       html: `${kindSeg(kind)}
         <div class="slip-preview">${rids.map((rid) => kindsOf(kind).map((k) => `<div class="sp-page">${k === 'pack' ? Sh.packHTML(rid) : Sh.slipHTML(rid)}</div>`).join('')).join('')}</div>
-        ${rids.some((rid) => !(S().requester(rid).ship || {}).no) ? '<p class="muted small">番号が「----」の伝票は、印刷するときに番号を割り当てます。</p>' : ''}
+        ${rids.some((rid) => !(S().requester(rid).ship || {}).no) ? '<p class="muted small">「No. ----」の伝票には、印刷するときに番号が付きます。</p>' : ''}
         <div class="btn-row"><button class="btn ghost" data-close>閉じる</button><button class="btn primary" data-print>${U.icon('print')}印刷する</button></div>`,
       onMount: (el) => {
         U.$('[data-print]', el).onclick = () => Sh.print(rids, kind);
@@ -421,9 +424,9 @@
     if (!r) return 'none';
     if (r.ship && r.ship.shippedAt) return 'shipped';
     if (!S().proxySummary(rid).boughtCount) return 'none';
-    return Sh.data(rid).lacks.length ? 'lack' : 'ready';
+    return Sh.data(rid).lacks.length ? 'lack' : 'ready';   // 品物が無い人は上で none になる
   };
-  Sh.STATE = { shipped: '発送済み', ready: '伝票の準備OK', lack: '伝票の入力がまだ', none: '' };
+  Sh.STATE = { shipped: '発送済み', ready: '伝票の準備完了', lack: '伝票の入力待ち', none: '' };
 
   /** 買えた品物がある依頼者（まとめて印刷の対象） */
   Sh.printable = () => S().requesters().filter((r) => S().proxySummary(r.id).boughtCount > 0).map((r) => r.id);

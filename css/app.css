@@ -1406,7 +1406,6 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .pk-check li { display: flex; align-items: center; gap: 2.4mm; }
 .pk-fill { width: 82mm; border-left: 1pt solid #111; padding: 2.5mm 4mm; }
 .pk-trk { margin-top: 2mm; height: 11mm; border: .8pt solid #888; border-radius: 1mm; padding: 0 3mm; display: flex; align-items: center; font-size: 11pt; font-weight: 800; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
-.pk-trk-note { margin-top: 1.5mm; font-size: 7pt; color: #777; }
 .pk-memo { border-top: 1pt solid #111; padding: 2.5mm 4mm 3mm; }
 .pk-lines i { display: block; height: 7.5mm; border-bottom: .7pt solid #ccc; }
 /* 品物が多くて2ページ目に続くときは、表の見出しを繰り返し、記入欄は分けない */
