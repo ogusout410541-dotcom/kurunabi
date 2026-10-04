@@ -1329,7 +1329,7 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .sv-items tfoot td.mo { font-size: 9.5pt; }
 .sv-items td.empty { text-align: center; color: #777; padding: 4mm; }
 .tag-rand { display: inline-block; margin-left: 1.5mm; font-size: 6.5pt; font-weight: 800; color: #2e7d32; border: .7pt solid #81c784; background: #eaf6ea; border-radius: .8mm; padding: 0 1mm; }
-.sv-miss { margin-top: 2mm; border: .7pt dashed #999; padding: 1.6mm 2.5mm; font-size: 8pt; }
+.sv-miss { break-inside: avoid; page-break-inside: avoid; margin-top: 2mm; border: .7pt dashed #999; padding: 1.6mm 2.5mm; font-size: 8pt; }
 .sv-miss ul { margin: .8mm 0 0; padding: 0; list-style: none; }
 .sv-miss li { display: flex; gap: 2mm; }
 .sv-miss li span { margin-left: auto; color: #b45309; font-weight: 700; white-space: nowrap; }
@@ -1391,7 +1391,7 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .sv-bar .pk-count { float: right; font-weight: 700; letter-spacing: .04em; }
 .pk-items td { padding-top: 2mm; padding-bottom: 2mm; vertical-align: middle; }
 .pk-items .ck { width: 10mm; text-align: center; }
-.pk-items .no { width: 7mm; text-align: center; color: #777; font-size: 7.5pt; }
+.pk-items .no { width: 9mm; text-align: center; color: #777; font-size: 7.5pt; white-space: nowrap; }
 .pk-items .sp { width: 15mm; }
 .pk-items .ci { width: 28mm; }
 .pk-items .cnt { width: 17mm; text-align: right; }
@@ -1415,3 +1415,23 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .sf-steps { margin: 0 0 10px; padding-left: 1.3em; display: grid; gap: 4px; font-size: .86rem; color: var(--muted); }
 .sf-steps b { color: var(--text); }
 .slip-preview-sheet .sf-kind { margin-bottom: 4px; }
+
+/* セット商品（品物の parts）。梱包伝票では見出しの行の下に中身を1点ずつ並べる */
+.tag-set { display: inline-block; margin-left: 1.5mm; font-size: 6.5pt; font-weight: 800; color: #1d4ed8; border: .7pt solid #93b4f5; background: #eef3fe; border-radius: .8mm; padding: 0 1mm; }
+.sv-items .parts { margin-top: .6mm; font-size: 7.5pt; color: #555; }
+.pk-items tbody.grp { break-inside: avoid; page-break-inside: avoid; }
+.pk-items tr.set td { background: #f5f5f5; }
+.pk-items tr.set td.sp, .pk-items tr.set td.ci { background: #fff; }
+.pk-items tr.set td.nm { font-weight: 700; }
+.pk-items tr.set td.nm small { display: block; margin-top: .4mm; font-size: 7pt; font-weight: 500; color: #777; }
+.pk-items tr.part td { padding-top: 1.6mm; padding-bottom: 1.6mm; }
+.pk-items tr.part td.no { font-size: 6.5pt; }
+.pk-items tr.part td.nm { position: relative; padding-left: 6.5mm; }
+.pk-items tr.part td.nm::before { content: ""; position: absolute; left: 2.6mm; top: 0; height: 50%; width: 2.2mm; border-left: .7pt solid #999; border-bottom: .7pt solid #999; }
+/* 入力の画面：セットの内容 */
+.sf-parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.sf-parts li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.sf-parts li > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sf-parts li small { color: var(--muted); font-size: .78rem; }
+.sf-parts li.need { border-color: color-mix(in srgb, var(--warn-ink) 45%, var(--line)); }
+.sf-parts li.need small { color: var(--warn-ink); font-weight: 700; }

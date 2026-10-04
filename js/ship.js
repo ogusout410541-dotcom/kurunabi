@@ -34,6 +34,18 @@
   const setKind = (k) => { try { localStorage.setItem(KIND_KEY, k); } catch (e) { /* 覚えられなくても印刷はできる */ } };
   const kindSeg = (k) => `<div class="field"><span>印刷するもの</span><div class="seg sm sf-kind">${Object.entries(KINDS).map(([v, l]) => `<button type="button" class="${k === v ? 'on' : ''}" data-kind="${v}">${l}</button>`).join('')}</div></div>`;
   const kindsOf = (k) => (k === 'both' ? ['pack', 'ship'] : [k]);
+  /** セット商品らしい品名（内容が未入力なら入力画面で知らせる） */
+  const SETLIKE = /セット|詰め合わせ|詰合せ|福袋|まとめ|BOX|ボックス/i;
+  Sh.isSetLike = (name) => SETLIKE.test(name || '');
+  /** セットの内容を1行ずつ読む。「本 ×1」「ステッカー 2枚」「ポストカード」（数量を省くと1）。読点で区切ってもよい */
+  Sh.parseParts = (text) => String(text || '').split(/\n|、/).map((l) => U.toHalf(l).trim()).filter(Boolean).map((l) => {
+    const m = /^(.*?)\s*(?:[×xX*]\s*(\d+)|(\d+)\s*(?:個|枚|点|冊|本|部|種|セット))$/.exec(l);
+    const n = (m && m[1] ? m[1] : l).replace(/^[-・*•]\s*/, '').trim();
+    return { n, q: m && m[1] ? Math.max(1, +(m[2] || m[3])) : 1 };
+  }).filter((p) => p.n);
+  const partsText = (parts) => (parts || []).map((p) => `${p.n} ×${p.q}`).join('\n');
+  /** 梱包で数える点数（セットは内容の数 × セットの数） */
+  const leafQty = (x) => (x.parts ? U.sum(x.parts, (p) => p.q) * x.qty : x.qty);
 
   /** 郵便番号を「123-4567」に整える（全角・ハイフン・空白はどれでも可）。7桁でなければ入力のまま */
   Sh.postal = (s) => {
@@ -138,6 +150,7 @@
           ${f('tagline', '見出しの下に入る文', snd.tagline, 'autocomplete="off" data-sender')}
           ${f('nextNo', '次の伝票番号', snd.nextNo, 'inputmode="numeric" data-sender', '印刷するたびに、この番号から順に付けます')}
         </details>
+        <section class="sf-sec sf-parts-sec"></section>
         <section class="sf-sum" aria-live="polite"></section>
         <section class="sf-sec sf-docs">
           <h4>${U.icon('print', 'sm')}印刷</h4>
@@ -161,9 +174,39 @@
           sum.innerHTML = `<div class="sf-total"><span>品物 ${U.sum(d.got, (x) => x.qty)}点 ${U.yen(d.items)}${d.ship.feeMode === 'charge' ? ` ＋ 送料 ${U.yen(d.fee)}` : d.ship.feeMode === 'cod' ? '（送料は着払い）' : ''}</span><b>${U.yen(d.total)}</b></div>
             ${d.miss.length ? `<p class="muted small">買えなかった ${d.miss.length}点は、伝票の「ご用意できなかった品物」に載ります。</p>` : ''}
             ${!d.got.length ? `<p class="sf-lack">${U.icon('warn', 'sm')}買えた品物がまだありません</p>` : ''}
+            ${(() => { const n = d.got.filter((x) => !x.parts && Sh.isSetLike(x.name)).length; return n ? `<p class="muted small">セットの内容が未登録の品物が ${n}件あります（未登録のままでも印刷できます）。</p>` : ''; })()}
             ${d.lacks.length ? `<p class="sf-lack">${U.icon('warn', 'sm')}未入力：${d.lacks.map(esc).join('・')}</p>` : d.got.length ? `<p class="sf-ok">${U.icon('check', 'sm')}必要な項目はすべて入力済みです</p>` : ''}`;
         };
         const later = U.debounce(paintSum, 120);
+        // セットの内容：品物ごとに中身を登録すると、梱包伝票で1点ずつ検品できる
+        const partsSec = U.$('.sf-parts-sec', el);
+        const paintParts = () => {
+          const d = Sh.data(rid, 'pack');
+          partsSec.hidden = !d.got.length;
+          if (!d.got.length) return;
+          partsSec.innerHTML = `<h4>${U.icon('note', 'sm')}セットの内容<small>中身を登録すると、梱包伝票で1点ずつ検品できます</small></h4>
+            <ul class="sf-parts">${d.got.map((x) => {
+              const need = !x.parts && Sh.isSetLike(x.name);
+              return `<li class="${need ? 'need' : ''}"><div><b>${esc(x.name)} <span class="muted">×${x.qty}</span></b>
+                ${x.parts ? `<small>${esc(x.parts.map((p) => `${p.n} ×${p.q}`).join('・'))}</small>` : need ? '<small>内容が未登録です</small>' : ''}</div>
+                <button type="button" class="btn sm" data-parts="${esc(x.cid)}" data-iid="${esc(x.iid)}">${x.parts ? '内容を直す' : '内容を登録'}</button></li>`;
+            }).join('')}</ul>`;
+          U.$$('[data-parts]', partsSec).forEach((b) => (b.onclick = async () => {
+            const x = Sh.data(rid, 'pack').got.find((g) => g.iid === b.dataset.iid);
+            if (!x) return;
+            const v = await UI().prompt(`${x.name}の内容`, {
+              value: partsText(x.parts), multiline: true, ok: '保存',
+              placeholder: '例：\n本 ×1\nステッカー ×2\nポストカード ×3',
+              note: `1行に1つずつ入力します。数量は「×2」「2枚」のように書けます（省略すると1）。${x.qty > 1 ? `数量は1セットあたりの数です。このセットは ×${x.qty} なので、梱包伝票には${x.qty}倍の数で載ります。` : ''}すべて消して保存すると、内容の登録を取り消します。`,
+            });
+            if (v == null) return;
+            const parts = Sh.parseParts(v);
+            S().setItemParts(x.cid, x.iid, parts);
+            paintParts();
+            UI().toast(parts.length ? `${x.name}の内容を登録しました（${parts.length}種類）` : `${x.name}の内容の登録を取り消しました`, { undo: true });
+          }));
+        };
+        paintParts();
         U.$$('[data-ship]', el).forEach((inp) => inp.addEventListener('input', () => {
           const k = inp.dataset.k;
           S().setShip(rid, { [k]: k === 'fee' ? U.parseYen(inp.value) : inp.value });
@@ -237,7 +280,7 @@
     const no = noTxt(sh.no);
     const rows = d.got.map((x) => `<tr>
         <td class="sp">${esc(x.space)}</td><td class="ci">${esc(x.circle)}</td>
-        <td class="nm">${esc(x.name)}${isRandom(x.name) ? '<span class="tag-rand">ランダム</span>' : ''}</td>
+        <td class="nm">${esc(x.name)}${x.parts ? '<span class="tag-set">セット</span>' : ''}${isRandom(x.name) ? '<span class="tag-rand">ランダム</span>' : ''}${x.parts ? `<div class="parts">${x.qty > 1 ? '内容（1セットあたり）' : '内容'}：${x.parts.map((p) => `${esc(p.n)} ×${p.q}`).join('、')}</div>` : ''}</td>
         <td class="qt">×${x.qty}</td><td class="mo">${U.num(x.qty ? Math.round(x.cost / x.qty) : x.cost)}円</td><td class="mo">${U.num(x.cost)}円</td></tr>`).join('');
     const feeRow = sh.feeMode === 'charge' ? `<tr><th>B 送料</th><td>${U.num(d.fee)}円</td></tr>`
       : sh.feeMode === 'cod' ? '<tr><th>B 送料</th><td>着払い</td></tr>' : '';
@@ -297,14 +340,30 @@
     const d = Sh.data(rid, 'pack');
     const sh = d.ship, snd = d.snd;
     const no = noTxt(sh.no);
-    const qty = U.sum(d.got, (x) => x.qty);
-    const rand = d.got.some((x) => isRandom(x.name));
+    const qty = U.sum(d.got, leafQty);
+    const rand = d.got.some((x) => isRandom(x.name) || (x.parts || []).some((p) => isRandom(p.n)));
     const box = (t) => `<li><i class="pk-box"></i>${t}</li>`;
-    const rows = d.got.map((x, i) => `<tr>
-        <td class="ck"><i class="pk-box"></i></td><td class="no">${i + 1}</td>
-        <td class="sp">${esc(x.space)}</td><td class="ci">${esc(x.circle)}</td>
-        <td class="nm">${esc(x.name)}${isRandom(x.name) ? '<span class="tag-rand">ランダム</span>' : ''}</td>
-        <td class="qt">×${x.qty}</td><td class="cnt"><span>／${x.qty}</span></td><td class="memo"></td></tr>`).join('');
+    const rtag = (nm) => (isRandom(nm) ? '<span class="tag-rand">ランダム</span>' : '');
+    // 品物ごとに tbody を分ける（セットの見出しと中身がページの境目で離れないように）
+    const rows = d.got.map((x, i) => {
+      if (!x.parts) {
+        return `<tbody class="grp"><tr>
+          <td class="ck"><i class="pk-box"></i></td><td class="no">${i + 1}</td>
+          <td class="sp">${esc(x.space)}</td><td class="ci">${esc(x.circle)}</td>
+          <td class="nm">${esc(x.name)}${rtag(x.name)}</td>
+          <td class="qt">×${x.qty}</td><td class="cnt"><span>／${x.qty}</span></td><td class="memo"></td></tr></tbody>`;
+      }
+      const span = x.parts.length + 1;
+      return `<tbody class="grp"><tr class="set">
+          <td class="ck"></td><td class="no">${i + 1}</td>
+          <td class="sp" rowspan="${span}">${esc(x.space)}</td><td class="ci" rowspan="${span}">${esc(x.circle)}</td>
+          <td class="nm">${esc(x.name)}<span class="tag-set">セット</span>${rtag(x.name)}<small>内容 ${x.parts.length}種類</small></td>
+          <td class="qt">×${x.qty}</td><td class="cnt"></td><td class="memo"></td></tr>
+        ${x.parts.map((p, j) => `<tr class="part">
+          <td class="ck"><i class="pk-box"></i></td><td class="no">${i + 1}-${j + 1}</td>
+          <td class="nm">${esc(p.n)}${rtag(p.n)}</td>
+          <td class="qt">×${p.q * x.qty}</td><td class="cnt"><span>／${p.q * x.qty}</span></td><td class="memo"></td></tr>`).join('')}</tbody>`;
+    }).join('');
     const to = sh.addr1 ? `〒${esc(Sh.postal(sh.postal))}　${esc(sh.addr1)}${sh.addr2 ? ' ' + esc(sh.addr2) : ''}` : '';
     return `<article class="slip pack">
       <div class="slip-sheet">
@@ -332,7 +391,7 @@
         <div class="sv-order">
           <table class="sv-items pk-items">
             <thead><tr><th class="ck">検品</th><th class="no">No.</th><th class="sp">スペース</th><th class="ci">サークル</th><th class="nm">商 品 名</th><th class="qt">数量</th><th class="cnt">検品数</th><th class="memo">備　考</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="8" class="empty">明細はありません</td></tr>'}</tbody>
+            ${rows || '<tbody><tr><td colspan="8" class="empty">明細はありません</td></tr></tbody>'}
             <tfoot><tr><td colspan="5">合計</td><td class="qt">${qty}点</td><td class="cnt"><span>／${qty}</span></td><td></td></tr></tfoot>
           </table>
           ${d.miss.length ? `<div class="sv-miss"><div class="lb">ご用意できなかった品物（同梱しておりません）</div>

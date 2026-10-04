@@ -647,6 +647,14 @@
     return best;
   };
 
+  /** セット商品の内容 [{ n: 品名, q: 1セットあたりの数 }]。空にすると内容の登録を取り消す */
+  S.setItemParts = (cid, iid, parts) => S.mutate('セットの内容', (d) => {
+    const it = d.entries[cid] && d.entries[cid].items.find((i) => i.id === iid);
+    if (!it) return;
+    if (parts && parts.length) it.parts = parts.map((p) => ({ n: String(p.n), q: Math.max(1, +p.q || 1) }));
+    else delete it.parts;
+  });
+
   S.setSettled = (rid, on) => S.mutate(on ? '精算済みにする' : '精算済みを戻す', (d) => {
     const r = (d.requesters || []).find((x) => x.id === rid);
     if (r) r.settledAt = on ? Date.now() : 0;
@@ -717,7 +725,7 @@
         if (i.for !== rid) return;
         // サークルごと売り切れ・見送り・完了にしたのに買っていない品物は、まだではなく「買えなかった」
         const st = i.status === 'todo' && !(e.status === 'todo' || e.status === 'later') ? (e.status === 'soldout' ? 'soldout' : 'skip') : i.status;
-        rows.push({ cid, space: c.space, circle: c.name, name: i.name || '（無題）', qty: i.qty || 1, price: i.price || 0, status: st, cost: i.status === 'bought' ? S.itemCost(i) : 0 });
+        rows.push({ cid, iid: i.id, space: c.space, circle: c.name, name: i.name || '（無題）', qty: i.qty || 1, price: i.price || 0, status: st, cost: i.status === 'bought' ? S.itemCost(i) : 0, parts: i.parts && i.parts.length ? i.parts : null });
       });
     });
     return {
@@ -1296,12 +1304,13 @@
     if (i.pay) o.y = i.pay;
     if (i.planned === false) o.x = 1;
     if (i.t) o.tt = i.t;
-    if (i.for) o.f = i.for;   // 代行の依頼者   // 買った時刻（記録をそのまま持ち帰れるように）
+    if (i.for) o.f = i.for;   // 代行の依頼者
+    if (i.parts && i.parts.length) o.pt = i.parts.map((p) => [p.n, p.q]);   // セットの内容   // 買った時刻（記録をそのまま持ち帰れるように）
     return o;
   };
   const fatItem = (o) =>
     typeof o === 'object' && o && 'n' in o
-      ? { id: U.uid(), name: o.n, price: o.p || 0, qty: o.q || 1, status: o.s || 'todo', paid: o.a != null ? o.a : null, pay: o.y || null, planned: !o.x, t: o.tt || null, ...(o.f ? { for: o.f } : {}) }
+      ? { id: U.uid(), name: o.n, price: o.p || 0, qty: o.q || 1, status: o.s || 'todo', paid: o.a != null ? o.a : null, pay: o.y || null, planned: !o.x, t: o.tt || null, ...(o.f ? { for: o.f } : {}), ...(o.pt ? { parts: o.pt.map(([n, q]) => ({ n, q: q || 1 })) } : {}) }
       : { ...S.newItem(), ...o };
 
   const slimEntry = (e, known) => {
