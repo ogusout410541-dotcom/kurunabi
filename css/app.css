@@ -1333,7 +1333,6 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .sv-miss ul { margin: .8mm 0 0; padding: 0; list-style: none; }
 .sv-miss li { display: flex; gap: 2mm; }
 .sv-miss li span { margin-left: auto; color: #b45309; font-weight: 700; white-space: nowrap; }
-.sv-notes { border-top: 1pt solid #111; background: #fdfaf3; padding: 2mm 4mm; font-size: 7.5pt; color: #333; }
 /* メモ・備考と金額 */
 .sv-bottom { display: flex; border-top: 1pt solid #111; }
 .sv-memo { flex: 1; padding: 2.5mm 4mm; font-size: 8.5pt; min-height: 16mm; }
@@ -1344,32 +1343,8 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .sv-sum tr.tot th { letter-spacing: .3em; font-weight: 800; }
 .sv-sum tr.tot td { font-size: 13pt; }
 .sv-foot { border-top: .7pt solid #bbb; padding: 1.2mm 4mm; font-size: 7pt; color: #888; text-align: right; }
-/* 切り取り線と宛名ラベル */
-.slip-cut { position: relative; margin: 6mm 0 5mm; border-top: 1pt dashed #777; text-align: center; height: 0; }
-.slip-cut2 { display: none; font-size: 8pt; color: #666; margin-bottom: 3mm; letter-spacing: .06em; }
-/* 1ページに入らないときは、ラベルを次のページの頭に（切り取り線の代わりに見出し） */
-.slip.split .slip-cut { display: none; }
-.slip.split .slip-cut2 { display: block; break-before: page; page-break-before: always; }
-.sp-page .slip.split .slip-cut2 { margin-top: 10mm; padding-top: 6mm; border-top: 2px solid #ccc; }
-.slip-cut span { position: relative; top: -2.4mm; background: #fff; padding: 0 3mm; font-size: 7pt; color: #666; letter-spacing: .1em; }
-.slip-label { display: flex; gap: 5mm; border: 1.6pt solid #111; border-radius: 2mm; padding: 4mm 5mm; min-height: 56mm; break-inside: avoid; page-break-inside: avoid; }
 /* 住所は空白の位置で折り返す（「マンショ／ン」のように途中で切れないように）。入りきらないときだけ途中で折る */
-.slip .sl-addr, .slip .sv-kv td { word-break: keep-all; overflow-wrap: anywhere; }
-.sl-to { flex: 1.6; min-width: 0; }
-.sl-hd { display: inline-block; background: #111; color: #fff; font-size: 7.5pt; font-weight: 800; padding: .6mm 2.4mm; border-radius: .8mm; letter-spacing: .1em; }
-.sl-postal { font-size: 15pt; font-weight: 800; letter-spacing: .06em; margin-top: 2mm; font-variant-numeric: tabular-nums; }
-.sl-addr { font-size: 12.5pt; font-weight: 700; margin: 1.5mm 0 3mm; line-height: 1.5; }
-.sl-name { font-size: 19pt; font-weight: 900; border-bottom: 1.2pt solid #111; display: inline-block; padding-bottom: .5mm; }
-.sl-name span { font-size: 12pt; margin-left: 3mm; }
-.sl-tel { margin-top: 2mm; font-size: 10pt; font-weight: 700; }
-.sl-side { flex: 1; display: flex; flex-direction: column; gap: 1.6mm; min-width: 0; }
-.sl-box { border: .8pt solid #888; padding: 1.4mm 2.4mm; font-size: 8pt; }
-.sl-saddr { line-height: 1.4; }
-.sl-sname { font-weight: 800; font-size: 9.5pt; }
-.sl-goods { font-weight: 800; font-size: 10pt; }
-.sl-cod { margin-top: 1mm; text-align: center; font-size: 13pt; font-weight: 900; border: 1.4pt solid #111; letter-spacing: .3em; }
-.sl-trk { font-size: 8pt; margin-top: .6mm; }
-.sl-no { font-size: 7pt; color: #777; text-align: right; margin-top: auto; }
+.slip .sv-kv td { word-break: keep-all; overflow-wrap: anywhere; }
 /* 画面のプレビュー（A4 を幅に合わせて縮める。js が transform を付ける） */
 .slip-preview { display: flex; flex-direction: column; gap: 14px; margin-bottom: 10px; }
 .sp-page { width: 100%; overflow: hidden; background: #fff; border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); }
@@ -1387,7 +1362,6 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .sf-total b { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
 .sf-lack { color: var(--warn-ink); background: var(--warn-bg); border-radius: 10px; padding: 8px 10px; font-size: .85rem; display: flex; gap: 6px; align-items: flex-start; }
 .sf-ok { color: var(--ok); font-weight: 700; font-size: .85rem; display: flex; gap: 6px; align-items: center; }
-.sf-label { align-self: end; }
 /* 印刷：1人1枚（A4縦）。巡回表の印刷とは別のスタイル */
 @media print {
   body.printing-slips #printsheet.slips { font-size: 9.5pt; }
@@ -1431,11 +1405,8 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .pk-check ul { list-style: none; margin: 1.5mm 0 0; padding: 0; display: grid; gap: 1.8mm; font-size: 8.5pt; }
 .pk-check li { display: flex; align-items: center; gap: 2.4mm; }
 .pk-fill { width: 82mm; border-left: 1pt solid #111; padding: 2.5mm 4mm; }
-.pk-fill table { width: 100%; border-collapse: collapse; margin-top: 1.5mm; font-size: 8pt; }
-.pk-fill th { width: 15mm; text-align: left; font-weight: 600; color: #555; padding: 0 1mm; height: 8.5mm; border-bottom: .7pt solid #bbb; white-space: nowrap; }
-.pk-fill td { border-bottom: .7pt solid #bbb; height: 8.5mm; padding: 0 1.5mm; text-align: right; font-weight: 700; font-size: 9pt; }
-.pk-fill td[colspan] { text-align: left; }
-.pk-fill td span { color: #777; font-weight: 500; font-size: 7.5pt; }
+.pk-trk { margin-top: 2mm; height: 11mm; border: .8pt solid #888; border-radius: 1mm; padding: 0 3mm; display: flex; align-items: center; font-size: 11pt; font-weight: 800; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.pk-trk-note { margin-top: 1.5mm; font-size: 7pt; color: #777; }
 .pk-memo { border-top: 1pt solid #111; padding: 2.5mm 4mm 3mm; }
 .pk-lines i { display: block; height: 7.5mm; border-bottom: .7pt solid #ccc; }
 /* 品物が多くて2ページ目に続くときは、表の見出しを繰り返し、記入欄は分けない */

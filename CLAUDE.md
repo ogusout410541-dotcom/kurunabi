@@ -51,7 +51,7 @@ tools/gas/コード.gs    同期用の Google Apps Script（貼り付けてウ�
   layouts: { [eventId]: layoutSpec },  // 配置図エディタで作ったもの（同梱の配置図より優先）
   settings: { theme, font, haptics, wakeLock, mapMode:'simple'|'image', mapOrient, routeMode:'must'|'tier'|'short', wallFirst(壁を先に回る), showRoute, defaultPay:'cash'|'card', dayMode(当日モード) },
   demo: null | { eventId, snap, offset, day, syncDirty, t },   // デモ中の控え（下の「当日モード・デモモード」）
-  sender: { name, x, mail, tagline, postal, phone, addr1, addr2, notes, nextNo, label },   // 伝票の差出人（全イベント共通・同期する）
+  sender: { name, x, mail, tagline, nextNo },   // 伝票の差出人（全イベント共通・同期する）
 }
 EventData = { budget, cash（財布の現金。cashBreak があるとその合計で上書きされる）, cashBreak: {[金種]: 枚数}, reserve,
               order: [cid], entries: {[cid]: Entry}, extras: [Extra],
@@ -59,7 +59,7 @@ EventData = { budget, cash（財布の現金。cashBreak があるとその合�
               openAt: 'HH:MM'（自分の入場時刻）, endAt: 'HH:MM'（終了）, startedAt: ms（「いま開始」の時刻）,
               cashSettled: 現金の支出のうち金種に反映済みの額, cashStart: 買い物前の金種（リセットで戻す）, routedAt: 最後にルートを作った時刻,
               here: いまいる場所 {x,y,label,t}, requesters: 代行の依頼者 [{id, name, settledAt, ship}]}
-// ship = { name, kana, postal, phone, addr1, addr2, method, feeMode:'charge'|'cod'|'none', fee, date, tracking, goods, note, no(伝票番号), shippedAt }
+// ship = { name, kana, postal, phone, addr1, addr2, method, feeMode:'charge'|'cod'|'none', fee, date, tracking, note, no(伝票番号), shippedAt }
 // 同梱イベント側の openAt/endAt/schedule が既定値。EventData の値が空ならそちらを使う（S.times()）
 Entry = { cid, pri: 1必須|2優先|3通常|4余裕, items: [Item], memo, menu(お品書きURL),
           status: 'todo'|'later'|'done'|'soldout'|'skip', doneAt, snap: {name, tw, space}, addedAt,
@@ -125,9 +125,10 @@ Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv�
   「買った／売り切れ／見送り」を選ばせてからまとめて記録する（価格未定は「買った」を選べない）。12th 当日、詳細の「当日の状態」で完了にした6点が
   CSV で「購入済」に見えていた（CSV の状態はサークル単位だった）ための対策。CSV は「サークルの状態」と「品物の状態」（`S.itemStatusLabel`）を分けて出す
 - **梱包・発送伝票**（1.6.0、`js/ship.js`）：精算の画面（`A.proxySheet`）の「梱包・発送伝票を作る」→ `HC.ship.open(rid)`。代行のカードに進み具合（`Sh.state`：伝票の入力がまだ／準備OK／発送済み）と「まとめて印刷」（`A.shipAll`）。
-  書式は以前の代行（`C:\Users\user\Desktop\代行業務` の PDF）の発送伝票を引き継いだもの。**梱包伝票**は箱詰めのチェック用（品物ごとの □・数えた数・状態・メモ、梱包のチェック、厚さ・重さ・追跡番号・梱包者、罫線のメモ）で、金額を載せないので同封もできる。
-  **発送伝票**は A 商品代金／B 送料（`feeMode`）／合計、ご用意できなかったもの、※の注意書き、下に切り取って貼る宛名ラベル。精算の方法（振込先など）は**書かない**（本人の希望）。
-  印刷は `#printsheet.slips` ＋ `body.printing-slips`、A4縦・余白10mm（幅190mm・高さ277mm）。伝票＋ラベルが入らないときは `fitPages` が `.split` を付けてラベルだけ次のページへ。
+  書式は以前の代行（`C:\Users\user\Desktop\代行業務` の PDF）の発送伝票を引き継いだもの。**梱包伝票**は箱詰めのチェック用（品物ごとの □・#・スペース・サークル・数えた数・状態・メモ、梱包のチェック＝数量・破損／ランダム未開封／OPP袋・緩衝材、追跡番号、罫線のメモ）で、金額を載せないので同封もできる。
+  厚さ・重さ・梱包者の欄は「測れない・1人なので不要」で外した（1.6.1、本人の回答）。
+  **発送伝票**は A 商品代金／B 送料（`feeMode`）／合計とご用意できなかったもの。※の注意書きと宛名ラベルは**載せない**（1.6.1、本人の回答）。精算の方法（振込先など）も**書かない**（本人の希望）。
+  印刷は `#printsheet.slips` ＋ `body.printing-slips`、A4縦・余白10mm（幅190mm）。1人ぶんの伝票ごとに改ページ。品物が多い梱包伝票は2ページ目にチェックとメモが送られる（区画の途中では切らない）。
   番号（`ship.no`）は初めて印刷したときに `sender.nextNo`（既定 17＝以前の続き）から割り当て、梱包と発送で共通。印刷するもの（両方／梱包／発送）は端末ごと（`localStorage['kurunavi.slipKind']`）。
   確認は CDP の `Page.printToPDF`（`printBackground`・`preferCSSPageSize`）で PDF にして見る。入力欄の例には実在の宛先を書かない
 - **連打の保険**：完了して次のカードに切り替わった直後の 0.7 秒は、当日カードのボタンを押しても反応しない（`app.curGuard` と `.cur.enter`）
@@ -334,7 +335,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## 版の更新（ここを間違えると「いつまでも古い版のまま」になる）
 
-- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.6.0）。
+- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.6.1）。
   **`js/changelog.js` の先頭にもその版の内容を1件足す**（tag: new=新機能 / up=改善 / fix=修正。利用者向けの自然な文で）。
   更新後の初回起動で、前に開いた版（`localStorage['kurunavi.version']`）より新しい分を「新しくなったこと」として自動で出す（`A.changelog({since})`）
 - **SW の install はブラウザのHTTPキャッシュを避けて取り込む**（`freshRequests()`＝`cache:'reload'` ＋ `?v=CACHE`）。
@@ -414,7 +415,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 - 12th 当日（2026-10-04）の実績：20サークル・39点・¥51,100（自分 ¥23,700／代行2人 ¥27,400）、12:12〜14:56。
   分かったこと：チェックせずに完了にした品物が CSV で購入済に見えた／まとめ買いの値引きをメモに書いていた → 1.5.5 で前者に対応
 - [x] 品物ごとの状態（CSV・詳細）と、完了するときの未購入の確認（1.5.5）
-- [x] 梱包伝票・発送伝票（宛名ラベルつき）の入力と A4 印刷、報告の文章の締めをやわらかく（1.6.0）
+- [x] 梱包伝票・発送伝票の入力と A4 印刷、報告の文章の締めをやわらかく（1.6.0）。伝票の項目を本人の回答で見直し（1.6.1）
 - [ ] サークル画像の取り込み：URLをもらってから。**目的のサークルのみ**・**アプリに同梱**（`data/cuts/`）で本人合意済み（2026-09-24）。
       CORSのため端末側での直接取得は不可なので、こちらで取得→長辺800pxのWebPに縮小→同梱→一覧・詳細・当日カードに表示する
 - 運用方針（2026-09-24 本人確認）：スマホは **GitHub Pages に公開**して開く／当日の記録は**チェックだけ**が基本（予定額で自動計上、違ったときだけ金額を直す）

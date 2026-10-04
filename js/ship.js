@@ -2,11 +2,11 @@
    - 梱包伝票：箱に詰めるときに品物と数量を書き込んで確かめる用。同封してもよい見た目にしてある（金額は載せない）
    - 発送伝票：以下
    - 書式は以前の代行（京都みこち）で使っていた「発送伝票」を引き継いで、上位版にしたもの
-     （発送伝票の見出し・右上の差出人・梱包日／発送方法／OC名／No. の帯・お届け先様・ご注文内容・※の注意書き・
+     （発送伝票の見出し・右上の差出人・梱包日／発送方法／OC名／No. の帯・お届け先様・ご注文内容・
        メモ・備考・A 商品代金／B 送料／合計）。足したもの：スペースとサークルの列、送料の扱いの選択、
-       ご用意できなかったもの、下に切り取って貼る宛名ラベル、伝票番号の連番。
-     以前あった「発送元」の欄は右上の差出人と同じ内容なので外した
-   - 伝票とラベルが A4 1枚に入らないとき（品物が多い）は、ラベルだけ次のページに送る（fitPages）
+       ご用意できなかったもの、伝票番号の連番。
+     以前あった「発送元」の欄は右上の差出人と同じ内容なので外した。※の注意書きと宛名ラベルは本人の希望で載せない（1.6.1）
+   - 梱包伝票の記入欄は追跡番号だけ（厚さ・重さは測れないので載せない。1.6.1）
    - 宛先・発送の情報は依頼者ごと（EventData.requesters[].ship）、差出人は全イベント共通（state.sender）
    - 精算の方法（振込先など）は書かない（本人の希望）
    - 印刷するもの（両方／梱包伝票／発送伝票）は端末ごとに覚える（localStorage 'kurunavi.slipKind'）。
@@ -23,9 +23,7 @@
   Sh.METHODS = ['レターパックライト', 'レターパックプラス', 'ゆうパケット', 'ゆうパケットプラス', 'ゆうパック', 'クリックポスト', '宅急便', '宅急便コンパクト', 'ネコポス', '定形外郵便', '手渡し'];
   const FEE = { charge: '請求に含める', cod: '着払い', none: '書かない' };
   const DEF = {
-    goods: '同人誌・グッズ',
     note: '梱包内容をご確認ください。\n商品の破損・内容不一致の場合はXのDMまたはメールにてご連絡ください。',
-    notes: '缶バッジ・色紙等のランダム商品は、封入内容の選択・指定・交換はお受けできません。\n商品の性質上、イベント代行品の返品・交換はお受けできません。破損・内容不一致の場合はご連絡ください。',
     firstNo: 17,   // 以前の代行で 0016 まで使っていたので、その続きから
   };
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -50,7 +48,7 @@
   };
 
   /** 差出人（自分）。未入力の項目には既定値 */
-  Sh.sender = () => ({ tagline: `${S().ev().name} 代行`, notes: DEF.notes, nextNo: DEF.firstNo, label: true, ...(S().state.sender || {}) });
+  Sh.sender = () => ({ tagline: `${S().ev().name} 代行`, nextNo: DEF.firstNo, ...(S().state.sender || {}) });
 
   /** 伝票番号。初めて印刷するときに連番を割り当てて覚える（同じ依頼者は何度印刷しても同じ番号。梱包伝票と発送伝票で共通） */
   Sh.ensureNo = (rid) => {
@@ -68,7 +66,7 @@
   Sh.data = (rid, kind = 'ship') => {
     const s = S();
     const r = s.requester(rid);
-    const ship = { method: 'レターパックライト', feeMode: 'charge', fee: 0, date: U.today(), goods: DEF.goods, note: DEF.note, ...(r.ship || {}) };
+    const ship = { method: 'レターパックライト', feeMode: 'charge', fee: 0, date: U.today(), note: DEF.note, ...(r.ship || {}) };
     const m = s.proxySummary(rid);
     // 伝票はスペース番号の順（箱詰めのときに上から照らし合わせやすいように）
     const rows = m.rows.slice().sort((x, y) => x.space.localeCompare(y.space, 'ja', { numeric: true }));
@@ -85,7 +83,6 @@
     if (!postalOk(ship.postal)) lacks.push('郵便番号（7桁）');
     if (!(ship.addr1 || '').trim()) lacks.push('お届け先の住所');
     if (!(snd.name || '').trim()) lacks.push('発送元（自分）の名前');
-    if (snd.label && !(snd.addr1 || '').trim()) lacks.push('発送元の住所（宛名ラベルのご依頼主に使います）');
     if (ship.feeMode === 'charge' && !fee) lacks.push('送料の金額');
     if (!got.length) lacks.push('買えた品物（1つもありません）');
     return { r, ship, snd, got, miss, items: m.bought, fee, total: m.bought + fee, lacks };
@@ -128,9 +125,8 @@
           <label class="field sf-fee-amt"${v.ship.feeMode === 'charge' ? '' : ' hidden'}><span>送料の金額</span><div class="yen-input"><span>¥</span><input class="input" data-k="fee" inputmode="numeric" value="${v.ship.fee || ''}" placeholder="例：430" data-ship></div></label>
           <div class="grid2">
             ${f('date', '梱包日', v.ship.date, 'type="date" data-ship')}
-            ${f('tracking', '追跡番号（任意）', v.ship.tracking, 'inputmode="numeric" autocomplete="off" data-ship')}
+            ${f('tracking', '追跡番号（任意）', v.ship.tracking, 'inputmode="numeric" autocomplete="off" data-ship', '入れておくと梱包伝票に印刷します')}
           </div>
-          ${f('goods', '品名（宛名ラベルに出します）', v.ship.goods, 'autocomplete="off" data-ship')}
           ${t('note', 'メモ・備考', v.ship.note, 'data-ship')}
         </section>
         <details class="sf-sec sf-sender"${snd.name ? '' : ' open'}>
@@ -141,24 +137,14 @@
           </div>
           ${f('mail', 'Mail（任意）', snd.mail, 'type="email" autocomplete="off" data-sender')}
           ${f('tagline', '伝票の見出しの下に出す文', snd.tagline, 'autocomplete="off" data-sender')}
-          <div class="grid2">
-            ${f('postal', '郵便番号（ラベル用）', snd.postal, 'inputmode="numeric" autocomplete="off" data-sender')}
-            ${f('phone', '電話番号（ラベル用・任意）', snd.phone, 'inputmode="tel" autocomplete="off" data-sender')}
-          </div>
-          ${f('addr1', '住所（宛名ラベルのご依頼主に使います）', snd.addr1, 'autocomplete="off" data-sender')}
-          ${f('addr2', '建物名・部屋番号（任意）', snd.addr2, 'autocomplete="off" data-sender')}
-          ${t('notes', '※ の注意書き（1行ずつ）', snd.notes, 'data-sender')}
-          <div class="grid2">
-            ${f('nextNo', '次の伝票番号', snd.nextNo, 'inputmode="numeric" data-sender', '印刷したときに割り当てて1つ進みます')}
-            <label class="toggle-row sf-label"><span>宛名ラベルも印刷する<small>伝票の下に切り取り線と一緒に</small></span><input type="checkbox" data-labelopt${snd.label ? ' checked' : ''}><i></i></label>
-          </div>
+          ${f('nextNo', '次の伝票番号', snd.nextNo, 'inputmode="numeric" data-sender', '印刷したときに割り当てて1つ進みます')}
         </details>
         <section class="sf-sum" aria-live="polite"></section>
         <section class="sf-sec sf-docs">
           <h4>${U.icon('print', 'sm')}印刷</h4>
           <ol class="sf-steps">
             <li><b>梱包伝票</b>：箱に詰めるときに、品物と数量にチェックを入れて確かめます（同封できます。金額は載りません）</li>
-            <li><b>発送伝票＋宛名ラベル</b>：伝票は同封し、下のラベルを切り取って箱に貼ります</li>
+            <li><b>発送伝票</b>：品物と金額の明細です。箱に同封します</li>
           </ol>
           ${kindSeg(Sh.kind())}
           <div class="btn-grid2">
@@ -188,13 +174,12 @@
           S().setSender({ [k]: k === 'nextNo' ? U.parseYen(inp.value) : inp.value });
           later();
         }));
-        U.$('[data-labelopt]', el).addEventListener('change', (e) => { S().setSender({ label: e.target.checked }); paintSum(); });
         // 郵便番号は欄を離れたときに「123-4567」に整える
         U.$$('[data-k="postal"]', el).forEach((inp) => inp.addEventListener('blur', () => {
           const p = Sh.postal(inp.value);
           if (p === inp.value) return;
           inp.value = p;
-          if (inp.hasAttribute('data-ship')) S().setShip(rid, { postal: p }); else S().setSender({ postal: p });
+          S().setShip(rid, { postal: p });
           paintSum();
         }));
         U.$$('[data-method]', el).forEach((b) => (b.onclick = () => {
@@ -230,7 +215,7 @@
         // 既定値をまだ保存していなければ保存しておく（画面と印刷を一致させる）
         const r0 = S().requester(rid).ship || {};
         const init = {};
-        ['date', 'method', 'feeMode', 'goods'].forEach((k) => { if (!r0[k]) init[k] = v.ship[k]; });
+        ['date', 'method', 'feeMode'].forEach((k) => { if (!r0[k]) init[k] = v.ship[k]; });
         if (r0.note == null) init.note = v.ship.note;
         if (Object.keys(init).length) S().setShip(rid, init);
         // PC では、まだ入っていない最初の欄へ
@@ -250,7 +235,6 @@
     const ev = S().ev();
     const sh = d.ship, snd = d.snd;
     const no = noTxt(sh.no);
-    const notes = String(snd.notes || '').split('\n').map((x) => x.trim()).filter(Boolean);
     const rows = d.got.map((x) => `<tr>
         <td class="sp">${esc(x.space)}</td><td class="ci">${esc(x.circle)}</td>
         <td class="nm">${esc(x.name)}${isRandom(x.name) ? '<span class="tag-rand">ランダム</span>' : ''}</td>
@@ -295,7 +279,6 @@
           ${d.miss.length ? `<div class="sv-miss"><div class="lb">ご用意できなかったもの（代金はいただいていません）</div>
             <ul>${d.miss.map((x) => `<li><b>${esc(x.space)}</b> ${esc(x.circle)}：${esc(x.name)} ×${x.qty}<span>${x.status === 'soldout' ? '売り切れ' : '見送り'}</span></li>`).join('')}</ul></div>` : ''}
         </div>
-        ${notes.length ? `<div class="sv-notes">${notes.map((x) => `<div>※ ${esc(x)}</div>`).join('')}</div>` : ''}
         <div class="sv-bottom">
           <div class="sv-memo"><div class="lb">■ メモ・備考</div><div>${esc(sh.note || '').replace(/\n/g, '<br>')}</div></div>
           <table class="sv-sum">
@@ -306,27 +289,10 @@
         </div>
         <div class="sv-foot">${esc(ev.name)}${S().eventDate() ? ` ${esc(dateTxt(S().eventDate()))}` : ''} 代行分 ・ No.${esc(no)}</div>
       </div>
-      ${snd.label ? `<div class="slip-cut"><span>キ リ ト リ ・ 下の宛名ラベルを切り取って箱に貼ってください</span></div>
-      <div class="slip-cut2">宛名ラベル（No.${esc(no)}）・ 切り取って箱に貼ってください</div>
-      <section class="slip-label">
-        <div class="sl-to">
-          <div class="sl-hd">お届け先</div>
-          <div class="sl-postal">〒 ${esc(Sh.postal(sh.postal))}</div>
-          <div class="sl-addr">${addr(sh)}</div>
-          <div class="sl-name">${esc(sh.name || '')}<span>様</span></div>
-          ${sh.phone ? `<div class="sl-tel">TEL ${esc(sh.phone)}</div>` : ''}
-        </div>
-        <div class="sl-side">
-          <div class="sl-box"><div class="lb">ご依頼主</div>${snd.postal ? `<div>〒${esc(Sh.postal(snd.postal))}</div>` : ''}<div class="sl-saddr">${addr(snd)}</div><div class="sl-sname">${esc(snd.name || '')}</div>${snd.phone ? `<div>TEL ${esc(snd.phone)}</div>` : ''}</div>
-          <div class="sl-box"><div class="lb">品名</div><div class="sl-goods">${esc(sh.goods || DEF.goods)}</div></div>
-          <div class="sl-box"><div class="lb">発送方法</div><div class="sl-goods">${esc(sh.method || '')}</div>${sh.feeMode === 'cod' ? '<div class="sl-cod">着 払 い</div>' : ''}${sh.tracking ? `<div class="sl-trk">追跡 ${esc(sh.tracking)}</div>` : ''}</div>
-          <div class="sl-no">No.${esc(no)}</div>
-        </div>
-      </section>` : ''}
     </article>`;
   };
 
-  /** 梱包伝票。品物ごとのチェック欄・数えた数・状態のメモ、梱包の手順のチェック、厚さ・重さ・追跡番号の記入欄 */
+  /** 梱包伝票。品物ごとのチェック欄・数えた数・状態のメモ、梱包のチェック、追跡番号の記入欄 */
   Sh.packHTML = (rid) => {
     const d = Sh.data(rid, 'pack');
     const sh = d.ship, snd = d.snd;
@@ -380,17 +346,12 @@
               ${box('破損・汚れ・折れがない')}
               ${rand ? box('ランダム商品は未開封のまま') : ''}
               ${box('OPP袋・緩衝材で保護した（紙ものは防水）')}
-              ${box('発送伝票を同封した')}
-              ${box('宛名ラベル（送り状）を貼った')}
             </ul>
           </div>
           <div class="pk-fill">
-            <div class="lb">■ 記入欄</div>
-            <table>
-              <tr><th>厚さ</th><td><span>cm</span></td><th>重さ</th><td><span>g</span></td></tr>
-              <tr><th>追跡番号</th><td colspan="3">${esc(sh.tracking || '')}</td></tr>
-              <tr><th>梱包者</th><td colspan="3"></td></tr>
-            </table>
+            <div class="lb">■ 追跡番号</div>
+            <div class="pk-trk">${esc(sh.tracking || '')}</div>
+            <div class="pk-trk-note">発送したあとに書き写しておくと、問い合わせのときに便利です</div>
           </div>
         </div>
         <div class="pk-memo"><div class="lb">■ メモ</div><div class="pk-lines"><i></i><i></i><i></i><i></i><i></i></div></div>
@@ -402,23 +363,6 @@
   const docsHTML = (rids, kind) => rids.map((rid) => kindsOf(kind).map((k) => (k === 'pack' ? Sh.packHTML(rid) : Sh.slipHTML(rid))).join('')).join('');
 
   // ------------------------------------------------------------------ プレビュー・印刷
-  /**
-   * 伝票と宛名ラベルが A4 の1ページ（余白10mm → 高さ277mm）に入らなければ、ラベルを次のページに送る印（.split）を付ける。
-   * 縮めて見せるプレビューでも offsetHeight は縮める前の大きさなので、同じ計算でよい
-   */
-  const PAGE_MM = 277;
-  Sh.fitPages = (root) => fitPages(root);
-  const fitPages = (root) => {
-    const mm = 96 / 25.4;
-    U.$$('.slip', root).forEach((slip) => {
-      slip.classList.remove('split');
-      const lab = U.$('.slip-label', slip);
-      if (!lab) return;
-      const need = U.$('.slip-sheet', slip).offsetHeight + U.$('.slip-cut', slip).offsetHeight + 11 * mm + lab.offsetHeight;
-      slip.classList.toggle('split', need > PAGE_MM * mm);
-    });
-  };
-
   /** 入力の足りないところがあれば、印刷の前に確かめる */
   const checkLacks = async (rids, kind) => {
     const k = kind === 'pack' ? 'pack' : 'ship';
@@ -443,7 +387,6 @@
         U.$$('[data-kind]', el).forEach((b) => (b.onclick = () => { setKind(b.dataset.kind); Sh.preview(rids, b.dataset.kind); }));
         // A4（210mm）を画面の幅に合わせて縮める
         requestAnimationFrame(() => U.$$('.sp-page', el).forEach((pg) => {
-          fitPages(pg);
           const slip = U.$('.slip', pg);
           const k = pg.clientWidth / slip.offsetWidth;
           slip.style.transform = `scale(${k})`;
@@ -461,10 +404,7 @@
     box.id = 'printsheet';
     box.className = 'slips';
     box.innerHTML = docsHTML(rids, kind);
-    box.style.cssText = 'display:block;position:absolute;left:-10000px;top:0;visibility:hidden';
     document.body.appendChild(box);
-    fitPages(box);
-    box.style.cssText = '';
     document.body.classList.add('printing', 'printing-slips');
     const cleanup = () => {
       document.body.classList.remove('printing', 'printing-slips');
