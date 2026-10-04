@@ -84,7 +84,10 @@
     if (ship.note === OLD_NOTE) ship.note = DEF.note;
     const m = s.proxySummary(rid);
     // 伝票はスペース番号の順（箱詰めのときに上から照らし合わせやすいように）
-    const rows = m.rows.slice().sort((x, y) => x.space.localeCompare(y.space, 'ja', { numeric: true }));
+    const rows = m.rows.slice().sort((x, y) => x.space.localeCompare(y.space, 'ja', { numeric: true })).map((x) => {
+      const parts = (x.parts || []).filter((p) => String(p.n || '').trim());   // 入力途中の空の行は載せない
+      return { ...x, parts: parts.length ? parts : null };
+    });
     const got = rows.filter((x) => x.status === 'bought');
     const miss = rows.filter((x) => x.status !== 'bought');
     const fee = ship.feeMode === 'charge' ? Math.max(0, +ship.fee || 0) : 0;
@@ -114,7 +117,7 @@
       id: 'ship',
       center: true,
       cls: 'ship-work',   // PC では中央の大きな作業画面。スマホはふつうの下からのシート
-      title: `${esc(r.name)}の梱包・発送伝票`,
+      title: `${esc(r.name)}の梱包・発送伝票<small class="sf-saved">自動で保存されます</small>`,
       html: `<div class="ship-work-in"><div class="ship-form">
         <section class="sf-sec">
           <h4>${U.icon('pin', 'sm')}お届け先様</h4>
@@ -166,8 +169,9 @@
             <button class="btn primary" data-print>${U.icon('print')}印刷する</button>
           </div>
         </section>
+        <button class="btn block" data-keep>${U.icon('check')}一時保存して閉じる</button>
         <button class="btn block ghost" data-shipped>${U.icon('check')}${r.ship && r.ship.shippedAt ? `発送済みを取り消す（${esc(U.md(r.ship.shippedAt))}に発送）` : '発送済みにする'}</button>
-        <p class="muted small">入力した内容は自動で保存されます。宛先は、次の代行でも「前回の宛先を使う」から呼び出せます。用紙は A4縦です。黒い帯が印刷されないときは、印刷の設定で「背景のグラフィック」をオンにしてください。</p>
+        <p class="muted small">入力した内容は自動で保存されます。お名前や住所が分からないときは空けたまま閉じて、あとから続きを入力できます。宛先は、次の代行でも「前回の宛先を使う」から呼び出せます。用紙は A4縦です。黒い帯が印刷されないときは、印刷の設定で「背景のグラフィック」をオンにしてください。</p>
       </div>
       <aside class="ship-pv" aria-label="印刷のプレビュー">
         <div class="spv-head"><b>${U.icon('note', 'sm')}プレビュー</b>${kindBtns(Sh.kind())}<button class="btn primary" data-print2>${U.icon('print')}印刷する</button></div>
@@ -197,44 +201,124 @@
           pvLater();
         };
         const later = U.debounce(paintSum, 120);
+        // 保存した時刻を見出しに出す（入力のたびに保存しているのを見て分かるように）
+        const mark = () => { const t = U.$('.sf-saved', el); if (t) t.textContent = `保存しました（${U.time(Date.now())}）`; };
+        U.$('[data-keep]', el).onclick = () => {
+          const lacks = Sh.data(rid).lacks;
+          UI().close('ship');
+          UI().toast(lacks.length ? `保存しました。続きは精算の画面の「梱包・発送伝票を作る」から入力できます（未入力：${lacks.join('・')}）` : '保存しました');
+        };
         // セットの内容：品物ごとに中身を登録すると、梱包伝票で1点ずつ検品できる
         const partsSec = U.$('.sf-parts-sec', el);
-        const paintParts = () => {
+        // 入力中の行（品名が空）も含めた、保存されているそのままの内容
+        const rawParts = (cid, iid) => {
+          const it = ((S().d().entries[cid] || {}).items || []).find((i) => i.id === iid);
+          return it && it.parts ? it.parts.map((p) => ({ ...p })) : [];
+        };
+        const paintParts = (focus) => {
           const d = Sh.data(rid, 'pack');
           partsSec.hidden = !d.got.length;
           if (!d.got.length) return;
-          partsSec.innerHTML = `<h4>${U.icon('note', 'sm')}セットの内容<small>中身を登録すると、梱包伝票で1点ずつ検品できます</small></h4>
-            <ul class="sf-parts">${d.got.map((x) => {
-              const need = !x.parts && Sh.isSetLike(x.name);
-              return `<li class="${need ? 'need' : ''}"><div><b>${esc(x.name)} <span class="muted">×${x.qty}</span></b>
-                ${x.parts ? `<small>${esc(x.parts.map((p) => `${p.n} ×${p.q}`).join('・'))}</small>` : need ? '<small>内容が未登録です</small>' : ''}</div>
-                <button type="button" class="btn sm" data-parts="${esc(x.cid)}" data-iid="${esc(x.iid)}">${x.parts ? '内容を直す' : '内容を登録'}</button></li>`;
-            }).join('')}</ul>`;
-          U.$$('[data-parts]', partsSec).forEach((b) => (b.onclick = async () => {
-            const x = Sh.data(rid, 'pack').got.find((g) => g.iid === b.dataset.iid);
-            if (!x) return;
-            const v = await UI().prompt(`${x.name}の内容`, {
-              value: partsText(x.parts), multiline: true, ok: '保存',
+          partsSec.innerHTML = `<h4>${U.icon('note', 'sm')}セットの内容<small>セットの品物は中身を1つずつ登録すると、梱包伝票で1点ずつ検品できます</small></h4>
+            <div class="spc-list">${d.got.map((x) => {
+              const raw = rawParts(x.cid, x.iid);
+              const need = !raw.length && Sh.isSetLike(x.name);
+              // セットではなさそうで中身も無い品物は1行にたたむ（必要なときだけ登録できるように）
+              if (!raw.length && !need) {
+                return `<div class="spc plain" data-cid="${esc(x.cid)}" data-iid="${esc(x.iid)}">
+                  <div class="spc-head"><span class="spc-sp">${esc(x.space)}</span><b>${esc(x.name)}</b><span class="spc-q">×${x.qty}</span></div>
+                  <button type="button" class="chip sm ghost" data-padd>${U.icon('plus', 'sm')}中身を登録</button></div>`;
+              }
+              return `<div class="spc${raw.length ? ' has' : ''}${need ? ' need' : ''}" data-cid="${esc(x.cid)}" data-iid="${esc(x.iid)}">
+                <div class="spc-head"><span class="spc-sp">${esc(x.space)}</span><b>${esc(x.name)}</b><span class="spc-q">×${x.qty}</span></div>
+                ${raw.length ? `<label class="spc-lb">中身 <small>${x.qty > 1 ? `数量は1セットあたり（梱包伝票には ×${x.qty} した数で載ります）` : '品名と数量'}</small></label>
+                <div class="ie-list">${raw.map((p, j) => `<div class="ie-row spc-row">
+                  <input class="input ie-name" data-pn="${j}" value="${esc(p.n)}" placeholder="中身の品名（例：本）" enterkeyhint="next" autocomplete="off">
+                  <div class="stepper sm"><button type="button" class="icon-btn" data-pq="${j}" data-d="-1" aria-label="1つ減らす">${U.icon('minus', 'sm')}</button><b>${p.q}</b><button type="button" class="icon-btn" data-pq="${j}" data-d="1" aria-label="1つ増やす">${U.icon('plus', 'sm')}</button></div>
+                  <button type="button" class="icon-btn" data-pdel="${j}" aria-label="この行を消す">${U.icon('trash', 'sm')}</button>
+                </div>`).join('')}</div>` : need ? '<p class="spc-need">セットの中身が未登録です</p>' : ''}
+                <div class="chips wrap">
+                  <button type="button" class="chip sm" data-padd>${U.icon('plus', 'sm')}${raw.length ? '中身を追加' : 'セットの中身を登録'}</button>
+                  <button type="button" class="chip sm ghost" data-pbulk>${U.icon('note', 'sm')}まとめて登録</button>
+                </div>
+              </div>`;
+            }).join('')}</div>`;
+          if (focus) {
+            const card = U.$$('.spc', partsSec).find((c) => c.dataset.iid === focus.iid);
+            const inp = card && U.$$('[data-pn]', card)[focus.j];
+            if (inp) { inp.focus(); inp.select && inp.select(); }
+          }
+        };
+        const cardOf = (t) => { const c = t.closest('.spc'); return c && { cid: c.dataset.cid, iid: c.dataset.iid, name: (U.$('.spc-head b', c) || {}).textContent || '' }; };
+        const saveParts = (c, parts, label) => { S().setItemParts(c.cid, c.iid, parts, label); mark(); later(); };
+        // 品名の入力：画面は作り直さずに保存だけ（作り直すと入力中の文字が飛ぶ）
+        partsSec.oninput = (e) => {
+          const t = e.target;
+          if (!t.matches('[data-pn]')) return;
+          const c = cardOf(t);
+          const parts = rawParts(c.cid, c.iid);
+          if (!parts[+t.dataset.pn]) return;
+          parts[+t.dataset.pn].n = t.value;
+          saveParts(c, parts, null);
+        };
+        // Enter で次の行へ（最後の行なら行を足す）
+        partsSec.onkeydown = (e) => {
+          const t = e.target;
+          if (e.key !== 'Enter' || e.isComposing || !t.matches('[data-pn]')) return;
+          e.preventDefault();
+          e.stopPropagation();   // サークル詳細用の「Enter で次の欄へ」（document）に渡さない
+          const c = cardOf(t);
+          const j = +t.dataset.pn;
+          const parts = rawParts(c.cid, c.iid);
+          if (j === parts.length - 1) {
+            if (!t.value.trim()) return;
+            parts.push({ n: '', q: 1 });
+            saveParts(c, parts, 'セットの中身を追加');
+          }
+          paintParts({ iid: c.iid, j: j + 1 });
+        };
+        partsSec.onclick = async (e) => {
+          const b = e.target.closest('button');
+          if (!b) return;
+          const c = cardOf(b);
+          if (!c) return;
+          const parts = rawParts(c.cid, c.iid);
+          if (b.matches('[data-pq]')) {
+            const p = parts[+b.dataset.pq];
+            p.q = U.clamp((p.q || 1) + +b.dataset.d, 1, 99);
+            saveParts(c, parts, 'セットの中身の数量');
+            paintParts();
+          } else if (b.matches('[data-pdel]')) {
+            parts.splice(+b.dataset.pdel, 1);
+            saveParts(c, parts, 'セットの中身を消す');
+            paintParts();
+            UI().toast('中身を1行消しました', { undo: true });
+          } else if (b.matches('[data-padd]')) {
+            parts.push({ n: '', q: 1 });
+            saveParts(c, parts, 'セットの中身を追加');
+            paintParts({ iid: c.iid, j: parts.length - 1 });
+          } else if (b.matches('[data-pbulk]')) {
+            const v = await UI().prompt(`${c.name}の中身をまとめて登録`, {
+              value: partsText(parts.filter((p) => String(p.n).trim())), multiline: true, ok: '登録',
               placeholder: '例：\n本 ×1\nステッカー ×2\nポストカード ×3',
-              note: `1行に1つずつ入力します。数量は「×2」「2枚」のように書けます（省略すると1）。${x.qty > 1 ? `数量は1セットあたりの数です。このセットは ×${x.qty} なので、梱包伝票には${x.qty}倍の数で載ります。` : ''}すべて消して保存すると、内容の登録を取り消します。`,
+              note: '1行に1つずつ入力します。数量は「×2」「2枚」のように書けます（省略すると1）。登録すると、いまの中身と置き換わります。',
             });
             if (v == null) return;
-            const parts = Sh.parseParts(v);
-            S().setItemParts(x.cid, x.iid, parts);
+            saveParts(c, Sh.parseParts(v), 'セットの中身をまとめて登録');
             paintParts();
-            pvLater();
-            UI().toast(parts.length ? `${x.name}の内容を登録しました（${parts.length}種類）` : `${x.name}の内容の登録を取り消しました`, { undo: true });
-          }));
+          }
         };
         paintParts();
         U.$$('[data-ship]', el).forEach((inp) => inp.addEventListener('input', () => {
           const k = inp.dataset.k;
           S().setShip(rid, { [k]: k === 'fee' ? U.parseYen(inp.value) : inp.value });
+          mark();
           later();
         }));
         U.$$('[data-sender]', el).forEach((inp) => inp.addEventListener('input', () => {
           const k = inp.dataset.k;
           S().setSender({ [k]: k === 'nextNo' ? U.parseYen(inp.value) : inp.value });
+          mark();
           later();
         }));
         // 郵便番号は欄を離れたときに「123-4567」に整える
@@ -247,11 +331,13 @@
         }));
         U.$$('[data-method]', el).forEach((b) => (b.onclick = () => {
           S().setShip(rid, { method: b.dataset.method });
+          mark();
           U.$$('[data-method]', el).forEach((x) => x.classList.toggle('on', x === b));
           paintSum();
         }));
         U.$$('[data-fee]', el).forEach((b) => (b.onclick = () => {
           S().setShip(rid, { feeMode: b.dataset.fee });
+          mark();
           U.$$('[data-fee]', el).forEach((x) => x.classList.toggle('on', x === b));
           U.$('.sf-fee-amt', el).hidden = b.dataset.fee !== 'charge';
           paintSum();

@@ -1454,3 +1454,23 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
   .spv-note { flex: none; margin: 0; padding: 8px 18px 12px; border-top: 1px solid var(--line); }
   .ship-work .sf-docs { display: none; }   /* 印刷するもの・印刷は右のプレビューの上から */
 }
+
+/* セットの内容：サークル詳細の「買うもの」と同じ行の形（品名・数量の増減・削除） */
+.spc-list { display: grid; gap: 10px; }
+.spc { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 8px; }
+.spc.has { border-color: color-mix(in srgb, #1d4ed8 35%, var(--line)); }
+.spc.need { border-color: color-mix(in srgb, var(--warn-ink) 45%, var(--line)); }
+.spc-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.spc-head b { flex: 1; min-width: 0; }
+.spc-sp { font-weight: 800; font-size: .82rem; color: var(--muted); white-space: nowrap; }
+.spc-q { font-weight: 800; white-space: nowrap; }
+.spc-lb { font-size: .8rem; font-weight: 700; color: var(--muted); }
+.spc-lb small { font-weight: 500; margin-left: 4px; }
+.spc .ie-list { margin-bottom: 0; }
+.spc-row { grid-template-columns: 1fr auto auto; }
+.spc-need { margin: 0; font-size: .82rem; font-weight: 700; color: var(--warn-ink); }
+.sheet-title .sf-saved { font-size: .76rem; }
+.ship-box .sb-lack { color: var(--warn-ink); }
+.spc.plain { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-style: dashed; }
+.spc.plain .spc-head { flex: 1; }
+.spc.plain .spc-head b { font-weight: 600; }

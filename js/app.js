@@ -9,7 +9,7 @@
   const P = HC.parser;
   const Lay = HC.layout;
 
-  HC.VERSION = '1.6.4';
+  HC.VERSION = '1.6.5';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -709,7 +709,8 @@
           const sh = r.ship || {};
           return `<section class="ship-box ${sst}">
             <div class="sb-hd"><b>${U.icon('print', 'sm')}発送</b><span class="sb-st">${HC.ship.STATE[sst]}${sst === 'shipped' ? `（${U.esc(U.md(sh.shippedAt))}）` : ''}</span></div>
-            ${sh.addr1 ? `<p class="small">〒${U.esc(HC.ship.postal(sh.postal))} ${U.esc(sh.addr1)} ${U.esc(sh.name || '')} 様${sh.method ? ` ・ ${U.esc(sh.method)}` : ''}</p>` : '<p class="muted small">宛先を入力すると、梱包伝票と発送伝票を印刷できます。</p>'}
+            ${sh.addr1 ? `<p class="small">〒${U.esc(HC.ship.postal(sh.postal))} ${U.esc(sh.addr1)} ${U.esc(sh.name || '')} 様${sh.method ? ` ・ ${U.esc(sh.method)}` : ''}</p>` : sst === 'lack' ? '' : '<p class="muted small">宛先を入力すると、梱包伝票と発送伝票を印刷できます。</p>'}
+            ${sst === 'lack' ? `<p class="small sb-lack">未入力：${U.esc(HC.ship.data(rid).lacks.join('・'))}（入力した分は保存されています）</p>` : ''}
             <button class="btn ${sst === 'shipped' ? '' : 'primary '}block" data-ship>${U.icon('print')}梱包・発送伝票を作る</button>
           </section>`;
         })()}

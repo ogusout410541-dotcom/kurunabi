@@ -647,8 +647,9 @@
     return best;
   };
 
-  /** セット商品の内容 [{ n: 品名, q: 1セットあたりの数 }]。空にすると内容の登録を取り消す */
-  S.setItemParts = (cid, iid, parts) => S.mutate('セットの内容', (d) => {
+  /** セット商品の内容 [{ n: 品名, q: 1セットあたりの数 }]。空にすると内容の登録を取り消す。
+   *  入力中の行（品名が空）もそのまま持つ（伝票には品名のある行だけ載る）。文字の入力は label=null で取り消しの控えを作らない */
+  S.setItemParts = (cid, iid, parts, label = 'セットの内容') => S.mutate(label, (d) => {
     const it = d.entries[cid] && d.entries[cid].items.find((i) => i.id === iid);
     if (!it) return;
     if (parts && parts.length) it.parts = parts.map((p) => ({ n: String(p.n), q: Math.max(1, +p.q || 1) }));
