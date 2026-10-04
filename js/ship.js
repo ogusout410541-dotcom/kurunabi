@@ -32,7 +32,8 @@
   const KIND_KEY = 'kurunavi.slipKind';
   Sh.kind = () => { try { const k = localStorage.getItem(KIND_KEY); return KINDS[k] ? k : 'both'; } catch (e) { return 'both'; } };
   const setKind = (k) => { try { localStorage.setItem(KIND_KEY, k); } catch (e) { /* 覚えられなくても印刷はできる */ } };
-  const kindSeg = (k) => `<div class="field"><span>印刷するもの</span><div class="seg sm sf-kind">${Object.entries(KINDS).map(([v, l]) => `<button type="button" class="${k === v ? 'on' : ''}" data-kind="${v}">${l}</button>`).join('')}</div></div>`;
+  const kindBtns = (k) => `<div class="seg sm sf-kind">${Object.entries(KINDS).map(([v, l]) => `<button type="button" class="${k === v ? 'on' : ''}" data-kind="${v}">${l}</button>`).join('')}</div>`;
+  const kindSeg = (k) => `<div class="field"><span>印刷するもの</span>${kindBtns(k)}</div>`;
   const kindsOf = (k) => (k === 'both' ? ['pack', 'ship'] : [k]);
   /** セット商品らしい品名（内容が未入力なら入力画面で知らせる） */
   const SETLIKE = /セット|詰め合わせ|詰合せ|福袋|まとめ|BOX|ボックス/i;
@@ -111,9 +112,10 @@
     const t = (k, label, val, attrs = '') => `<label class="field"><span>${label}</span><textarea class="input" rows="3" data-k="${k}" ${attrs}>${esc(val || '')}</textarea></label>`;
     UI().sheet({
       id: 'ship',
-      side: true,
+      center: true,
+      cls: 'ship-work',   // PC では中央の大きな作業画面。スマホはふつうの下からのシート
       title: `${esc(r.name)}の梱包・発送伝票`,
-      html: `<div class="ship-form">
+      html: `<div class="ship-work-in"><div class="ship-form">
         <section class="sf-sec">
           <h4>${U.icon('pin', 'sm')}お届け先様</h4>
           ${known ? `<button class="btn sm block" data-known>${U.icon('undo', 'sm')}前回の宛先を使う（${esc(known.name || '')} 〒${esc(known.postal || '')}）</button>` : ''}
@@ -166,8 +168,24 @@
         </section>
         <button class="btn block ghost" data-shipped>${U.icon('check')}${r.ship && r.ship.shippedAt ? `発送済みを取り消す（${esc(U.md(r.ship.shippedAt))}に発送）` : '発送済みにする'}</button>
         <p class="muted small">入力した内容は自動で保存されます。宛先は、次の代行でも「前回の宛先を使う」から呼び出せます。用紙は A4縦です。黒い帯が印刷されないときは、印刷の設定で「背景のグラフィック」をオンにしてください。</p>
-      </div>`,
+      </div>
+      <aside class="ship-pv" aria-label="印刷のプレビュー">
+        <div class="spv-head"><b>${U.icon('note', 'sm')}プレビュー</b>${kindBtns(Sh.kind())}<button class="btn primary" data-print2>${U.icon('print')}印刷する</button></div>
+        <div class="spv-pages slip-preview"></div>
+        <p class="spv-note muted small">梱包伝票は箱詰めの検品に、発送伝票は箱に同封する明細に使います。どちらも A4縦で印刷します。</p>
+      </aside></div>`,
       onMount: (el) => {
+        // PC：右側のプレビューを入力に合わせて描き直す（幅が狭い画面では出さない）
+        const pv = U.$('.spv-pages', el);
+        const paintPv = () => {
+          if (!pv || !matchMedia('(min-width: 960px)').matches) return;
+          const top = pv.scrollTop;
+          pv.innerHTML = kindsOf(Sh.kind()).map((k) => `<div class="sp-page">${k === 'pack' ? Sh.packHTML(rid) : Sh.slipHTML(rid)}</div>`).join('');
+          scalePages(pv);
+          pv.scrollTop = top;
+        };
+        const pvLater = U.debounce(paintPv, 250);
+        if (pv && window.ResizeObserver) new ResizeObserver(() => scalePages(pv)).observe(pv);
         const sum = U.$('.sf-sum', el);
         const paintSum = () => {
           const d = Sh.data(rid);
@@ -176,6 +194,7 @@
             ${!d.got.length ? `<p class="sf-lack">${U.icon('warn', 'sm')}買えた品物がまだありません</p>` : ''}
             ${(() => { const n = d.got.filter((x) => !x.parts && Sh.isSetLike(x.name)).length; return n ? `<p class="muted small">セットの内容が未登録の品物が ${n}件あります（未登録のままでも印刷できます）。</p>` : ''; })()}
             ${d.lacks.length ? `<p class="sf-lack">${U.icon('warn', 'sm')}未入力：${d.lacks.map(esc).join('・')}</p>` : d.got.length ? `<p class="sf-ok">${U.icon('check', 'sm')}必要な項目はすべて入力済みです</p>` : ''}`;
+          pvLater();
         };
         const later = U.debounce(paintSum, 120);
         // セットの内容：品物ごとに中身を登録すると、梱包伝票で1点ずつ検品できる
@@ -203,6 +222,7 @@
             const parts = Sh.parseParts(v);
             S().setItemParts(x.cid, x.iid, parts);
             paintParts();
+            pvLater();
             UI().toast(parts.length ? `${x.name}の内容を登録しました（${parts.length}種類）` : `${x.name}の内容の登録を取り消しました`, { undo: true });
           }));
         };
@@ -245,9 +265,12 @@
         };
         U.$$('[data-kind]', el).forEach((b) => (b.onclick = () => {
           setKind(b.dataset.kind);
-          U.$$('[data-kind]', el).forEach((x) => x.classList.toggle('on', x === b));
+          U.$$('[data-kind]', el).forEach((x) => x.classList.toggle('on', x.dataset.kind === b.dataset.kind));
+          paintPv();
         }));
         U.$('[data-preview]', el).onclick = () => Sh.preview([rid]);
+        const p2 = U.$('[data-print2]', el);
+        if (p2) p2.onclick = () => Sh.print([rid]);
         U.$('[data-print]', el).onclick = () => Sh.print([rid]);
         U.$('[data-shipped]', el).onclick = () => {
           const on = !(S().requester(rid).ship || {}).shippedAt;
@@ -421,6 +444,15 @@
   const docsHTML = (rids, kind) => rids.map((rid) => kindsOf(kind).map((k) => (k === 'pack' ? Sh.packHTML(rid) : Sh.slipHTML(rid))).join('')).join('');
 
   // ------------------------------------------------------------------ プレビュー・印刷
+  /** A4（幅190mm）の伝票を、入れ物の幅に合わせて縮める（offsetHeight は縮める前の大きさ） */
+  const scalePages = (root) => U.$$('.sp-page', root).forEach((pg) => {
+    const slip = U.$('.slip', pg);
+    if (!slip || !pg.clientWidth) return;
+    const k = pg.clientWidth / slip.offsetWidth;
+    slip.style.transform = `scale(${k})`;
+    pg.style.height = `${Math.ceil(slip.offsetHeight * k)}px`;
+  });
+
   /** 入力の足りないところがあれば、印刷の前に確かめる */
   const checkLacks = async (rids, kind) => {
     const k = kind === 'pack' ? 'pack' : 'ship';
@@ -448,12 +480,7 @@
         U.$('[data-print]', el).onclick = () => Sh.print(rids, kind);
         U.$$('[data-kind]', el).forEach((b) => (b.onclick = () => { setKind(b.dataset.kind); Sh.preview(rids, b.dataset.kind); }));
         // A4（210mm）を画面の幅に合わせて縮める
-        requestAnimationFrame(() => U.$$('.sp-page', el).forEach((pg) => {
-          const slip = U.$('.slip', pg);
-          const k = pg.clientWidth / slip.offsetWidth;
-          slip.style.transform = `scale(${k})`;
-          pg.style.height = `${Math.ceil(slip.offsetHeight * k)}px`;
-        }));
+        requestAnimationFrame(() => scalePages(el));
       },
     });
   };

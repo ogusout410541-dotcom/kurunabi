@@ -1435,3 +1435,22 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .sf-parts li small { color: var(--muted); font-size: .78rem; }
 .sf-parts li.need { border-color: color-mix(in srgb, var(--warn-ink) 45%, var(--line)); }
 .sf-parts li.need small { color: var(--warn-ink); font-weight: 700; }
+
+/* 伝票の入力画面：PC では中央の大きな作業画面。左に入力、右にプレビュー（印刷もここから） */
+.sheet-wrap.ship-work { text-align: left; }   /* .center（中央寄せの文字）が効かないように */
+.ship-pv { display: none; }
+@media (min-width: 960px) {
+  .sheet-wrap.ship-work .sheet { width: min(1440px, 96vw); max-width: none; height: 92vh; max-height: 92vh; }
+  .sheet-wrap.ship-work .sheet-head { border-bottom: 1px solid var(--line); padding: 8px 10px 8px 20px; }
+  .sheet-wrap.ship-work .sheet-body { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
+  .ship-work-in { display: grid; grid-template-columns: minmax(400px, 540px) 1fr; height: 100%; }
+  .ship-work-in .ship-form { overflow: auto; padding: 14px 22px 22px; border-right: 1px solid var(--line); overscroll-behavior: contain; }
+  .ship-pv { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface2); }
+  .spv-head { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--line); flex: none; }
+  .spv-head > b { display: flex; align-items: center; gap: 6px; margin-right: auto; white-space: nowrap; }
+  .spv-head .seg { width: auto; }
+  .spv-pages { flex: 1; overflow: auto; padding: 20px 28px; margin: 0; overscroll-behavior: contain; }
+  .spv-pages .sp-page { width: 100%; max-width: 860px; margin: 0 auto; flex: none; }
+  .spv-note { flex: none; margin: 0; padding: 8px 18px 12px; border-top: 1px solid var(--line); }
+  .ship-work .sf-docs { display: none; }   /* 印刷するもの・印刷は右のプレビューの上から */
+}

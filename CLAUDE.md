@@ -133,6 +133,8 @@ Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv�
   **発送伝票**は A 商品代金／B 送料（`feeMode`）／合計とご用意できなかったもの。※の注意書きと宛名ラベルは**載せない**（1.6.1、本人の回答）。精算の方法（振込先など）も**書かない**（本人の希望）。
   印刷は `#printsheet.slips` ＋ `body.printing-slips`、A4縦・余白10mm（幅190mm）。1人ぶんの伝票ごとに改ページ。品物が多い梱包伝票は2ページ目にチェックとメモが送られる（区画の途中では切らない）。
   番号（`ship.no`）は初めて印刷したときに `sender.nextNo`（既定 17＝以前の続き）から割り当て、梱包と発送で共通。印刷するもの（両方／梱包／発送）は端末ごと（`localStorage['kurunavi.slipKind']`）。
+  入力画面は PC では中央の大きな作業画面（`cls: ship-work`。左に入力、右に入力に合わせて描き直すプレビュー＝`paintPv`、印刷もプレビューの上から）。スマホは下からのシートのまま（プレビューは別の画面）。
+  中央のシートは `.center`（文字の中央寄せ）とクラス名が同じなので、`.sheet-wrap.ship-work { text-align: left }` で打ち消している
   確認は CDP の `Page.printToPDF`（`printBackground`・`preferCSSPageSize`）で PDF にして見る。入力欄の例には実在の宛先を書かない
 - **連打の保険**：完了して次のカードに切り替わった直後の 0.7 秒は、当日カードのボタンを押しても反応しない（`app.curGuard` と `.cur.enter`）
 - **当日までの準備**（`V.prep`）：開催前（と、まだ1件も回っていない間）の当日タブに、開催日・予算・お品書き待ち・価格未定・ルート・
@@ -338,7 +340,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## 版の更新（ここを間違えると「いつまでも古い版のまま」になる）
 
-- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.6.3）。
+- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.6.4）。
   **`js/changelog.js` の先頭にもその版の内容を1件足す**（tag: new=新機能 / up=改善 / fix=修正。利用者向けの自然な文で）。
   更新後の初回起動で、前に開いた版（`localStorage['kurunavi.version']`）より新しい分を「新しくなったこと」として自動で出す（`A.changelog({since})`）
 - **SW の install はブラウザのHTTPキャッシュを避けて取り込む**（`freshRequests()`＝`cache:'reload'` ＋ `?v=CACHE`）。
