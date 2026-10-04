@@ -9,7 +9,7 @@
   const P = HC.parser;
   const Lay = HC.layout;
 
-  HC.VERSION = '1.5.4';
+  HC.VERSION = '1.5.5';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -283,6 +283,8 @@
     if (!e) return;
     const st = ds.st;
     if (e.status === st) return;
+    // 完了にするのに、まだチェックしていない品物がある → 買った／売り切れ／見送りを選んでから完了
+    if (st === 'done' && e.items.some((i) => i.status === 'todo')) return finishCheck(ds.cid, !!ds.keep);
     S.setStatus(ds.cid, st);
     if (ds.keep) {
       if (st === 'done') settleCash(ds.cid);   // 詳細から購入済にしたときも財布を合わせる
@@ -290,6 +292,60 @@
       return;
     }
     afterFinish(ds.cid, S.STATUS[st].label);
+  };
+
+  /**
+   * 完了するときの確認。まだチェックしていない品物ごとに「買った／売り切れ／見送り」を選んでもらい、まとめて記録して完了する
+   * （1.5.5。チェックしないまま完了にした品物が、CSV で「購入済」に見えていた件の対策）
+   */
+  const finishCheck = (cid, keep) => {
+    const e = S.entry(cid);
+    if (!e) return;
+    const todo = e.items.filter((i) => i.status === 'todo');
+    const pick = {};   // iid → 'bought' | 'soldout' | 'skip'
+    const opt = (i, v, label, dis) => `<button class="${dis ? 'dis' : ''}" data-iid="${U.esc(i.id)}" data-v="${v}"${dis ? ' disabled' : ''}>${label}</button>`;
+    UI.sheet({
+      id: 'finishCheck',
+      center: true,
+      title: 'まだチェックしていない品物があります',
+      html: `<p class="small">${U.esc(circleLabel(cid))} を完了にする前に、それぞれ選んでください。</p>
+        <ul class="fc-list">${todo.map((i) => `<li>
+            <span class="fc-nm"><b>${U.esc(i.name || '（無題）')}</b> ×${i.qty || 1}${i.for ? ` <span class="for-tag ${V.rqClass(i.for)}">${U.esc((S.requester(i.for) || {}).name || '代行')}の分</span>` : ''}<small>${i.price ? U.yen(i.price * (i.qty || 1)) : '価格未定'}</small></span>
+            <div class="seg sm fc-seg">${opt(i, 'bought', '買った', S.isUnknown(i))}${opt(i, 'soldout', '売り切れ')}${opt(i, 'skip', '見送り')}</div>
+          </li>`).join('')}</ul>
+        ${todo.some((i) => S.isUnknown(i)) ? '<p class="muted small">価格未定の品物を買ったときは、いったん閉じて、その品物を押して金額を入れてください。</p>' : ''}
+        <div class="btn-row wrap"><button class="btn" data-all="soldout">全部 売り切れ</button><button class="btn" data-all="skip">全部 見送り</button></div>
+        <div class="btn-row"><button class="btn ghost" data-close>やめる</button><button class="btn primary" data-ok disabled>完了する</button></div>`,
+      onMount: (el) => {
+        const paint = () => {
+          U.$$('.fc-seg button', el).forEach((b) => b.classList.toggle('on', pick[b.dataset.iid] === b.dataset.v));
+          U.$('[data-ok]', el).disabled = todo.some((i) => !pick[i.id]);
+        };
+        U.$$('.fc-seg button', el).forEach((b) => (b.onclick = () => { pick[b.dataset.iid] = b.dataset.v; paint(); }));
+        U.$$('[data-all]', el).forEach((b) => (b.onclick = () => { todo.forEach((i) => { pick[i.id] = b.dataset.all; }); paint(); }));
+        U.$('[data-ok]', el).onclick = async () => {
+          const buy = todo.filter((i) => pick[i.id] === 'bought');
+          const amount = U.sum(buy, (i) => (i.price || 0) * (i.qty || 1));
+          if (!(await confirmOver(amount, S.state.settings.defaultPay, U.sum(buy.filter((i) => !i.for), (i) => (i.price || 0) * (i.qty || 1))))) return;
+          UI.close('finishCheck');
+          const now = S.now();
+          S.mutate('購入完了', (d) => {
+            const en = d.entries[cid];
+            en.items.forEach((i) => {
+              const v = pick[i.id];
+              if (!v || i.status !== 'todo') return;
+              i.status = v;
+              if (v === 'bought') { i.t = now; i.pay = i.pay || S.state.settings.defaultPay; }
+            });
+            en.status = 'done';
+            en.doneAt = now;
+            if (d.focus === cid) d.focus = null;
+          });
+          if (keep) { settleCash(cid); UI.toast('購入済にしました', { undo: true }); }
+          else afterFinish(cid, '完了');
+        };
+      },
+    });
   };
 
   A.completeAll = async (ds) => {

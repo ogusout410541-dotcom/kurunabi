@@ -1085,7 +1085,8 @@
             <div class="stepper sm"><button class="icon-btn" data-act="qty" data-cid="${cid}" data-iid="${i.id}" data-d="-1">${U.icon('minus', 'sm')}</button><b>${i.qty}</b><button class="icon-btn" data-act="qty" data-cid="${cid}" data-iid="${i.id}" data-d="1">${U.icon('plus', 'sm')}</button></div>
             <button class="icon-btn" data-act="itemMenu" data-cid="${cid}" data-iid="${i.id}" aria-label="操作">${U.icon('more')}</button>
             ${s.requesters().length ? `<button class="ie-for${i.for ? ' on ' + V.rqClass(i.for) : ''}" data-act="itemFor" data-cid="${cid}" data-iid="${i.id}">${U.icon('wallet', 'sm')}${i.for ? esc((s.requester(i.for) || {}).name || '代行') + 'の分（代行）' : '自分の分'}</button>` : ''}
-            ${i.status !== 'todo' ? `<div class="ie-st">${i.status === 'bought' ? `購入済 ${U.yen(s.itemCost(i))}${i.t ? ' ' + U.time(i.t) : ''}` : s.STATUS[i.status === 'soldout' ? 'soldout' : 'skip'].label}</div>` : ''}
+            ${i.status !== 'todo' ? `<div class="ie-st">${i.status === 'bought' ? `購入済 ${U.yen(s.itemCost(i))}${i.t ? ' ' + U.time(i.t) : ''}` : s.itemStatusLabel(e, i)}</div>`
+              : (!(e.status === 'todo' || e.status === 'later') ? '<div class="ie-st warn">未購入（記録なし）：右の「…」から「売り切れ」「今回は買わない」などを選んでください</div>' : '')}
           </div>`).join('')}
         </div>
         ${s.requesters().length ? `<div class="for-pick"><span>追加する品物：</span>${[{ id: '', name: '自分' }, ...s.requesters()].map((r) => `<button class="chip sm${HC.app.curFor() === r.id ? ' on' : ''}${r.id ? ' ' + V.rqClass(r.id) : ''}" data-act="pickFor" data-rid="${esc(r.id)}">${esc(r.name)}${r.id ? 'の分' : 'の分'}</button>`).join('')}</div>` : ''}

@@ -560,6 +560,14 @@
   /** 価格未定（0円で、無料配布でもない） */
   S.isUnknown = (it) => !it.price && !S.isFree(it);
 
+  /** 品物ごとの状態の言葉。サークルを完了にしたのにチェックしていない品物は「未購入（記録なし）」 */
+  S.itemStatusLabel = (e, i) => {
+    if (i.status === 'bought') return '購入済';
+    if (i.status === 'soldout') return '売り切れ';
+    if (i.status === 'skip') return '見送り';
+    return e && !(e.status === 'todo' || e.status === 'later') ? '未購入（記録なし）' : '未購入';
+  };
+
   S.itemCost = (it) => (it.paid != null ? it.paid : (it.price || 0) * (it.qty || 1));
   // who：省くと代行分も含めた全部（その場で払う額）、'own' で自分の分だけ（予算の計算用）
   const whose = (who) => (i) => (who === 'own' ? !i.for : who ? i.for === who : true);
@@ -726,11 +734,12 @@
         e.items.forEach((i) => { if (i.status === 'todo') { i.status = 'soldout'; i.byEntry = 1; } });
       } else if (status === 'skip') {
         e.doneAt = now;
+        e.items.forEach((i) => { if (i.status === 'todo') { i.status = 'skip'; i.byEntry = 1; } });
       } else if (status === 'todo') {
         e.doneAt = null;
       }
       if (status === 'todo' || status === 'later') {
-        e.items.forEach((i) => { if (i.byEntry) { if (i.status === 'soldout') i.status = 'todo'; delete i.byEntry; } });
+        e.items.forEach((i) => { if (i.byEntry) { if (i.status === 'soldout' || i.status === 'skip') i.status = 'todo'; delete i.byEntry; } });
       }
       if (status !== 'todo' && d.focus === cid) d.focus = null;
       if (status === 'later') {
@@ -1565,7 +1574,7 @@
   S.csv = () => {
     const q = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
     const d = S.d();
-    const head = ['順番', 'スペース', 'サークル', '優先度', '状態', '品名', '予定単価', '数量', '支払額', '支払方法', '購入時刻', 'メモ', '誰の分'];
+    const head = ['順番', 'スペース', 'サークル', '優先度', 'サークルの状態', '品名', '品物の状態', '予定単価', '数量', '支払額', '支払方法', '購入時刻', 'メモ', '誰の分'];
     const lines = [head.map(q).join(',')];
     d.order.forEach((cid, i) => {
       const e = d.entries[cid];
@@ -1575,14 +1584,14 @@
       items.forEach((it) => {
         lines.push([
           i + 1, c.space, c.name, S.PRI[e.pri].label, S.STATUS[e.status].label,
-          it ? it.name : '', it ? it.price : '', it ? it.qty : '',
+          it ? it.name : '', it ? S.itemStatusLabel(e, it) : '', it ? it.price : '', it ? it.qty : '',
           it && it.status === 'bought' ? S.itemCost(it) : '',
           it && it.status === 'bought' ? (it.pay === 'card' ? 'キャッシュレス' : '現金') : '',
           it && it.t ? U.time(it.t) : '', e.memo, it && it.for ? ((S.requester(it.for) || {}).name || '代行') : '自分',
         ].map(q).join(','));
       });
     });
-    d.extras.forEach((x) => lines.push(['', '', '（サークル外）', '', '購入済', x.name, '', x.qty || 1, x.cost, x.pay === 'card' ? 'キャッシュレス' : '現金', U.time(x.t), ''].map(q).join(',')));
+    d.extras.forEach((x) => lines.push(['', '', '（サークル外）', '', '', x.name, '購入済', '', x.qty || 1, x.cost, x.pay === 'card' ? 'キャッシュレス' : '現金', U.time(x.t), ''].map(q).join(',')));
     return '﻿' + lines.join('\r\n');
   };
 
