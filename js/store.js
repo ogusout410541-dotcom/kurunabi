@@ -1458,7 +1458,7 @@
     d.extras = [];
     d.focus = null;
     d.here = null;
-    (d.requesters || []).forEach((r) => { r.settledAt = 0; });
+    (d.requesters || []).forEach((r) => { r.settledAt = 0; if (r.ship) r.ship.shippedAt = 0; });
     // 試しに財布から引いたぶんも、買い物を始める前の中身に戻す
     if (wallet && d.cashStart) { d.cashBreak = { ...d.cashStart }; d.cash = S.cashTotal(d.cashBreak); }
     d.cashSettled = 0;
@@ -1484,6 +1484,7 @@
     S.state.demo = {
       eventId: id,
       snap: JSON.stringify(d),
+      sender: JSON.stringify(S.state.sender || {}),   // 伝票番号（nextNo）もデモの前に戻す
       offset: Number.isNaN(target) ? 0 : target - Date.now(),
       day: !!S.state.settings.dayMode,
       syncDirty: !!S.state.sync.dirty,
@@ -1506,6 +1507,7 @@
       const back = S.migrateData({ [demo.eventId]: JSON.parse(demo.snap) });
       S.state.data[demo.eventId] = back[demo.eventId];
     } catch (e) { console.error(e); }
+    if (demo.sender) { try { S.state.sender = JSON.parse(demo.sender); } catch (e) { console.error(e); } }
     S.state.sync.dirty = demo.syncDirty;
     S.state.settings.dayMode = demo.day;
     S.state.demo = null;

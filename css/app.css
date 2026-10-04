@@ -437,7 +437,7 @@ select.input { appearance: auto; }
 .prow-main .l2 { font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .prow-side { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }
 .money { font-size: .85rem; font-weight: 700; }
-.money small { color: var(--muted); font-weight: 600; }
+.money small { color: var(--muted); font-weight: 600; font-size: .74rem; }
 
 /* ------------------------------------------------------------ サークル一覧 */
 .search-bar { position: sticky; top: calc(var(--top-h) + env(safe-area-inset-top, 0px)); z-index: 10; background: var(--bg); margin: -12px -12px 8px; padding: 10px 12px 6px; }
@@ -1208,7 +1208,7 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .card.cur.band-x::before { border-radius: var(--radius) 0 0 var(--radius); }
 .crow.planned.band-x { box-shadow: none; --bl: 0px; --bw: 5px; }
 .qrow.band-x .qn { background: var(--band) !important; color: #fff; }
-.px-amt { display: block; font-size: .7rem; color: #8b5cf6; font-weight: 700; }
+.px-amt { display: block; font-size: .74rem; color: #8b5cf6; font-weight: 700; }
 /* 地図：代行だけのサークルは依頼者の色で塗り、両方あるサークルは依頼者の色の枠 */
 .map-svg .cell.pxo rect { fill: var(--rq) !important; fill-opacity: .8; }
 .map-svg .cell.pxm rect { stroke: var(--rq) !important; stroke-width: 3; }

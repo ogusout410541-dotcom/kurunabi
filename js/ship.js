@@ -89,18 +89,19 @@
       return { ...x, parts: parts.length ? parts : null };
     });
     const got = rows.filter((x) => x.status === 'bought');
-    const miss = rows.filter((x) => x.status !== 'bought');
+    const miss = rows.filter((x) => x.status === 'soldout' || x.status === 'skip');   // 売り切れ・見送りだけ（まだの品物は伝票に載せない）
+    const todo = rows.filter((x) => x.status === 'todo');
     const fee = ship.feeMode === 'charge' ? Math.max(0, +ship.fee || 0) : 0;
     const snd = Sh.sender();
     const lacks = [];
-    const out = { r, ship, snd, got, miss, items: m.bought, fee, total: m.bought + fee, lacks };
+    const out = { r, ship, snd, got, miss, todo, items: m.bought, fee, total: m.bought + fee, lacks };
     if (kind === 'pack') return out;
     if (!(ship.name || '').trim()) lacks.push('お名前');
     if (!postalOk(ship.postal)) lacks.push('郵便番号');
     if (!(ship.addr1 || '').trim()) lacks.push('ご住所');
     if (!(snd.name || '').trim()) lacks.push('発送元の名前');
     if (ship.feeMode === 'charge' && !fee) lacks.push('送料');
-    return { r, ship, snd, got, miss, items: m.bought, fee, total: m.bought + fee, lacks };
+    return out;
   };
 
   // ------------------------------------------------------------------ 入力の画面
@@ -195,6 +196,7 @@
           const d = Sh.data(rid);
           sum.innerHTML = `<div class="sf-total"><span>品物 ${U.sum(d.got, (x) => x.qty)}点 ${U.yen(d.items)}${d.ship.feeMode === 'charge' ? ` ＋ 送料 ${U.yen(d.fee)}` : d.ship.feeMode === 'cod' ? '（送料は着払い）' : ''}</span><b>${U.yen(d.total)}</b></div>
             ${d.miss.length ? `<p class="muted small">買えなかった ${d.miss.length}点は、伝票の「ご用意できなかった品物」に載ります。</p>` : ''}
+            ${d.todo.length ? `<p class="sf-lack">${U.icon('warn', 'sm')}まだ購入の記録がない品物が ${d.todo.length}点あります（伝票には載りません）：${d.todo.map((x) => esc(`${x.space} ${x.name}`)).join('・')}</p>` : ''}
             ${!d.got.length ? `<p class="sf-lack">${U.icon('warn', 'sm')}買えた品物がまだありません</p>` : ''}
             ${(() => { const n = d.got.filter((x) => !x.parts && Sh.isSetLike(x.name)).length; return n ? `<p class="muted small">セットの内容が未登録の品物が ${n}件あります（未登録のままでも印刷できます）。</p>` : ''; })()}
             ${d.lacks.length ? `<p class="sf-lack">${U.icon('warn', 'sm')}未入力：${d.lacks.map(esc).join('・')}</p>` : d.got.length ? `<p class="sf-ok">${U.icon('check', 'sm')}必要な項目はすべて入力済みです</p>` : ''}`;
@@ -574,7 +576,6 @@
   Sh.print = async (rids, kind = Sh.kind()) => {
     if (!(await checkLacks(rids, kind))) return;
     rids.forEach((rid) => Sh.ensureNo(rid));   // 番号は印刷するときに割り当てる
-    UI().closeAll();
     const box = document.createElement('div');
     box.id = 'printsheet';
     box.className = 'slips';
