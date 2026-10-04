@@ -1514,3 +1514,56 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .pk-items tr.set td.nm small { display: block; margin-top: .4mm; font-size: 7pt; font-weight: 500; color: #777; }
 .pk-items tr.set td.bx { background: #f5f5f5; }
 .sheet-wrap.ship-work .sheet-body { padding-bottom: 0; }   /* 下に固定したボタンの帯の下から本文が透けないように */
+
+/* 購入検品伝票（自分用）：一覧表 */
+.bc-sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1mm 3mm; align-content: center; }
+.bc-sum > div:not(.bc-sum-who) { display: flex; flex-direction: column; }
+.bc-sum span { font-size: 7pt; color: #777; font-weight: 700; }
+.bc-sum b { font-size: 12pt; color: #111; font-variant-numeric: tabular-nums; }
+.bc-sum-who { grid-column: 1 / -1; font-size: 7.5pt; color: #333; border-top: .6pt solid #ccc; padding-top: 1mm; }
+.bc-items { font-size: 8pt; }
+.bc-items td { vertical-align: middle; padding-top: 1.6mm; padding-bottom: 1.6mm; }
+.bc-items .no { width: 8mm; text-align: center; color: #777; font-size: 7.5pt; white-space: nowrap; }
+.bc-items .sp { width: 14mm; }
+.bc-items .ci { width: 24mm; }
+.bc-items .who { width: 19mm; font-size: 7.5pt; }
+.bc-items .qt { width: 9mm; text-align: center; font-weight: 800; }
+.bc-items .bx { width: 30mm; }
+.bc-items .tm { width: 10mm; text-align: center; font-size: 7.5pt; color: #555; font-variant-numeric: tabular-nums; }
+.bc-items .mo { width: 15mm; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bc-items .fs { width: 9mm; text-align: center; }
+.bc-items thead th { white-space: nowrap; }
+.bc-items tfoot td { text-align: right; }
+.bc-items tfoot td.qt { text-align: center; }
+.bc-px { display: inline-block; background: #111; color: #fff; font-weight: 800; border-radius: .8mm; padding: .2mm 1.2mm; font-size: 7pt; }
+.bc-items .parts { margin-top: .5mm; font-size: 7pt; color: #555; }
+/* 付箋カード：A4 1枚に 2列×6段（1枚 95×46mm）。点線が切り取り線 */
+.bc-cards { width: 190mm; }
+.bc-grid { display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 44mm; width: 190mm; border-top: .7pt dashed #999; border-left: .7pt dashed #999; }
+.bc-card { border-right: .7pt dashed #999; border-bottom: .7pt dashed #999; padding: 2.6mm 3.2mm; display: flex; flex-direction: column; gap: 1.2mm; overflow: hidden; break-inside: avoid; }
+.bc-card.px { background: linear-gradient(90deg, #111 0 2mm, transparent 2mm); padding-left: 4.6mm; }
+.bcc-top { display: flex; align-items: baseline; gap: 2mm; min-width: 0; }
+.bcc-no { font-size: 7.5pt; font-weight: 800; color: #555; white-space: nowrap; }
+.bcc-sp { font-size: 11pt; font-weight: 900; white-space: nowrap; }
+.bcc-ci { font-size: 9pt; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bcc-nm { font-size: 12pt; font-weight: 800; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.bcc-parts { font-size: 7pt; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bcc-q { display: flex; align-items: center; gap: 2mm; }
+.bcc-q b { font-size: 12pt; font-weight: 900; }
+.bcc-q .pk-boxes .pk-box { width: 4.2mm; height: 4.2mm; }
+.bcc-ft { margin-top: auto; display: flex; align-items: center; gap: 2mm; min-width: 0; }
+.bcc-who { flex: none; font-size: 8pt; font-weight: 800; border: .8pt solid #111; border-radius: .8mm; padding: .2mm 1.6mm; }
+.bcc-who.px { background: #111; color: #fff; }
+.bcc-hist { font-size: 7pt; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bc-cut { margin-top: 3mm; font-size: 7pt; color: #888; text-align: center; letter-spacing: .06em; }
+/* 画面 */
+.bc-sheet .bc-opts { margin-bottom: 10px; }
+.bc-sheet .bc-opts .seg { width: 100%; }
+.log-bc { margin: 4px 0 12px; }
+.sheet-wrap.slip-preview-sheet { text-align: left; }   /* .center（中央寄せ）を打ち消す */
+.bc-px { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+/* 合計の行は表の最後に1回だけ（ページごとに繰り返すと、途中のページに合計が出て紛らわしい） */
+.sv-items tfoot { display: table-row-group; }
+/* プレビューの画面：閉じる・印刷するを下に固定（長いプレビューでもスクロールせずに押せるように） */
+.sheet-wrap.slip-preview-sheet .sheet-body { padding-bottom: 0; }
+.sticky-acts { position: sticky; bottom: 0; z-index: 2; margin: 10px -16px 0; padding: 10px 16px calc(10px + var(--safe-b)); background: var(--surface); border-top: 1px solid var(--line); }

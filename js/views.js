@@ -345,6 +345,7 @@
           <button class="btn lg" data-act="outsideBuy">${U.icon('plus')}サークル外の支出</button>
           <button class="btn lg" data-act="wallet">${U.icon('wallet')}財布の中身</button>
         </div>
+        ${log.length ? `<button class="btn block log-bc" data-act="buyCheck">${U.icon('print')}購入検品伝票を印刷（自分用・付箋カードつき）</button>` : ''}
         <section class="card">
           <h3>${U.icon('yen')}購入の記録 <small>新しい順</small></h3>
           ${log.length ? `<ol class="log big">${log.map((r) => `<li>
@@ -786,7 +787,7 @@
       <p class="muted small">「立て替え」は買えた分（あとでもらう額）、「まだ」はまだ買っていない分の予定です。行を押すと精算の画面を開きます。</p>
       <div class="proxy-acts">
         <button class="link-btn" data-act="addRequester">${U.icon('plus', 'sm')}依頼者を追加</button>
-        ${HC.ship && HC.ship.printable().length ? `<button class="link-btn" data-act="shipAll">${U.icon('print', 'sm')}梱包・発送伝票をまとめて印刷</button>` : ''}
+        ${HC.ship && HC.ship.printable().length ? `<button class="link-btn" data-act="shipAll">${U.icon('print', 'sm')}梱包・発送伝票をまとめて印刷</button><button class="link-btn" data-act="buyCheck">${U.icon('print', 'sm')}購入検品伝票（自分用）</button>` : ''}
       </div>
     </section>`;
   };
@@ -1287,6 +1288,7 @@
             <button class="btn" data-act="importFile">${U.icon('upload')}ファイルから読み込み</button>
             <button class="btn" data-act="importText">${U.icon('upload')}リンク／テキストを貼って読み込み</button>
             <button class="btn" data-act="printPlan">${U.icon('print')}巡回表を印刷</button>
+            <button class="btn" data-act="buyCheck">${U.icon('print')}購入検品伝票を印刷</button>
             <button class="btn" data-act="exportAll">${U.icon('download')}全データのバックアップ</button>
             <button class="btn" data-act="restoreBackup">${U.icon('undo')}読み込み前の状態に戻す</button>
           </div>

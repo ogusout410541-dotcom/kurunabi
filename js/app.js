@@ -9,7 +9,7 @@
   const P = HC.parser;
   const Lay = HC.layout;
 
-  HC.VERSION = '1.6.7';
+  HC.VERSION = '1.7.0';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -683,6 +683,9 @@
     if (!rids.length) return UI.toast('全員発送済みのため、印刷する伝票はありません');
     HC.ship.preview(rids);
   };
+
+  /** 購入検品伝票（自分用。買った品物の一覧表と、品物に貼る付箋カード） */
+  A.buyCheck = (ds) => HC.ship.buyCheck(ds && ds.who ? { who: ds.who } : null);
 
   /** 依頼者ごとの精算の画面 */
   A.proxySheet = (ds) => {

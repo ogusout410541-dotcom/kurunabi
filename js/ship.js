@@ -417,7 +417,7 @@
   }, []);
   /** 数量ぶんの検品の □（多いときは24個まで出して残りの数を添える） */
   const BOX_MAX = 24;
-  const boxes = (n) => `<span class="pk-boxes">${'<i class="pk-box"></i>'.repeat(Math.min(n, BOX_MAX))}${n > BOX_MAX ? `<em>ほか${n - BOX_MAX}点</em>` : ''}</span>`;
+  const boxes = (n, max = BOX_MAX) => `<span class="pk-boxes">${'<i class="pk-box"></i>'.repeat(Math.min(n, max))}${n > max ? `<em>ほか${n - max}点</em>` : ''}</span>`;
 
   Sh.slipHTML = (rid) => {
     const d = Sh.data(rid);
@@ -600,7 +600,7 @@
       html: `${kindSeg(kind)}
         <div class="slip-preview">${rids.map((rid) => kindsOf(kind).map((k) => `<div class="sp-page">${k === 'pack' ? Sh.packHTML(rid) : Sh.slipHTML(rid)}</div>`).join('')).join('')}</div>
         ${rids.some((rid) => !(S().requester(rid).ship || {}).no) ? '<p class="muted small">「No. ----」の伝票には、印刷するときに番号が付きます。</p>' : ''}
-        <div class="btn-row"><button class="btn ghost" data-close>閉じる</button><button class="btn primary" data-print>${U.icon('print')}印刷する</button></div>`,
+        <div class="btn-row sticky-acts"><button class="btn ghost" data-close>閉じる</button><button class="btn primary" data-print>${U.icon('print')}印刷する</button></div>`,
       onMount: (el) => {
         U.$('[data-print]', el).onclick = () => Sh.print(rids, kind);
         U.$$('[data-kind]', el).forEach((b) => (b.onclick = () => { setKind(b.dataset.kind); Sh.preview(rids, b.dataset.kind); }));
@@ -613,10 +613,15 @@
   Sh.print = async (rids, kind = Sh.kind()) => {
     if (!(await checkLacks(rids, kind))) return;
     rids.forEach((rid) => Sh.ensureNo(rid));   // 番号は印刷するときに割り当てる
+    printHTML(docsHTML(rids, kind));
+  };
+
+  /** 伝票の HTML を印刷する（印刷のあいだはシートごと隠れるので、入力の画面は閉じない） */
+  const printHTML = (html) => {
     const box = document.createElement('div');
     box.id = 'printsheet';
     box.className = 'slips';
-    box.innerHTML = docsHTML(rids, kind);
+    box.innerHTML = html;
     document.body.appendChild(box);
     document.body.classList.add('printing', 'printing-slips');
     const cleanup = () => {
@@ -637,6 +642,150 @@
     return Sh.data(rid).lacks.length ? 'lack' : 'ready';   // 品物が無い人は上で none になる
   };
   Sh.STATE = { shipped: '発送済み', ready: '伝票の準備完了', lack: '伝票の入力待ち', none: '' };
+
+  // ------------------------------------------------------------------ 購入検品伝票（自分用）
+  /* 会場で買った品物（自分の分も代行の分も）を、一覧表と付箋カードにして印刷する。
+     付箋カードを品物に貼り、一覧表と同じ No. で照らし合わせながら1点ずつ検品する（チェキのように見分けにくい品物のため）。
+     そのあとの梱包は付箋カードを見ながら行う。人に渡すものではないので、金額・支払方法・購入時刻も載せる */
+  const BC_KEY = 'kurunavi.bcOpt';
+  const BC_DEF = { who: 'all', kind: 'both', order: 'space' };
+  const bcOpt = () => { try { return { ...BC_DEF, ...JSON.parse(localStorage.getItem(BC_KEY) || '{}') }; } catch (e) { return { ...BC_DEF }; } };
+  const setBcOpt = (o) => { try { localStorage.setItem(BC_KEY, JSON.stringify(o)); } catch (e) { /* 覚えられなくても印刷はできる */ } };
+  const BC_KINDS = { both: '両方', list: '一覧表', cards: '付箋カード' };
+  const BC_ORDERS = { space: 'スペース順', time: '購入順' };
+  const PAYS = { cash: '現金', card: 'キャッシュレス' };
+  const whoName = (f) => (f ? `${(S().requester(f) || {}).name || '代行'}の代行` : '自分');
+
+  /** 買った品物の一覧。who＝'all'（全員）／'own'（自分）／依頼者の id。No. は並べた順に振る */
+  Sh.buyRows = (who = 'all', order = 'space') => {
+    const s = S(), d = s.d();
+    const pay0 = s.state.settings.defaultPay;
+    const rows = [];
+    d.order.forEach((cid) => {
+      const e = d.entries[cid];
+      if (!e) return;
+      const c = s.circle(cid) || e.snap || {};
+      e.items.forEach((i) => {
+        if (i.status !== 'bought') return;
+        const f = i.for || '';
+        if (who === 'own' ? f : who !== 'all' && f !== who) return;
+        const parts = (i.parts || []).filter((p) => String(p.n || '').trim());
+        rows.push({ cid, space: c.space || '', circle: c.name || '', name: i.name || '（無題）', qty: i.qty || 1, cost: s.itemCost(i), pay: i.pay || pay0, t: i.t || e.doneAt || 0, for: f, parts: parts.length ? parts : null, extra: i.planned === false });
+      });
+    });
+    // サークル外の支出（企業ブースなど）も品物なので、自分の分として最後に載せる
+    if (who === 'all' || who === 'own') {
+      (d.extras || []).forEach((x) => rows.push({ cid: 'x:' + x.id, space: '', circle: '（サークル外）', name: x.name || '（無題）', qty: x.qty || 1, cost: x.cost || 0, pay: x.pay || pay0, t: x.t || 0, for: '', parts: null, outside: true }));
+    }
+    if (order === 'time') rows.sort((a, b) => (a.t || 0) - (b.t || 0));
+    else rows.sort((a, b) => (a.outside ? 1 : 0) - (b.outside ? 1 : 0) || a.space.localeCompare(b.space, 'ja', { numeric: true }));
+    rows.forEach((r, k) => { r.no = k + 1; });
+    return rows;
+  };
+
+  const bcWhoLabel = (who) => (who === 'all' ? '全員' : who === 'own' ? '自分の分' : `${(S().requester(who) || {}).name || '代行'}の分`);
+  const hist = (r) => `${r.t ? `${U.md(r.t)} ${U.time(r.t)} 購入` : '購入'} ・ ${U.yen(r.cost)} ・ ${PAYS[r.pay] || '現金'}${r.extra ? ' ・ 当日追加' : ''}`;
+
+  /** 一覧表（A4縦）。同じサークルはセルを結合し、数量ぶんの □ と「付箋を貼った」の □ を付ける */
+  Sh.buyListHTML = (rows, o) => {
+    const ev = S().ev();
+    const qty = U.sum(rows, (r) => r.qty);
+    const total = U.sum(rows, (r) => r.cost);
+    const byWho = new Map();
+    rows.forEach((r) => byWho.set(r.for, (byWho.get(r.for) || 0) + r.cost));
+    const body = byCircle(rows).map((g) => `<tbody class="grp">${g.items.map((r, k) => `<tr${r.for ? ' class="px"' : ''}>
+        <td class="no">${r.no}</td>
+        ${k === 0 ? `<td class="sp grp-c" rowspan="${g.items.length}">${esc(g.space || '—')}</td><td class="ci grp-c" rowspan="${g.items.length}">${esc(g.circle)}</td>` : ''}
+        <td class="nm">${esc(r.name)}${r.parts ? '<span class="tag-set">セット</span>' : ''}${isRandom(r.name) ? '<span class="tag-rand">ランダム</span>' : ''}${r.parts ? `<div class="parts">中身：${r.parts.map((p) => `${esc(p.n)} ×${p.q}`).join('、')}</div>` : ''}</td>
+        <td class="who">${r.for ? `<span class="bc-px">${esc((S().requester(r.for) || {}).name || '代行')}</span>` : '自分'}</td>
+        <td class="qt">×${r.qty}</td><td class="bx">${boxes(r.qty)}</td>
+        <td class="tm">${r.t ? esc(U.time(r.t)) : ''}</td><td class="mo">${U.num(r.cost)}円</td>
+        <td class="fs"><i class="pk-box"></i></td></tr>`).join('')}</tbody>`).join('');
+    return `<article class="slip bc">
+      <div class="slip-sheet">
+        <header class="sv-head">
+          <div class="sv-title">
+            <h1>購 入 検 品 表</h1>
+            <div class="sv-tag">${esc(ev.name)}${S().eventDate() ? ` ${esc(dateTxt(S().eventDate()))}` : ''}</div>
+            <div class="sv-lead">自分用の控えです。品物に付箋カードを貼り、同じ No. の行に1点ずつチェックします。</div>
+          </div>
+          <div class="sv-from bc-sum">
+            <div><span>品目</span><b>${rows.length}</b></div><div><span>点数</span><b>${qty}点</b></div><div><span>合計</span><b>${U.yen(total)}</b></div>
+            ${byWho.size > 1 ? `<div class="bc-sum-who">${[...byWho].map(([f, v]) => `${esc(f ? (S().requester(f) || {}).name || '代行' : '自分')} ${U.yen(v)}`).join('　')}</div>` : ''}
+          </div>
+        </header>
+        <div class="sv-meta">
+          <div class="fit"><span class="pill">対　象</span><b>${esc(bcWhoLabel(o.who))}</b></div>
+          <div class="fit"><span class="pill">並び順</span><b>${BC_ORDERS[o.order]}</b></div>
+          <div><span class="pill">印 刷 日</span><b>${esc(dateTxt(U.today()))}</b></div>
+        </div>
+        <div class="sv-order">
+          <table class="sv-items bc-items">
+            <thead><tr><th class="no">No.</th><th class="sp">スペース</th><th class="ci">サークル</th><th class="nm">商 品 名</th><th class="who">誰の分</th><th class="qt">数量</th><th class="bx">検品（1点ずつ）</th><th class="tm">購入</th><th class="mo">金額</th><th class="fs">付箋</th></tr></thead>
+            ${body || '<tbody><tr><td colspan="10" class="empty">買った品物はありません</td></tr></tbody>'}
+            <tfoot><tr><td colspan="5">合計</td><td class="qt">${qty}点</td><td class="bx"><span class="pk-sumbox"><i class="pk-box"></i>全${qty}点そろった</span></td><td></td><td class="mo">${U.num(total)}円</td><td></td></tr></tfoot>
+          </table>
+        </div>
+        <div class="pk-memo"><div class="lb">■ メモ（見つからない品物・取り違えなど）</div><div class="pk-lines"><i></i><i></i><i></i></div></div>
+        <div class="sv-foot">${esc(ev.name)} ・ 購入検品表（自分用） ・ ${rows.length}品目</div>
+      </div>
+    </article>`;
+  };
+
+  /** 付箋カード（A4 1枚に12枚。点線で切って品物に貼る） */
+  const CARDS_PER_PAGE = 12;
+  Sh.buyCardsHTML = (rows) => {
+    const card = (r) => `<div class="bc-card${r.for ? ' px' : ''}">
+        <div class="bcc-top"><span class="bcc-no">No.${r.no}</span><b class="bcc-sp">${esc(r.space || '—')}</b><span class="bcc-ci">${esc(r.circle)}</span></div>
+        <div class="bcc-nm">${esc(r.name)}${r.parts ? '<span class="tag-set">セット</span>' : ''}${isRandom(r.name) ? '<span class="tag-rand">ランダム</span>' : ''}</div>
+        ${r.parts ? `<div class="bcc-parts">中身：${r.parts.map((p) => `${esc(p.n)} ×${p.q}`).join('、')}</div>` : ''}
+        <div class="bcc-q"><b>×${r.qty}</b>${boxes(r.qty, 12)}</div>
+        <div class="bcc-ft"><span class="bcc-who${r.for ? ' px' : ''}">${esc(whoName(r.for))}</span><span class="bcc-hist">${esc(hist(r))}</span></div>
+      </div>`;
+    const pages = [];
+    for (let i = 0; i < rows.length; i += CARDS_PER_PAGE) pages.push(rows.slice(i, i + CARDS_PER_PAGE));
+    return pages.map((p, k) => `<article class="slip bc-cards"><div class="bc-grid">${p.map(card).join('')}</div>
+      <div class="bc-cut">付箋カード ${k + 1}/${pages.length} ・ 点線で切って品物に貼ってください（No. は一覧表と同じです）</div></article>`).join('');
+  };
+
+  const bcDocs = (o) => {
+    const rows = Sh.buyRows(o.who, o.order);
+    return { rows, html: (o.kind !== 'cards' ? Sh.buyListHTML(rows, o) : '') + (o.kind !== 'list' ? Sh.buyCardsHTML(rows) : '') };
+  };
+
+  /** 購入検品伝票の画面（対象・印刷するもの・並び順を選んで、プレビューを見ながら印刷） */
+  Sh.buyCheck = (patch) => {
+    const o = { ...bcOpt(), ...(patch || {}) };
+    if (o.who !== 'all' && o.who !== 'own' && !S().requester(o.who)) o.who = 'all';
+    setBcOpt(o);
+    const { rows, html } = bcDocs(o);
+    const seg = (key, map) => `<div class="seg sm">${Object.entries(map).map(([v, l]) => `<button type="button" class="${o[key] === v ? 'on' : ''}" data-bc="${key}" data-v="${v}">${l}</button>`).join('')}</div>`;
+    const whos = [['all', '全員'], ['own', '自分の分'], ...S().requesters().map((r) => [r.id, `${r.name}の分`])];
+    const pages = rows.length ? (o.kind !== 'cards' ? 1 : 0) + (o.kind !== 'list' ? Math.ceil(rows.length / CARDS_PER_PAGE) : 0) : 0;
+    UI().sheet({
+      id: 'buyCheck',
+      center: true,
+      cls: 'slip-preview-sheet bc-sheet',
+      title: `購入検品伝票<small>自分用 ・ ${rows.length}品目${pages ? ` ・ A4 ${pages}枚` : ''}</small>`,
+      html: `<div class="bc-opts">
+          <div class="field"><span>対象</span><div class="chips wrap">${whos.map(([v, l]) => `<button type="button" class="chip sm${o.who === v ? ' on' : ''}" data-bc="who" data-v="${esc(v)}">${esc(l)}</button>`).join('')}</div></div>
+          <div class="grid2">
+            <div class="field"><span>印刷するもの</span>${seg('kind', BC_KINDS)}</div>
+            <div class="field"><span>並び順</span>${seg('order', BC_ORDERS)}</div>
+          </div>
+          <p class="muted small">一覧表で全体を確かめ、付箋カード（A4 1枚に12枚）を点線で切って品物に貼ります。カードと一覧表は同じ No. です。チェキのように見分けにくい品物は、買ったサークルと時刻で見分けてください。</p>
+        </div>
+        ${rows.length ? `<div class="slip-preview">${html.split('<article').filter(Boolean).map((a) => `<div class="sp-page">${'<article' + a}</div>`).join('')}</div>`
+          : '<p class="muted">この対象で買った品物はまだありません。</p>'}
+        <div class="btn-row sticky-acts"><button class="btn ghost" data-close>閉じる</button><button class="btn primary" data-bcprint${rows.length ? '' : ' disabled'}>${U.icon('print')}印刷する</button></div>`,
+      onMount: (el) => {
+        U.$$('[data-bc]', el).forEach((b) => (b.onclick = () => Sh.buyCheck({ [b.dataset.bc]: b.dataset.v })));
+        const pb = U.$('[data-bcprint]', el);
+        if (pb) pb.onclick = () => { if (rows.length) printHTML(bcDocs(o).html); };
+        requestAnimationFrame(() => scalePages(el));
+      },
+    });
+  };
 
   /** 買えた品物がある依頼者（まとめて印刷の対象） */
   Sh.printable = () => S().requesters().filter((r) => S().proxySummary(r.id).boughtCount > 0).map((r) => r.id);
