@@ -799,20 +799,20 @@ body.editing { overflow: hidden; }
   body.printing > *:not(#printsheet) { display: none !important; }
   body.printing { padding: 0; background: #fff; color: #000; }
   #printsheet { display: block; padding: 0; font-size: 10.5pt; }
-  #printsheet h1 { font-size: 15pt; margin: 0 0 2mm; }
-  #printsheet .sub { margin: 0 0 3mm; font-size: 9.5pt; color: #333; }
-  #printsheet table { width: 100%; border-collapse: collapse; }
-  #printsheet th, #printsheet td { border: 1px solid #999; padding: 1.2mm 1.6mm; text-align: left; vertical-align: top; }
-  #printsheet th { background: #eee; font-size: 9pt; }
-  #printsheet td.n { width: 8mm; text-align: right; }
-  #printsheet td.sp { width: 20mm; font-weight: 700; white-space: nowrap; }
-  #printsheet td.pri { width: 14mm; }
-  #printsheet td.ck { width: 12mm; }
-  #printsheet td.it { width: 55mm; font-size: 9.5pt; }
-  #printsheet td.sp small { font-weight: 700; font-size: 8pt; border: 1px solid #000; border-radius: 2pt; padding: 0 .8mm; }
-  #printsheet .mm { font-size: 8.5pt; color: #444; }
-  #printsheet .foot { margin-top: 3mm; font-size: 8.5pt; color: #666; }
-  #printsheet tr { break-inside: avoid; }
+  #printsheet:not(.slips) h1 { font-size: 15pt; margin: 0 0 2mm; }
+  #printsheet:not(.slips) .sub { margin: 0 0 3mm; font-size: 9.5pt; color: #333; }
+  #printsheet:not(.slips) table { width: 100%; border-collapse: collapse; }
+  #printsheet:not(.slips) th, #printsheet:not(.slips) td { border: 1px solid #999; padding: 1.2mm 1.6mm; text-align: left; vertical-align: top; }
+  #printsheet:not(.slips) th { background: #eee; font-size: 9pt; }
+  #printsheet:not(.slips) td.n { width: 8mm; text-align: right; }
+  #printsheet:not(.slips) td.sp { width: 20mm; font-weight: 700; white-space: nowrap; }
+  #printsheet:not(.slips) td.pri { width: 14mm; }
+  #printsheet:not(.slips) td.ck { width: 12mm; }
+  #printsheet:not(.slips) td.it { width: 55mm; font-size: 9.5pt; }
+  #printsheet:not(.slips) td.sp small { font-weight: 700; font-size: 8pt; border: 1px solid #000; border-radius: 2pt; padding: 0 .8mm; }
+  #printsheet:not(.slips) .mm { font-size: 8.5pt; color: #444; }
+  #printsheet:not(.slips) .foot { margin-top: 3mm; font-size: 8.5pt; color: #666; }
+  #printsheet:not(.slips) tr { break-inside: avoid; }
   @page { margin: 12mm 10mm; }
 }
 
@@ -1275,3 +1275,173 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .fc-seg button.on { background: var(--accent); color: #fff; }
 .fc-seg button.dis { opacity: .35; }
 .ie-st.warn { color: var(--warn-ink); }
+
+/* ============================================================ 発送伝票（js/ship.js）
+   以前の代行で使っていた発送伝票の書式を引き継ぎ、A4縦（余白10mm＝幅190mm）に収める。
+   画面のプレビューと印刷で同じスタイルを使う（色は印刷向けに固定。ダークテーマの影響を受けない） */
+.slip { width: 190mm; box-sizing: border-box; background: #fff; color: #111; font-size: 9.5pt; line-height: 1.45;
+  font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", "YuGothic", "Meiryo", "Noto Sans JP", sans-serif;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; text-align: left; }
+.slip * { box-sizing: border-box; }
+.slip .lb { font-size: 7.5pt; color: #555; font-weight: 700; letter-spacing: .06em; }
+.slip-sheet { border: 1.4pt solid #111; }
+/* 見出しと右上の差出人 */
+.sv-head { display: flex; border-bottom: 1.4pt solid #111; }
+.sv-title { flex: 1; padding: 3.5mm 5mm 2.5mm; }
+.sv-title h1 { margin: 0; font-size: 20pt; font-weight: 900; letter-spacing: .25em; }
+.sv-tag { font-size: 9pt; margin-top: 1mm; }
+.sv-lead { font-size: 7.5pt; color: #555; }
+.sv-from { width: 70mm; border-left: 1.4pt solid #111; background: #f6f6f6; padding: 3mm 4mm; font-size: 8pt; color: #333; }
+.sv-fname { font-size: 13pt; font-weight: 900; color: #111; margin-bottom: 1mm; }
+.sv-ask { font-size: 7pt; color: #777; margin-top: .5mm; }
+/* 梱包日・発送方法・OC名・No. の帯 */
+.sv-meta { display: flex; border-bottom: 1.4pt solid #111; }
+.sv-meta > div { flex: 1; display: flex; align-items: center; gap: 2mm; padding: 2mm 3mm; border-right: 1pt solid #999; white-space: nowrap; overflow: hidden; }
+.sv-meta > div:last-child { border-right: 0; }
+.sv-meta > div.fit { flex: none; }   /* 日付と発送方法は切らない。長い OC 名だけ「…」にする */
+.sv-meta .sv-no { flex: none; justify-content: flex-end; }
+.sv-meta b { font-size: 9.5pt; overflow: hidden; text-overflow: ellipsis; }
+.sv-no b { color: #555; font-variant-numeric: tabular-nums; letter-spacing: .05em; }
+.slip .pill { background: #111; color: #fff; font-size: 7pt; font-weight: 800; padding: .6mm 1.6mm; border-radius: .8mm; flex: none; letter-spacing: .08em; }
+/* 黒い帯（矢印・四角は文字ではなく図形で描く。▶ は端末によって絵文字になるため） */
+.sv-bar { background: #111; color: #fff; font-size: 8.5pt; font-weight: 800; padding: 1.4mm 4mm; letter-spacing: .06em; }
+.sv-bar.arrow::before { content: ""; display: inline-block; width: 0; height: 0; border-top: 1.4mm solid transparent; border-bottom: 1.4mm solid transparent; border-left: 2mm solid #fff; margin-right: .6mm; }
+.sv-bar.arrow::after { content: ""; display: none; }
+.sv-bar.sq::before { content: ""; display: inline-block; width: 2.4mm; height: 2.4mm; background: #fff; margin-right: 2mm; }
+/* 項目と値の表（お届け先様・発送元） */
+.sv-kv { width: calc(100% - 8mm); margin: 1mm 4mm 1.5mm; border-collapse: collapse; }
+.sv-kv th { width: 20mm; text-align: left; font-size: 7.5pt; font-weight: 500; color: #777; padding: 1.2mm 0; border-bottom: .6pt solid #ddd; border-right: .6pt dashed #bbb; vertical-align: top; }
+.sv-kv .th2 { width: 13mm; text-align: center; }
+.sv-kv td { padding: 1.2mm 3mm; border-bottom: .6pt solid #ddd; vertical-align: top; }
+.sv-kv td.big { font-size: 11pt; font-weight: 800; }
+.sv-kv tr:last-child th, .sv-kv tr:last-child td { border-bottom: 0; }
+/* ご注文内容 */
+.sv-order { padding: 2.5mm 4mm 3mm; }
+.sv-items { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+.sv-items th { background: #eee; border: .7pt solid #999; padding: 1.2mm 1.6mm; font-size: 7.5pt; font-weight: 800; text-align: center; }
+.sv-items td { border: .7pt solid #bbb; padding: 1.3mm 1.6mm; vertical-align: top; }
+.sv-items .sp { width: 16mm; font-weight: 800; white-space: nowrap; }
+.sv-items .ci { width: 34mm; }
+.sv-items .qt { width: 11mm; text-align: center; font-weight: 800; white-space: nowrap; }
+.sv-items .mo { width: 19mm; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sv-items tbody tr { break-inside: avoid; }
+.sv-items tfoot td { background: #f3f3f3; font-weight: 800; text-align: right; font-size: 8pt; }
+.sv-items tfoot td.mo { font-size: 9.5pt; }
+.sv-items td.empty { text-align: center; color: #777; padding: 4mm; }
+.tag-rand { display: inline-block; margin-left: 1.5mm; font-size: 6.5pt; font-weight: 800; color: #2e7d32; border: .7pt solid #81c784; background: #eaf6ea; border-radius: .8mm; padding: 0 1mm; }
+.sv-miss { margin-top: 2mm; border: .7pt dashed #999; padding: 1.6mm 2.5mm; font-size: 8pt; }
+.sv-miss ul { margin: .8mm 0 0; padding: 0; list-style: none; }
+.sv-miss li { display: flex; gap: 2mm; }
+.sv-miss li span { margin-left: auto; color: #b45309; font-weight: 700; white-space: nowrap; }
+.sv-notes { border-top: 1pt solid #111; background: #fdfaf3; padding: 2mm 4mm; font-size: 7.5pt; color: #333; }
+/* メモ・備考と金額 */
+.sv-bottom { display: flex; border-top: 1pt solid #111; }
+.sv-memo { flex: 1; padding: 2.5mm 4mm; font-size: 8.5pt; min-height: 16mm; }
+.sv-sum { width: 66mm; border-collapse: collapse; border-left: 1pt solid #111; }
+.sv-sum th { text-align: left; font-size: 8pt; font-weight: 600; padding: 2mm 3mm; border-bottom: .7pt solid #bbb; border-right: .7pt solid #bbb; color: #333; }
+.sv-sum td { text-align: right; font-size: 10.5pt; font-weight: 800; padding: 2mm 3mm; border-bottom: .7pt solid #bbb; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sv-sum tr.tot th, .sv-sum tr.tot td { background: #111; color: #fff; border-bottom: 0; }
+.sv-sum tr.tot th { letter-spacing: .3em; font-weight: 800; }
+.sv-sum tr.tot td { font-size: 13pt; }
+.sv-foot { border-top: .7pt solid #bbb; padding: 1.2mm 4mm; font-size: 7pt; color: #888; text-align: right; }
+/* 切り取り線と宛名ラベル */
+.slip-cut { position: relative; margin: 6mm 0 5mm; border-top: 1pt dashed #777; text-align: center; height: 0; }
+.slip-cut2 { display: none; font-size: 8pt; color: #666; margin-bottom: 3mm; letter-spacing: .06em; }
+/* 1ページに入らないときは、ラベルを次のページの頭に（切り取り線の代わりに見出し） */
+.slip.split .slip-cut { display: none; }
+.slip.split .slip-cut2 { display: block; break-before: page; page-break-before: always; }
+.sp-page .slip.split .slip-cut2 { margin-top: 10mm; padding-top: 6mm; border-top: 2px solid #ccc; }
+.slip-cut span { position: relative; top: -2.4mm; background: #fff; padding: 0 3mm; font-size: 7pt; color: #666; letter-spacing: .1em; }
+.slip-label { display: flex; gap: 5mm; border: 1.6pt solid #111; border-radius: 2mm; padding: 4mm 5mm; min-height: 56mm; break-inside: avoid; page-break-inside: avoid; }
+/* 住所は空白の位置で折り返す（「マンショ／ン」のように途中で切れないように）。入りきらないときだけ途中で折る */
+.slip .sl-addr, .slip .sv-kv td { word-break: keep-all; overflow-wrap: anywhere; }
+.sl-to { flex: 1.6; min-width: 0; }
+.sl-hd { display: inline-block; background: #111; color: #fff; font-size: 7.5pt; font-weight: 800; padding: .6mm 2.4mm; border-radius: .8mm; letter-spacing: .1em; }
+.sl-postal { font-size: 15pt; font-weight: 800; letter-spacing: .06em; margin-top: 2mm; font-variant-numeric: tabular-nums; }
+.sl-addr { font-size: 12.5pt; font-weight: 700; margin: 1.5mm 0 3mm; line-height: 1.5; }
+.sl-name { font-size: 19pt; font-weight: 900; border-bottom: 1.2pt solid #111; display: inline-block; padding-bottom: .5mm; }
+.sl-name span { font-size: 12pt; margin-left: 3mm; }
+.sl-tel { margin-top: 2mm; font-size: 10pt; font-weight: 700; }
+.sl-side { flex: 1; display: flex; flex-direction: column; gap: 1.6mm; min-width: 0; }
+.sl-box { border: .8pt solid #888; padding: 1.4mm 2.4mm; font-size: 8pt; }
+.sl-saddr { line-height: 1.4; }
+.sl-sname { font-weight: 800; font-size: 9.5pt; }
+.sl-goods { font-weight: 800; font-size: 10pt; }
+.sl-cod { margin-top: 1mm; text-align: center; font-size: 13pt; font-weight: 900; border: 1.4pt solid #111; letter-spacing: .3em; }
+.sl-trk { font-size: 8pt; margin-top: .6mm; }
+.sl-no { font-size: 7pt; color: #777; text-align: right; margin-top: auto; }
+/* 画面のプレビュー（A4 を幅に合わせて縮める。js が transform を付ける） */
+.slip-preview { display: flex; flex-direction: column; gap: 14px; margin-bottom: 10px; }
+.sp-page { width: 100%; overflow: hidden; background: #fff; border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); }
+.sp-page .slip { transform-origin: top left; }
+@media (min-width: 960px) { .sheet-wrap.slip-preview-sheet .sheet { width: min(820px, 94vw) !important; } }
+/* 入力の画面 */
+.ship-form .sf-sec { border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 12px; }
+.ship-form h4 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: .95rem; flex-wrap: wrap; }
+.ship-form h4 small { color: var(--muted); font-weight: 500; font-size: .76rem; }
+.ship-form .sf-sender summary { list-style: none; cursor: pointer; min-height: 40px; display: flex; align-items: center; }
+.ship-form .sf-sender summary::-webkit-details-marker { display: none; }
+.sf-methods { gap: 6px; }
+.sf-methods .chip.on, .sf-fee button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sf-total { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 10px 12px; border-radius: 12px; background: var(--surface2); }
+.sf-total b { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+.sf-lack { color: var(--warn-ink); background: var(--warn-bg); border-radius: 10px; padding: 8px 10px; font-size: .85rem; display: flex; gap: 6px; align-items: flex-start; }
+.sf-ok { color: var(--ok); font-weight: 700; font-size: .85rem; display: flex; gap: 6px; align-items: center; }
+.sf-label { align-self: end; }
+/* 印刷：1人1枚（A4縦）。巡回表の印刷とは別のスタイル */
+@media print {
+  body.printing-slips #printsheet.slips { font-size: 9.5pt; }
+  body.printing-slips #printsheet.slips .slip { break-after: page; page-break-after: always; }
+  body.printing-slips #printsheet.slips .slip:last-child { break-after: auto; page-break-after: auto; }
+  @page { size: A4 portrait; margin: 10mm; }
+}
+
+/* 精算の画面の「発送」欄と、代行のカードの印 */
+.ship-box { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 10px 0; display: grid; gap: 6px; }
+.ship-box p { margin: 0; }
+.ship-box .sb-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ship-box .sb-hd b { display: flex; align-items: center; gap: 6px; }
+.sb-st, .ship-tag { font-size: .76rem; font-weight: 800; padding: 2px 8px; border-radius: 6px; background: var(--surface2); color: var(--muted); font-style: normal; white-space: nowrap; }
+.ship-tag { display: inline-block; margin-top: 2px; }
+.ship-box.lack .sb-st, .ship-tag.lack { background: var(--warn-bg); color: var(--warn-ink); }
+.ship-box.ready .sb-st, .ship-tag.ready { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.ship-box.shipped .sb-st, .ship-tag.shipped { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.proxy-acts { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+
+/* ============================================================ 梱包伝票（js/ship.js の Sh.packHTML）
+   発送伝票と同じ書式で、書き込む欄を広く取る。ボールペンで書けるよう、記入欄は白地＋細い罫線 */
+.slip .pk-box { display: inline-block; width: 4.2mm; height: 4.2mm; border: 1pt solid #111; border-radius: .6mm; background: #fff; vertical-align: middle; flex: none; }
+.pk-to { display: flex; align-items: baseline; gap: 3mm; padding: 2mm 4mm; border-bottom: 1pt solid #111; font-size: 9pt; }
+.pk-to b { font-size: 10.5pt; white-space: nowrap; }
+.pk-to span:last-child { color: #333; }
+.sv-bar .pk-count { float: right; font-weight: 700; letter-spacing: .04em; }
+.pk-items td { padding-top: 2mm; padding-bottom: 2mm; vertical-align: middle; }
+.pk-items .ck { width: 10mm; text-align: center; }
+.pk-items .no { width: 7mm; text-align: center; color: #777; font-size: 7.5pt; }
+.pk-items .sp { width: 15mm; }
+.pk-items .ci { width: 28mm; }
+.pk-items .cnt { width: 17mm; text-align: right; }
+.pk-items .cnt span { color: #aaa; font-size: 7.5pt; }
+.pk-items .memo { width: 36mm; }
+.pk-items thead .cnt, .pk-items thead .memo { text-align: center; }
+.pk-items tfoot td { text-align: right; }
+.pk-items tfoot td.qt { text-align: center; font-size: 9pt; }
+.pk-bottom { display: flex; border-top: 1pt solid #111; }
+.pk-check { flex: 1; padding: 2.5mm 4mm; }
+.pk-check ul { list-style: none; margin: 1.5mm 0 0; padding: 0; display: grid; gap: 1.8mm; font-size: 8.5pt; }
+.pk-check li { display: flex; align-items: center; gap: 2.4mm; }
+.pk-fill { width: 82mm; border-left: 1pt solid #111; padding: 2.5mm 4mm; }
+.pk-fill table { width: 100%; border-collapse: collapse; margin-top: 1.5mm; font-size: 8pt; }
+.pk-fill th { width: 15mm; text-align: left; font-weight: 600; color: #555; padding: 0 1mm; height: 8.5mm; border-bottom: .7pt solid #bbb; white-space: nowrap; }
+.pk-fill td { border-bottom: .7pt solid #bbb; height: 8.5mm; padding: 0 1.5mm; text-align: right; font-weight: 700; font-size: 9pt; }
+.pk-fill td[colspan] { text-align: left; }
+.pk-fill td span { color: #777; font-weight: 500; font-size: 7.5pt; }
+.pk-memo { border-top: 1pt solid #111; padding: 2.5mm 4mm 3mm; }
+.pk-lines i { display: block; height: 7.5mm; border-bottom: .7pt solid #ccc; }
+/* 品物が多くて2ページ目に続くときは、表の見出しを繰り返し、記入欄は分けない */
+.pk-items thead { display: table-header-group; }
+.pk-bottom, .pk-memo { break-inside: avoid; page-break-inside: avoid; }
+/* 入力の画面：印刷の手順 */
+.sf-steps { margin: 0 0 10px; padding-left: 1.3em; display: grid; gap: 4px; font-size: .86rem; color: var(--muted); }
+.sf-steps b { color: var(--text); }
+.slip-preview-sheet .sf-kind { margin-bottom: 4px; }

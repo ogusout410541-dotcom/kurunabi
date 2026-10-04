@@ -79,7 +79,7 @@
   /** 送受信するのは計画まわりだけ（テーマや地図の向きは端末ごと） */
   const payload = () => {
     const st = S().state;
-    return { v: 1, eventId: st.eventId, data: st.data, customEvents: st.customEvents, favorites: st.favorites, layouts: st.layouts };
+    return { v: 1, eventId: st.eventId, data: st.data, customEvents: st.customEvents, favorites: st.favorites, layouts: st.layouts, sender: st.sender || {} };
   };
 
   const apply = (obj) => {
@@ -89,6 +89,7 @@
     st.customEvents = obj.customEvents || {};
     st.favorites = obj.favorites || {};
     st.layouts = obj.layouts || {};
+    if (obj.sender) st.sender = obj.sender;
     if (obj.eventId && (Object.keys(st.customEvents).includes(obj.eventId) || (HC.bundled || []).some((e) => e.id === obj.eventId))) {
       st.eventId = obj.eventId;
     }

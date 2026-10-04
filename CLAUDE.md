@@ -30,6 +30,7 @@ js/store.js           HC.store  : 状態・永続化・集計・undo・入出力
 js/ui.js              HC.ui     : シート（スマホ=ボトムシート / PC=右パネル）、トースト、テンキー、確認
 js/map.js             HC.map    : SVG 配置図（色分け・番号・ルート線・ピンチ/パン・縦持ちで90°回転）
 js/views.js           HC.views  : 各画面の HTML 生成（go/list/map/log/circles/more ＋ サークル詳細シート ＋ 当日モードの画面 V.day/V.dayMenu）
+js/ship.js            HC.ship   : 代行の梱包伝票・発送伝票（入力の画面・プレビュー・A4 印刷。下の「梱包・発送伝票」）
 js/app.js             HC.app / HC.actions : 起動、画面切替、data-act のハンドラ、入力(change)処理、ドラッグ並べ替え
 sw.js                 オフラインキャッシュ（リリース時は CACHE のバージョンを上げる）
                       画面から 'status' / 'refresh' を postMessage で問い合わせできる（設定のオフライン欄）
@@ -50,13 +51,15 @@ tools/gas/コード.gs    同期用の Google Apps Script（貼り付けてウ�
   layouts: { [eventId]: layoutSpec },  // 配置図エディタで作ったもの（同梱の配置図より優先）
   settings: { theme, font, haptics, wakeLock, mapMode:'simple'|'image', mapOrient, routeMode:'must'|'tier'|'short', wallFirst(壁を先に回る), showRoute, defaultPay:'cash'|'card', dayMode(当日モード) },
   demo: null | { eventId, snap, offset, day, syncDirty, t },   // デモ中の控え（下の「当日モード・デモモード」）
+  sender: { name, x, mail, tagline, postal, phone, addr1, addr2, notes, nextNo, label },   // 伝票の差出人（全イベント共通・同期する）
 }
 EventData = { budget, cash（財布の現金。cashBreak があるとその合計で上書きされる）, cashBreak: {[金種]: 枚数}, reserve,
               order: [cid], entries: {[cid]: Entry}, extras: [Extra],
               addCircles: [Circle], start: 'door-r'|sid, focus: cid|null, date, updated,
               openAt: 'HH:MM'（自分の入場時刻）, endAt: 'HH:MM'（終了）, startedAt: ms（「いま開始」の時刻）,
               cashSettled: 現金の支出のうち金種に反映済みの額, cashStart: 買い物前の金種（リセットで戻す）, routedAt: 最後にルートを作った時刻,
-              here: いまいる場所 {x,y,label,t}, requesters: 代行の依頼者 [{id, name, settledAt}]}
+              here: いまいる場所 {x,y,label,t}, requesters: 代行の依頼者 [{id, name, settledAt, ship}]}
+// ship = { name, kana, postal, phone, addr1, addr2, method, feeMode:'charge'|'cod'|'none', fee, date, tracking, goods, note, no(伝票番号), shippedAt }
 // 同梱イベント側の openAt/endAt/schedule が既定値。EventData の値が空ならそちらを使う（S.times()）
 Entry = { cid, pri: 1必須|2優先|3通常|4余裕, items: [Item], memo, menu(お品書きURL),
           status: 'todo'|'later'|'done'|'soldout'|'skip', doneAt, snap: {name, tw, space}, addedAt,
@@ -121,6 +124,12 @@ Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv�
 - **完了するときの確認**（1.5.5、`finishCheck`）：まだチェックしていない品物があるのにサークルを完了（`A.setStatus` の done）にするときは、品物ごとに
   「買った／売り切れ／見送り」を選ばせてからまとめて記録する（価格未定は「買った」を選べない）。12th 当日、詳細の「当日の状態」で完了にした6点が
   CSV で「購入済」に見えていた（CSV の状態はサークル単位だった）ための対策。CSV は「サークルの状態」と「品物の状態」（`S.itemStatusLabel`）を分けて出す
+- **梱包・発送伝票**（1.6.0、`js/ship.js`）：精算の画面（`A.proxySheet`）の「梱包・発送伝票を作る」→ `HC.ship.open(rid)`。代行のカードに進み具合（`Sh.state`：伝票の入力がまだ／準備OK／発送済み）と「まとめて印刷」（`A.shipAll`）。
+  書式は以前の代行（`C:\Users\user\Desktop\代行業務` の PDF）の発送伝票を引き継いだもの。**梱包伝票**は箱詰めのチェック用（品物ごとの □・数えた数・状態・メモ、梱包のチェック、厚さ・重さ・追跡番号・梱包者、罫線のメモ）で、金額を載せないので同封もできる。
+  **発送伝票**は A 商品代金／B 送料（`feeMode`）／合計、ご用意できなかったもの、※の注意書き、下に切り取って貼る宛名ラベル。精算の方法（振込先など）は**書かない**（本人の希望）。
+  印刷は `#printsheet.slips` ＋ `body.printing-slips`、A4縦・余白10mm（幅190mm・高さ277mm）。伝票＋ラベルが入らないときは `fitPages` が `.split` を付けてラベルだけ次のページへ。
+  番号（`ship.no`）は初めて印刷したときに `sender.nextNo`（既定 17＝以前の続き）から割り当て、梱包と発送で共通。印刷するもの（両方／梱包／発送）は端末ごと（`localStorage['kurunavi.slipKind']`）。
+  確認は CDP の `Page.printToPDF`（`printBackground`・`preferCSSPageSize`）で PDF にして見る。入力欄の例には実在の宛先を書かない
 - **連打の保険**：完了して次のカードに切り替わった直後の 0.7 秒は、当日カードのボタンを押しても反応しない（`app.curGuard` と `.cur.enter`）
 - **当日までの準備**（`V.prep`）：開催前（と、まだ1件も回っていない間）の当日タブに、開催日・予算・お品書き待ち・価格未定・ルート・
   財布・オフライン保存・同期・新しい版の抜けを出す。始まってからは抜けがあるときだけ、たたんで出す。開け閉めは `V.prepOpen` に覚える。
@@ -317,7 +326,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## オフライン
 
-- https で一度開けば SW が本体一式（現在23件。公開版で SW の status が返す件数の実測）をキャッシュし、圏外でも計画・記録・地図・お品書き画像はそのまま使える
+- https で一度開けば SW が本体一式（現在24件。1.6.0 で js/ship.js を足した。公開版で SW の status が返す件数で確かめる）をキャッシュし、圏外でも計画・記録・地図・お品書き画像はそのまま使える
 - 設定の「オフライン」欄から、保存済みファイル数の確認と取り込み直し（SW への `refresh` メッセージ）ができる
 - 外部リンク（X・pixiv・お品書きURL）だけは電波が必要。圏外では薄く表示し、押してもトーストで知らせるだけにしている
 - **localhost では SW を無効化＆自動で unregister する**ので、ローカル検証でキャッシュに悩まされない
@@ -325,7 +334,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## 版の更新（ここを間違えると「いつまでも古い版のまま」になる）
 
-- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.5.5）。
+- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.6.0）。
   **`js/changelog.js` の先頭にもその版の内容を1件足す**（tag: new=新機能 / up=改善 / fix=修正。利用者向けの自然な文で）。
   更新後の初回起動で、前に開いた版（`localStorage['kurunavi.version']`）より新しい分を「新しくなったこと」として自動で出す（`A.changelog({since})`）
 - **SW の install はブラウザのHTTPキャッシュを避けて取り込む**（`freshRequests()`＝`cache:'reload'` ＋ `?v=CACHE`）。
@@ -405,6 +414,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 - 12th 当日（2026-10-04）の実績：20サークル・39点・¥51,100（自分 ¥23,700／代行2人 ¥27,400）、12:12〜14:56。
   分かったこと：チェックせずに完了にした品物が CSV で購入済に見えた／まとめ買いの値引きをメモに書いていた → 1.5.5 で前者に対応
 - [x] 品物ごとの状態（CSV・詳細）と、完了するときの未購入の確認（1.5.5）
+- [x] 梱包伝票・発送伝票（宛名ラベルつき）の入力と A4 印刷、報告の文章の締めをやわらかく（1.6.0）
 - [ ] サークル画像の取り込み：URLをもらってから。**目的のサークルのみ**・**アプリに同梱**（`data/cuts/`）で本人合意済み（2026-09-24）。
       CORSのため端末側での直接取得は不可なので、こちらで取得→長辺800pxのWebPに縮小→同梱→一覧・詳細・当日カードに表示する
 - 運用方針（2026-09-24 本人確認）：スマホは **GitHub Pages に公開**して開く／当日の記録は**チェックだけ**が基本（予定額で自動計上、違ったときだけ金額を直す）

@@ -62,6 +62,7 @@
     layouts: {},   // イベントIDごとの配置図（エディタで作ったもの。同梱の配置図より優先）
     sync: defaultSync(),
     settings: defaultSettings(),
+    sender: {},    // 発送伝票の差出人（自分）{ name, postal, addr1, addr2, phone }。全イベントで共通
     demo: null,    // デモ中の控え { eventId, snap(始める前のデータ), offset(時計のずれ), day, syncDirty, t }
   });
 
@@ -112,6 +113,7 @@
     out.favorites = st.favorites || {};
     out.layouts = st.layouts || {};
     out.sync = { ...defaultSync(), ...(st.sync || {}) };
+    out.sender = st.sender || {};
     out.data = S.migrateData(out.data);
     out.v = VERSION;
     return out;
@@ -619,6 +621,32 @@
     if (!it) return;
     if (rid) it.for = rid; else delete it.for;
   });
+  /**
+   * 発送の情報（依頼者ごと）。r.ship = { name, postal, addr1, addr2, phone, method, feeMode:'charge'|'cod'|'none', fee,
+   *   date('YYYY-MM-DD'), tracking, goods（ラベルの品名）, note（備考）, shippedAt }
+   * 入力のたびに保存するので取り消しの控えは作らない（label=null）
+   */
+  S.setShip = (rid, patch) => S.mutate(null, (d) => {
+    const r = (d.requesters || []).find((x) => x.id === rid);
+    if (r) r.ship = { ...(r.ship || {}), ...patch };
+  });
+  S.setShipped = (rid, on) => S.mutate(on ? '発送済みにする' : '発送済みを戻す', (d) => {
+    const r = (d.requesters || []).find((x) => x.id === rid);
+    if (r) r.ship = { ...(r.ship || {}), shippedAt: on ? Date.now() : 0 };
+  });
+  /** 差出人（自分）。全イベント共通なので state 直下に置く */
+  S.setSender = (patch) => { S.state.sender = { ...(S.state.sender || {}), ...patch }; S.save(); U.emit('change', { sender: true }); };
+  /** 同じ名前の依頼者に、ほかのイベントで入れた宛先があれば返す（次の代行で入れ直さなくて済むように） */
+  S.knownShip = (name, exceptId) => {
+    const key = U.norm(name);
+    let best = null;
+    Object.values(S.state.data).forEach((d) => (d.requesters || []).forEach((r) => {
+      if (r.id === exceptId || U.norm(r.name) !== key || !r.ship || !r.ship.addr1) return;
+      if (!best || (r.ship.shippedAt || 0) > (best.shippedAt || 0)) best = r.ship;
+    }));
+    return best;
+  };
+
   S.setSettled = (rid, on) => S.mutate(on ? '精算済みにする' : '精算済みを戻す', (d) => {
     const r = (d.requesters || []).find((x) => x.id === rid);
     if (r) r.settledAt = on ? Date.now() : 0;

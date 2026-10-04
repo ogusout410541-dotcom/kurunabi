@@ -9,7 +9,7 @@
   const P = HC.parser;
   const Lay = HC.layout;
 
-  HC.VERSION = '1.5.5';
+  HC.VERSION = '1.6.0';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
@@ -671,9 +671,17 @@
     if (got.length) out.push('■ 買えたもの', ...got.map((x) => `${line(x)}　${U.yen(x.cost)}`), '');
     if (miss.length) out.push('■ 買えなかったもの', ...miss.map((x) => `${line(x)}（${x.status === 'soldout' ? '売り切れ' : '見送り'}）`), '');
     if (todo.length) out.push('■ まだ回っていないもの', ...todo.map(line), '');
-    out.push(`立て替えた合計：${U.yen(m.bought)}`);
-    if (m.bought) out.push('お支払いをお願いします。');
+    if (m.bought) out.push(`立て替え分は合計 ${U.yen(m.bought)} です。`, 'お手すきのときに精算していただけると助かります。');
+    else out.push('今回は買えたものがありませんでした。');
+    out.push('', 'ご依頼ありがとうございました！');
     return out.join('\n');
+  };
+
+  /** 梱包・発送伝票をまとめて印刷（買えた品物がある依頼者全員。発送済みの人は除く） */
+  A.shipAll = () => {
+    const rids = HC.ship.printable().filter((rid) => HC.ship.state(rid) !== 'shipped');
+    if (!rids.length) return UI.toast('印刷する伝票がありません（全員発送済みです）');
+    HC.ship.preview(rids);
   };
 
   /** 依頼者ごとの精算の画面 */
@@ -695,6 +703,16 @@
           <div><span>まだ</span><b>${m.todoCount}<small>件</small></b></div>
         </section>
         ${r.settledAt ? `<p class="ok small">${U.icon('check', 'sm')}${U.esc(U.md(r.settledAt))} に精算済み</p>` : ''}
+        ${(() => {
+          const sst = HC.ship.state(rid);
+          if (sst === 'none') return '';
+          const sh = r.ship || {};
+          return `<section class="ship-box ${sst}">
+            <div class="sb-hd"><b>${U.icon('print', 'sm')}発送</b><span class="sb-st">${HC.ship.STATE[sst]}${sst === 'shipped' ? `（${U.esc(U.md(sh.shippedAt))}）` : ''}</span></div>
+            ${sh.addr1 ? `<p class="small">〒${U.esc(HC.ship.postal(sh.postal))} ${U.esc(sh.addr1)} ${U.esc(sh.name || '')} 様${sh.method ? ` ・ ${U.esc(sh.method)}` : ''}</p>` : '<p class="muted small">宛先を入れて、箱詰めのチェックに使う梱包伝票と、同封する発送伝票・宛名ラベルを印刷できます。</p>'}
+            <button class="btn ${sst === 'shipped' ? '' : 'primary '}block" data-ship>${U.icon('print')}梱包・発送伝票を作る</button>
+          </section>`;
+        })()}
         ${m.rows.length ? `<ul class="proxy-items">${m.rows.map((x) => `<li>
             <button class="pi-main" data-act="openCircle" data-cid="${U.esc(x.cid)}"><b>${U.esc(x.space)}</b><span>${U.esc(x.circle)}<small>${U.esc(x.name)}${x.qty > 1 ? ' ×' + x.qty : ''}${x.price ? ` ・ 予定 ${U.yen(x.price * x.qty)}` : ''}</small></span></button>
             <span class="pi-st">${st(x)}</span></li>`).join('')}</ul>`
@@ -708,6 +726,8 @@
         <p class="muted small">代行の分は自分の予算には入りません。現金で払った分は、財布の現金からは引かれます。</p>`,
       onMount: (el) => {
         U.$('[data-add]', el).onclick = () => A.proxyAdd({ rid });
+        const sb = U.$('[data-ship]', el);
+        if (sb) sb.onclick = () => HC.ship.open(rid);
         U.$('[data-copy]', el).onclick = async () => {
           const t = proxyText(rid);
           if (await U.copy(t)) UI.toast('報告の文章をコピーしました。LINE などに貼り付けて送れます');

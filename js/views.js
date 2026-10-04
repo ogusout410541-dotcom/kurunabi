@@ -775,7 +775,7 @@
         return `<table class="proxy-table">
           <thead><tr><th>依頼者</th><th>予定</th><th>立て替え</th><th>まだ</th></tr></thead>
           <tbody>${ms.map(({ r, m }) => `<tr data-act="proxySheet" data-rid="${esc(r.id)}">
-            <td class="pt-name"><span class="rq-dot ${V.rqClass(r.id)}"></span><span><b>${esc(r.name)}</b><small>${m.count}件・買えた${m.boughtCount}${m.missCount ? `・買えなかった${m.missCount}` : ''}${r.settledAt ? '・精算済み' : ''}</small></span></td>
+            <td class="pt-name"><span class="rq-dot ${V.rqClass(r.id)}"></span><span><b>${esc(r.name)}</b><small>${m.count}件・買えた${m.boughtCount}${m.missCount ? `・買えなかった${m.missCount}` : ''}${r.settledAt ? '・精算済み' : ''}</small>${(() => { const st = HC.ship ? HC.ship.state(r.id) : 'none'; return st === 'none' ? '' : `<em class="ship-tag ${st}">${HC.ship.STATE[st]}</em>`; })()}</span></td>
             <td class="mo">${U.yen(m.planned)}</td>
             <td class="mo"><b>${U.yen(m.bought)}</b></td>
             <td class="mo">${m.left ? U.yen(m.left) : '—'}</td></tr>`).join('')}</tbody>
@@ -784,7 +784,10 @@
       })()}
       <p class="band-legend muted small">左の帯の色：<span class="lg-own">自分の分（優先度の色）</span>${rq.map((r) => `<span><i class="rq-dot ${V.rqClass(r.id)}"></i>${esc(r.name)}</span>`).join('')}<span><i class="lg-mix"></i>両方あるサークルは斜めに2色</span></p>
       <p class="muted small">「立て替え」は買えた分（あとでもらう額）、「まだ」はまだ買っていない分の予定です。行を押すと精算の画面を開きます。</p>
-      <button class="link-btn" data-act="addRequester">${U.icon('plus', 'sm')}依頼者を追加</button>
+      <div class="proxy-acts">
+        <button class="link-btn" data-act="addRequester">${U.icon('plus', 'sm')}依頼者を追加</button>
+        ${HC.ship && HC.ship.printable().length ? `<button class="link-btn" data-act="shipAll">${U.icon('print', 'sm')}梱包・発送伝票をまとめて印刷</button>` : ''}
+      </div>
     </section>`;
   };
 
