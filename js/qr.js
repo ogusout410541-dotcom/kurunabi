@@ -297,6 +297,9 @@
     return { size, version: ver, ecl, mask: best.mask, modules, get: (x, y) => modules[y][x] };
   };
 
+  /** 読み取り（js/qrscan.js）と共通の表・計算。作成と読み取りで食い違わないように同じものを使う */
+  Q._t = { ECC, BLOCKS, ECL_BITS, alignPositions, rawCodewords, EXP, LOG, gmul, MASKS, newGrid, drawFunction };
+
   /** 文字数が入りきるか（true/false）。ざっくり確認用 */
   Q.fits = (text, ecl = 'L') => utf8(text).length * 8 + 20 <= dataCapacity(40, ecl) * 8;
 

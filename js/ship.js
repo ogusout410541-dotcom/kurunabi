@@ -639,19 +639,29 @@
     if (!r) return 'none';
     if (r.ship && r.ship.shippedAt) return 'shipped';
     if (!S().proxySummary(rid).boughtCount) return 'none';
-    return Sh.data(rid).lacks.length ? 'lack' : 'ready';   // 品物が無い人は上で none になる
+    if (Sh.data(rid).lacks.length) return 'lack';
+    const u = S().unitRows(rid);
+    return u.units && u.pack === u.units ? 'packed' : 'ready';   // 品物が無い人は上で none になる
   };
-  Sh.STATE = { shipped: '発送済み', ready: '伝票の準備完了', lack: '伝票の入力待ち', none: '' };
+  Sh.STATE = { shipped: '発送済み', packed: '梱包済み', ready: '伝票の準備完了', lack: '伝票の入力待ち', none: '' };
 
   // ------------------------------------------------------------------ 購入検品伝票（自分用）
   /* 会場で買った品物（自分の分も代行の分も）を、一覧表と付箋カードにして印刷する。
      付箋カードを品物に貼り、一覧表と同じ No. で照らし合わせながら1点ずつ検品する（チェキのように見分けにくい品物のため）。
      そのあとの梱包は付箋カードを見ながら行う。人に渡すものではないので、金額・支払方法・購入時刻も載せる */
   const BC_KEY = 'kurunavi.bcOpt';
-  const BC_DEF = { who: 'all', kind: 'both', order: 'space' };
-  const bcOpt = () => { try { return { ...BC_DEF, ...JSON.parse(localStorage.getItem(BC_KEY) || '{}') }; } catch (e) { return { ...BC_DEF }; } };
+  const BC_DEF = { who: 'all', parts: ['list', 'tags'], order: 'space' };
+  const bcOpt = () => {
+    let o;
+    try { o = { ...BC_DEF, ...JSON.parse(localStorage.getItem(BC_KEY) || '{}') }; } catch (e) { o = { ...BC_DEF }; }
+    // 1.7.0 の「両方／一覧表／付箋カード」の選び方から引き継ぐ
+    if (o.kind && !Array.isArray(o.parts)) o.parts = o.kind === 'list' ? ['list'] : o.kind === 'cards' ? ['cards'] : ['list', 'cards'];
+    delete o.kind;
+    if (!Array.isArray(o.parts) || !o.parts.length) o.parts = BC_DEF.parts.slice();
+    return o;
+  };
   const setBcOpt = (o) => { try { localStorage.setItem(BC_KEY, JSON.stringify(o)); } catch (e) { /* 覚えられなくても印刷はできる */ } };
-  const BC_KINDS = { both: '両方', list: '一覧表', cards: '付箋カード' };
+  const BC_PARTS = { list: '一覧表', tags: 'QRタグ（1点1枚）', cards: '付箋カード' };
   const BC_ORDERS = { space: 'スペース順', time: '購入順' };
   const PAYS = { cash: '現金', card: 'キャッシュレス' };
   const whoName = (f) => (f ? `${(S().requester(f) || {}).name || '代行'}の代行` : '自分');
@@ -670,12 +680,12 @@
         const f = i.for || '';
         if (who === 'own' ? f : who !== 'all' && f !== who) return;
         const parts = (i.parts || []).filter((p) => String(p.n || '').trim());
-        rows.push({ cid, space: c.space || '', circle: c.name || '', name: i.name || '（無題）', qty: i.qty || 1, cost: s.itemCost(i), pay: i.pay || pay0, t: i.t || e.doneAt || 0, for: f, parts: parts.length ? parts : null, extra: i.planned === false });
+        rows.push({ cid, iid: i.id, space: c.space || '', circle: c.name || '', name: i.name || '（無題）', qty: i.qty || 1, cost: s.itemCost(i), pay: i.pay || pay0, t: i.t || e.doneAt || 0, for: f, parts: parts.length ? parts : null, extra: i.planned === false });
       });
     });
     // サークル外の支出（企業ブースなど）も品物なので、自分の分として最後に載せる
     if (who === 'all' || who === 'own') {
-      (d.extras || []).forEach((x) => rows.push({ cid: 'x:' + x.id, space: '', circle: '（サークル外）', name: x.name || '（無題）', qty: x.qty || 1, cost: x.cost || 0, pay: x.pay || pay0, t: x.t || 0, for: '', parts: null, outside: true }));
+      (d.extras || []).forEach((x) => rows.push({ cid: 'x:' + x.id, iid: x.id, space: '', circle: '（サークル外）', name: x.name || '（無題）', qty: x.qty || 1, cost: x.cost || 0, pay: x.pay || pay0, t: x.t || 0, for: '', parts: null, outside: true }));
     }
     if (order === 'time') rows.sort((a, b) => (a.t || 0) - (b.t || 0));
     else rows.sort((a, b) => (a.outside ? 1 : 0) - (b.outside ? 1 : 0) || a.space.localeCompare(b.space, 'ja', { numeric: true }));
@@ -748,9 +758,36 @@
       <div class="bc-cut">付箋カード ${k + 1}/${pages.length} ・ 点線で切って品物に貼ってください（No. は一覧表と同じです）</div></article>`).join('');
   };
 
+  /**
+   * QR タグ（1点ごとに1枚。A4 に 4列×9段＝36枚、47.5×30mm）。点線で切ってテープで品物に貼る。
+   * QR には「KN1:品物のid:何点目」だけを入れる（どの品物かはスマホ側のデータで引く）。誤り訂正 M・型番2以上（位置合わせパターン入り）で、斜めからでも読みやすくする
+   */
+  const TAGS_PER_PAGE = 36;
+  Sh.tagsHTML = (rows) => {
+    const units = [];
+    rows.forEach((r) => { for (let k = 1; k <= r.qty; k++) units.push({ r, k }); });
+    const tag = ({ r, k }) => {
+      const qr = HC.qr.svg(S().tagText(r.iid, k, r.cid && r.cid.startsWith('x:')), { ecl: 'M', minVersion: 2, quiet: 2, px: 76 });
+      return `<div class="tg${r.for ? ' px' : ''}">
+          <div class="tg-qr">${qr || ''}</div>
+          <div class="tg-tx">
+            <div class="tg-top"><b>No.${r.no}</b><span class="tg-k">${k}<small>/${r.qty}</small></span></div>
+            <div class="tg-sp"><b>${esc(r.space || '—')}</b> ${esc(r.circle)}</div>
+            <div class="tg-nm">${esc(r.name)}</div>
+            <div class="tg-who${r.for ? ' px' : ''}">${esc(whoName(r.for))}</div>
+          </div>
+        </div>`;
+    };
+    const pages = [];
+    for (let i = 0; i < units.length; i += TAGS_PER_PAGE) pages.push(units.slice(i, i + TAGS_PER_PAGE));
+    return pages.map((p, k) => `<article class="slip bc-tags"><div class="tg-grid">${p.map(tag).join('')}</div>
+      <div class="bc-cut">QRタグ ${k + 1}/${pages.length} ・ 点線で切って、品物1点に1枚ずつテープで貼ってください（No. は一覧表と同じ。右上は「何点目／数量」）</div></article>`).join('');
+  };
+
   const bcDocs = (o) => {
     const rows = Sh.buyRows(o.who, o.order);
-    return { rows, html: (o.kind !== 'cards' ? Sh.buyListHTML(rows, o) : '') + (o.kind !== 'list' ? Sh.buyCardsHTML(rows) : '') };
+    const has = (k) => o.parts.includes(k);
+    return { rows, html: (has('list') ? Sh.buyListHTML(rows, o) : '') + (has('tags') ? Sh.tagsHTML(rows) : '') + (has('cards') ? Sh.buyCardsHTML(rows) : '') };
   };
 
   /** 購入検品伝票の画面（対象・印刷するもの・並び順を選んで、プレビューを見ながら印刷） */
@@ -761,25 +798,32 @@
     const { rows, html } = bcDocs(o);
     const seg = (key, map) => `<div class="seg sm">${Object.entries(map).map(([v, l]) => `<button type="button" class="${o[key] === v ? 'on' : ''}" data-bc="${key}" data-v="${v}">${l}</button>`).join('')}</div>`;
     const whos = [['all', '全員'], ['own', '自分の分'], ...S().requesters().map((r) => [r.id, `${r.name}の分`])];
-    const pages = rows.length ? (o.kind !== 'cards' ? 1 : 0) + (o.kind !== 'list' ? Math.ceil(rows.length / CARDS_PER_PAGE) : 0) : 0;
+    const units = U.sum(rows, (r) => r.qty);
+    const pages = rows.length ? (o.parts.includes('list') ? 1 : 0) + (o.parts.includes('tags') ? Math.ceil(units / TAGS_PER_PAGE) : 0) + (o.parts.includes('cards') ? Math.ceil(rows.length / CARDS_PER_PAGE) : 0) : 0;
     UI().sheet({
       id: 'buyCheck',
       center: true,
       cls: 'slip-preview-sheet bc-sheet',
-      title: `購入検品伝票<small>自分用 ・ ${rows.length}品目${pages ? ` ・ A4 ${pages}枚` : ''}</small>`,
+      title: `購入検品伝票・QRタグ<small>自分用 ・ ${rows.length}品目 ${units}点${pages ? ` ・ A4 ${pages}枚` : ''}</small>`,
       html: `<div class="bc-opts">
           <div class="field"><span>対象</span><div class="chips wrap">${whos.map(([v, l]) => `<button type="button" class="chip sm${o.who === v ? ' on' : ''}" data-bc="who" data-v="${esc(v)}">${esc(l)}</button>`).join('')}</div></div>
           <div class="grid2">
-            <div class="field"><span>印刷するもの</span>${seg('kind', BC_KINDS)}</div>
+            <div class="field"><span>印刷するもの（組み合わせて選べます）</span><div class="chips wrap">${Object.entries(BC_PARTS).map(([v, l]) => `<button type="button" class="chip sm${o.parts.includes(v) ? ' on' : ''}" data-bcpart="${v}">${o.parts.includes(v) ? U.icon('check', 'sm') : ''}${l}</button>`).join('')}</div></div>
             <div class="field"><span>並び順</span>${seg('order', BC_ORDERS)}</div>
           </div>
-          <p class="muted small">一覧表で全体を確かめ、付箋カード（A4 1枚に12枚）を点線で切って品物に貼ります。カードと一覧表は同じ No. です。チェキのように見分けにくい品物は、買ったサークルと時刻で見分けてください。</p>
+          <p class="muted small">QRタグは1点に1枚（A4 1枚に36枚）。切って品物に貼り、発送モードの「読み取り」でスマホのカメラを向けると、検品と梱包の過不足を自動で確かめられます。付箋カード（A4 1枚に12枚）は品物ごとに1枚です。どれも一覧表と同じ No. です。</p>
         </div>
         ${rows.length ? `<div class="slip-preview">${html.split('<article').filter(Boolean).map((a) => `<div class="sp-page">${'<article' + a}</div>`).join('')}</div>`
           : '<p class="muted">この対象で買った品物はまだありません。</p>'}
         <div class="btn-row sticky-acts"><button class="btn ghost" data-close>閉じる</button><button class="btn primary" data-bcprint${rows.length ? '' : ' disabled'}>${U.icon('print')}印刷する</button></div>`,
       onMount: (el) => {
         U.$$('[data-bc]', el).forEach((b) => (b.onclick = () => Sh.buyCheck({ [b.dataset.bc]: b.dataset.v })));
+        U.$$('[data-bcpart]', el).forEach((b) => (b.onclick = () => {
+          const v = b.dataset.bcpart;
+          const parts = o.parts.includes(v) ? o.parts.filter((x) => x !== v) : [...o.parts, v];
+          if (!parts.length) return UI().toast('印刷するものを1つ以上選んでください');
+          Sh.buyCheck({ parts: ['list', 'tags', 'cards'].filter((x) => parts.includes(x)) });
+        }));
         const pb = U.$('[data-bcprint]', el);
         if (pb) pb.onclick = () => { if (rows.length) printHTML(bcDocs(o).html); };
         requestAnimationFrame(() => scalePages(el));

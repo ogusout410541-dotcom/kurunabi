@@ -18,7 +18,8 @@ css/app.css           全スタイル。CSS変数でライト/ダーク。≥960
 js/util.js            HC.util   : esc/yen/norm(検索正規化)/pack・unpack(共有リンク圧縮)/icon/イベントバス
 js/parser.js          HC.parser : サークル一覧の貼り付け解析、スペース表記、X/pixiv リンク正規化
 js/layout.js          HC.layout : 配置図 spec → セル座標、通路距離、ルート最適化（最近傍＋2-opt）
-js/qr.js              HC.qr     : QRコード生成（外部ライブラリ不使用・バイトモード・v1〜40）
+js/qr.js              HC.qr     : QRコード生成（外部ライブラリ不使用・バイトモード・v1〜40）。表は HC.qr._t で読み取り側と共通
+js/qrscan.js          HC.qrscan : QRコードの読み取り（カメラの映像から。iPhone・iPad 向けに解読を自作。BarcodeDetector があれば先に使う）
 js/shots.js           HC.shots  : お品書き画像＋配置図画像の保管（IndexedDB。localStorage とは別系統）
 js/sync.js            HC.sync   : PCとスマホの同期（GASに置いたJSONを読み書き。オフライン優先）
 js/editor.js          HC.editor : 配置図エディタ（画像の上に島・壁・入口・通路を置いて spec を作る）
@@ -30,7 +31,8 @@ js/store.js           HC.store  : 状態・永続化・集計・undo・入出力
 js/ui.js              HC.ui     : シート（スマホ=ボトムシート / PC=右パネル）、トースト、テンキー、確認
 js/map.js             HC.map    : SVG 配置図（色分け・番号・ルート線・ピンチ/パン・縦持ちで90°回転）
 js/views.js           HC.views  : 各画面の HTML 生成（go/list/map/log/circles/more ＋ サークル詳細シート ＋ 当日モードの画面 V.day/V.dayMenu）
-js/ship.js            HC.ship   : 代行の梱包伝票・発送伝票（入力の画面・プレビュー・A4 印刷。下の「梱包・発送伝票」）
+js/ship.js            HC.ship   : 代行の梱包伝票・発送伝票・購入検品伝票・QRタグ（入力の画面・プレビュー・A4 印刷。下の「梱包・発送伝票」）
+js/shipview.js        V.ship / V.scan / V.shipMenu : 発送モードの画面（app.js のあとに読む。下の「発送モード」）
 js/app.js             HC.app / HC.actions : 起動、画面切替、data-act のハンドラ、入力(change)処理、ドラッグ並べ替え
 sw.js                 オフラインキャッシュ（リリース時は CACHE のバージョンを上げる）
                       画面から 'status' / 'refresh' を postMessage で問い合わせできる（設定のオフライン欄）
@@ -49,9 +51,10 @@ tools/gas/コード.gs    同期用の Google Apps Script（貼り付けてウ�
   data: { [eventId]: EventData },      // イベントごとの利用者データ
   favorites: { 'tw:<id小文字>' | 'nm:<正規化名>': { name, tw, t } },   // イベントをまたいで有効
   layouts: { [eventId]: layoutSpec },  // 配置図エディタで作ったもの（同梱の配置図より優先）
-  settings: { theme, font, haptics, wakeLock, mapMode:'simple'|'image', mapOrient, routeMode:'must'|'tier'|'short', wallFirst(壁を先に回る), showRoute, defaultPay:'cash'|'card', dayMode(当日モード) },
+  settings: { theme, font, haptics, wakeLock, mapMode:'simple'|'image', mapOrient, routeMode:'must'|'tier'|'short', wallFirst(壁を先に回る), showRoute, defaultPay:'cash'|'card', dayMode(当日モード), shipMode(発送モード) },
   demo: null | { eventId, snap, offset, day, syncDirty, t },   // デモ中の控え（下の「当日モード・デモモード」）
   sender: { name, x, mail, tagline, nextNo },   // 伝票の差出人（全イベント共通・同期する）
+  devices: { [端末の識別子]: { name, kind, lastAt } },   // 同期している端末の一覧（同期する。1.8.0）
 }
 EventData = { budget, cash（財布の現金。cashBreak があるとその合計で上書きされる）, cashBreak: {[金種]: 枚数}, reserve,
               order: [cid], entries: {[cid]: Entry}, extras: [Extra],
@@ -66,7 +69,8 @@ Entry = { cid, pri: 1必須|2優先|3通常|4余裕, items: [Item], memo, menu(�
           cashPaid: いくら財布（金種）から引いたか。二重に引かないための控え（共有リンクには乗せない） }
 Item  = { id, name, price(予定単価, 0=未定), qty, status: 'todo'|'bought'|'soldout'|'skip',
           paid(実際の支払総額 or null=予定通り), pay: 'cash'|'card', planned(false=当日の追加購入), t,
-          for(代行の依頼者 id。無ければ自分の分), parts(セットの内容 [{n: 品名, q: 1セットあたりの数}]。1.6.3) }
+          for(代行の依頼者 id。無ければ自分の分), parts(セットの内容 [{n: 品名, q: 1セットあたりの数}]。1.6.3),
+          insp([検品済みの番号＝何点目か]), pack([梱包済みの番号])。空になったら消す（1.8.0） }
 Extra = { id, name, cost, qty, pay, t }     // サークル外の支出（企業ブース・飲食など）
 Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv数字ID or URL), web }
 ```
@@ -147,6 +151,20 @@ Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv�
   No. は並べた順（`Sh.buyRows(who, order)`、スペース順／購入順）で、一覧表とカードで同じ。対象・様式・並び順は `localStorage['kurunavi.bcOpt']`。入口は記録タブ・設定（巡回表の隣）・代行のカード。
   チェキのように見分けにくい品物を付箋で照らし合わせて検品し、付箋を見ながら梱包するため（2026-10-04 本人）。人に渡さないので金額・支払方法・時刻も載せる
   確認は CDP の `Page.printToPDF`（`printBackground`・`preferCSSPageSize`）で PDF にして見る。入力欄の例には実在の宛先を書かない
+- **発送モード**（1.8.0、`settings.shipMode`。端末ごと＝同期しない。`body.shipm`）：タブは「発送（V.ship）・読み取り（V.scan）・メニュー（V.shipMenu）」だけ。入口は代行のカード・設定・当日メニュー。
+  流れ：PC で QR タグを印刷（購入検品伝票の画面で「QRタグ」。1点1枚、A4 に 4列×9段＝36枚、47.5×30mm、`Sh.tagsHTML`）→ 品物に貼る → スマホで「購入検品」→ 宛先・伝票 → 箱を選んで「梱包」→ 伝票を同封 → 発送済み。
+  タグの QR は `KN1:品物のid:何点目`（サークル外の支出は id の前に x。`S.tagText`／`S.parseTag`）。誤り訂正 M・型番2以上（位置合わせパターン入り）。どの品物かはスマホ側のデータで引くので、同期でそろえておく。
+  判定は `S.scanTag(text, mode, box)`：ok／dup（読み取り済み）／wrongBox（別の人の分）／own（自分の分は箱に入れない）／notBought／over（数量より多い番号）／otherEvent／unknown（この端末に無い）／invalid。
+  記録は品物の `insp`／`pack`（何点目かの配列）。梱包すると検品も済みにする。手で記録・取り消しは `S.setUnit`。一覧は `S.unitRows(who)`。梱包が全部済むと `Sh.state` が packed（梱包済み）。
+  読み取りの画面は、カメラの映像を止めないよう記録のたびに画面ごと作り直さず中身だけ差し替える（`V.scan.render` は殻を一度だけ作り、`paint` で更新）。画面を離れる・アプリを裏に回すとカメラを止める。
+  結果は色（緑＝OK・黄＝読み取り済み・赤＝入れてはいけない）・音（WebAudio。開始ボタンを押したときに準備）・振動で知らせる。同じタグは写らなくなるまで読み直さない（写したままだと読み取り済みが鳴り続けるため）。
+  梱包で読んだ別の人の品物は「取り出してください」に残す（その場限りの控え）。全部そろって取り出すものも無ければ「過不足なし」と伝票の印刷・発送済みのボタン
+- **QR の読み取り**（1.8.0、`js/qrscan.js`）：iPhone・iPad の Safari には BarcodeDetector が無いので解読を自作。流れは 2値化（8×8 区画の閾値を周り5×5で平均）→ 位置検出パターン（1:1:3:1:1、縦横で確かめる）→
+  3つの組を選ぶ（大きさがそろい直角二等辺に近い）→ 1マスの大きさは「パターンどうしを結ぶ線に沿って」測る（横の長さで測ると斜めのときに大きく見積もる）→ 型番の候補をいくつか試す →
+  右下の位置合わせパターン（厳しい判定 → ゆるい判定）、無ければ平行四辺形の見込み。さらに右下の点を少しずつ動かして読み直す（誤り訂正の検算に通ったものだけ採用）→ 射影変換で1マスずつ読む →
+  形式情報（BCH、距離3まで）→ マスクを外してコード語 → Reed-Solomon（Berlekamp-Massey・Chien・Forney、根は α^0 から）→ 数字・英数字・バイト・漢字のモード。表は作成側（`HC.qr._t`）と共通。
+  カメラは真ん中の正方形（80%）を 520px に縮めて約90msごとに読む。検証：作成 → ゆがめて描く（回転・遠近・ぼけ・ノイズ・照明のむら）→ 読む を大量に試し、タグと同じ中身で ふつうの写り方は全部読め、誤読は0件。
+  ほかに Chrome の偽のカメラ（`--use-file-for-fake-video-capture` に QR を写した y4m）で、カメラの映像から読む流れまで確かめた
 - **連打の保険**：完了して次のカードに切り替わった直後の 0.7 秒は、当日カードのボタンを押しても反応しない（`app.curGuard` と `.cur.enter`）
 - **当日までの準備**（`V.prep`）：開催前（と、まだ1件も回っていない間）の当日タブに、開催日・予算・お品書き待ち・価格未定・ルート・
   財布・オフライン保存・同期・新しい版の抜けを出す。始まってからは抜けがあるときだけ、たたんで出す。開け閉めは `V.prepOpen` に覚える。
@@ -294,7 +312,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 - スリム形式には開催日（`date`）・金種（`cashBreak`/`cashSettled`/`cashStart`）・`routedAt` も載せる（1.2.0）
 - 共有リンク: `#import=` ＋ deflate-raw 圧縮 base64url（`U.pack/unpack`）。起動時に検出して確認後に読み込み
 - **スリム形式**（`S.exportPlan(id, {slim:true})`、共有リンク／QR専用）: 既定値・タイムスタンプ・アイテムID・`snap` を落として1文字キーにしたもの
-  （entry: `{c:cid, r:pri, i:[items], m:memo, u:menu, s:status, k:[name,tw,space], ni:noItems, ns:noShot}` / item: `{n,p,q,s,a(paid),y(pay),x(追加購入),f(for),pt([[品名,数]]＝parts)}`）。
+  （entry: `{c:cid, r:pri, i:[items], m:memo, u:menu, s:status, k:[name,tw,space], ni:noItems, ns:noShot}` / item: `{n,p,q,s,a(paid),y(pay),x(追加購入),f(for),pt([[品名,数]]＝parts),ci(insp),cp(pack)}`）。
   `k` はイベントの一覧から引けないサークルだけ持つ。読み込み側の `fatten()` が通常形式へ戻すので、**スリム形式のキーを変えたら fatten も直すこと**。
   実測：31サークル（品目・メモ入り）で 2880 → 860 文字。QRは v40-L の 2953 バイトが上限で、おおよそ100サークル前後まで。
   お気に入りはキーだけ（`favKeys`）送る（値は `S.isFav` が見ないため）
@@ -314,9 +332,15 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 - 保存先は GAS のウェブアプリ。`S.state.sync = { url, phrase, auto, syncedAt, dirty, lastAt, device }`
 - 合言葉はサーバーに送らず、`SHA-256('kurunavi:' + phrase)` の先頭16バイトを置き場所のキー `k` にする
 - POST は `Content-Type: text/plain` で送る（preflight を起こさないため。GAS は CORS の事前確認に応答できない）
-- 送るのは **data / customEvents / favorites / layouts / eventId** だけ。`settings`（テーマ・地図の向きなど）と
+- 送るのは **data / customEvents / favorites / layouts / eventId / sender / devices** だけ。`settings`（テーマ・地図の向きなど）と
   IndexedDB のお品書き画像は自動では送らない（下の「お品書き画像の受け渡し」）
-- **競合は base（最後に見たサーバーの更新時刻）で検出**。食い違えばサーバーの内容を返し、画面で「向こうを取り込む／こちらで上書き」を選ばせる
+- **競合は base（最後に見たサーバーの更新時刻）で検出**。食い違ったら、まず**変更を自動で合わせる**（1.8.0、`merge3`）：前回サーバーとそろえた内容を `localStorage['kurunavi.syncBase']` に控え、
+  「控え→この端末」「控え→サーバー」の変更を項目ごとに合わせる。オブジェクトは中まで、id を持つものの配列（品物・依頼者など）は id ごとに、数や文字の配列（検品の番号・並び順）は足し引きで合わせ、
+  片方で配列の項目が無くなったときは空の配列として扱う。両方が同じ項目を違う値にしたときだけこの端末の値を残す。合わせたあとは `S.repairData`（並びと記録の対応・持ち主・財布の控えの合計）を通し、もう一度送る。
+  控えが無いとき（初回など）だけ、従来どおり「向こうを取り込む／こちらで上書き」を選ばせる。検証：ランダムな同時作業を 120回×5通り合わせて、並び・足した品物・検品の番号・名前・持ち主が正しいことを確認、
+  偽の GAS ＋ Chrome 2つ（PC 役・iPhone 役）で、宛先の入力と読み取り、同じ品物の取り消しと追加が両方残ることを確認
+- **端末の登録**（1.8.0）：`sync.deviceId`（識別子）と `sync.device`（名前。既定は端末の種類＝PC・iPhone・iPad。iPad は Mac として名乗るのでタッチの点数で見分ける）。送るたびに `state.devices` の自分の行を更新し、
+  発送モードの画面と「端末と同期」（`A.shipDevices`）に一覧を出す。発送モードの間は、読み取ったら約1秒で送り（`Sy.soon`）、7秒ごとに `Sy.syncNow`（未送信があれば送る・無ければ受け取る）
 - オフライン時は `dirty` を立てて送らない。`online` イベントで再開。当日の会場で通信が切れても普段どおり使える
 - 設定はQRで渡せる（`kind:'sync'` の共有リンク）。**合言葉が入っているので人に見せない**
 - **同期の始め方**（1.5.2。iPad を新しい端末として足したときに「アクセスを断られました」と出た件）：原因は URL の崩れ（1文字違い・途中で切れた・末尾の `/`）で、
@@ -343,7 +367,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## オフライン
 
-- https で一度開けば SW が本体一式（現在24件。1.6.0 で js/ship.js を足した。公開版で SW の status が返す件数で確かめる）をキャッシュし、圏外でも計画・記録・地図・お品書き画像はそのまま使える
+- https で一度開けば SW が本体一式（現在26件。1.8.0 で js/qrscan.js・js/shipview.js を足した。公開版で SW の status が返す件数で確かめる）をキャッシュし、圏外でも計画・記録・地図・お品書き画像はそのまま使える
 - 設定の「オフライン」欄から、保存済みファイル数の確認と取り込み直し（SW への `refresh` メッセージ）ができる
 - 外部リンク（X・pixiv・お品書きURL）だけは電波が必要。圏外では薄く表示し、押してもトーストで知らせるだけにしている
 - **localhost では SW を無効化＆自動で unregister する**ので、ローカル検証でキャッシュに悩まされない
@@ -351,7 +375,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## 版の更新（ここを間違えると「いつまでも古い版のまま」になる）
 
-- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.7.0）。
+- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.8.0）。
   **`js/changelog.js` の先頭にもその版の内容を1件足す**（tag: new=新機能 / up=改善 / fix=修正。利用者向けの自然な文で）。
   更新後の初回起動で、前に開いた版（`localStorage['kurunavi.version']`）より新しい分を「新しくなったこと」として自動で出す（`A.changelog({since})`）
 - **SW の install はブラウザのHTTPキャッシュを避けて取り込む**（`freshRequests()`＝`cache:'reload'` ＋ `?v=CACHE`）。
@@ -431,6 +455,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 - 12th 当日（2026-10-04）の実績：20サークル・39点・¥51,100（自分 ¥23,700／代行2人 ¥27,400）、12:12〜14:56。
   分かったこと：チェックせずに完了にした品物が CSV で購入済に見えた／まとめ買いの値引きをメモに書いていた → 1.5.5 で前者に対応
 - [x] 品物ごとの状態（CSV・詳細）と、完了するときの未購入の確認（1.5.5）
+- [x] 発送モード・QRタグの印刷とカメラでの読み取り（検品・梱包の過不足）・端末の登録・変更の自動合成（1.8.0）
 - [x] 梱包伝票・発送伝票の入力と A4 印刷、報告の文章の締めをやわらかく（1.6.0）。伝票の項目を本人の回答で見直し（1.6.1）、言葉づかいを業務の伝票らしく（1.6.2。「数えた数」→「検品数」など）、セット商品の内容を1点ずつ検品（1.6.3）
 - [ ] サークル画像の取り込み：URLをもらってから。**目的のサークルのみ**・**アプリに同梱**（`data/cuts/`）で本人合意済み（2026-09-24）。
       CORSのため端末側での直接取得は不可なので、こちらで取得→長辺800pxのWebPに縮小→同梱→一覧・詳細・当日カードに表示する

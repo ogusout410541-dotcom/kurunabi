@@ -385,6 +385,7 @@
           ${T.schedule.length ? tile('schedule', 'cal', '進行表') : ''}
           ${tile('clockMenu', 'timer', '時刻の設定')}
           ${s.requesters().length ? tile('nav', 'wallet', '代行の精算', 'data-view="list" data-scroll="proxy"') : ''}
+          ${s.requesters().length ? tile('shipModeOn', 'box', '発送モード') : ''}
           ${tile('nav', 'list', '計画のリスト', 'data-view="list"')}
           ${tile('nav', 'search', 'サークルを探す', 'data-view="circles"')}
           ${HC.sync.configured() ? tile('shotsPull', 'download', 'お品書き画像を受け取る') : ''}
@@ -787,7 +788,7 @@
       <p class="muted small">「立て替え」は買えた分（あとでもらう額）、「まだ」はまだ買っていない分の予定です。行を押すと精算の画面を開きます。</p>
       <div class="proxy-acts">
         <button class="link-btn" data-act="addRequester">${U.icon('plus', 'sm')}依頼者を追加</button>
-        ${HC.ship && HC.ship.printable().length ? `<button class="link-btn" data-act="shipAll">${U.icon('print', 'sm')}梱包・発送伝票をまとめて印刷</button><button class="link-btn" data-act="buyCheck">${U.icon('print', 'sm')}購入検品伝票（自分用）</button>` : ''}
+        ${HC.ship && HC.ship.printable().length ? `<button class="link-btn" data-act="shipAll">${U.icon('print', 'sm')}梱包・発送伝票をまとめて印刷</button><button class="link-btn" data-act="buyCheck">${U.icon('print', 'sm')}購入検品伝票・QRタグ</button><button class="link-btn" data-act="shipModeOn">${U.icon('box', 'sm')}発送モードで作業する</button>` : ''}
       </div>
     </section>`;
   };
@@ -1200,6 +1201,7 @@
   V.more = {
     full: false,   // 当日モードで「すべての設定」を開いているか
     render(el) {
+      if (S().state.settings.shipMode && !this.full) return V.shipMenu(el);
       if (S().state.settings.dayMode && !this.full) return V.dayMenu(el);
       const s = S();
       const ev = s.ev();
@@ -1288,7 +1290,8 @@
             <button class="btn" data-act="importFile">${U.icon('upload')}ファイルから読み込み</button>
             <button class="btn" data-act="importText">${U.icon('upload')}リンク／テキストを貼って読み込み</button>
             <button class="btn" data-act="printPlan">${U.icon('print')}巡回表を印刷</button>
-            <button class="btn" data-act="buyCheck">${U.icon('print')}購入検品伝票を印刷</button>
+            <button class="btn" data-act="buyCheck">${U.icon('print')}購入検品伝票・QRタグ</button>
+            ${S().requesters().length ? `<button class="btn" data-act="shipModeOn">${U.icon('box')}発送モード</button>` : ''}
             <button class="btn" data-act="exportAll">${U.icon('download')}全データのバックアップ</button>
             <button class="btn" data-act="restoreBackup">${U.icon('undo')}読み込み前の状態に戻す</button>
           </div>

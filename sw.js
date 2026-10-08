@@ -1,9 +1,9 @@
 /* オフライン対応：アプリ本体をキャッシュ（会場は電波が弱い前提）
    ファイルを変更したら CACHE のバージョンを上げること */
-const CACHE = 'kurunavi-v1.7.0';
+const CACHE = 'kurunavi-v1.8.0';
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
-  'js/util.js', 'js/parser.js', 'js/layout.js', 'js/qr.js', 'js/shots.js', 'js/store.js', 'js/ui.js', 'js/map.js', 'js/sync.js', 'js/editor.js', 'js/changelog.js', 'js/views.js', 'js/ship.js', 'js/app.js',
+  'js/util.js', 'js/parser.js', 'js/layout.js', 'js/qr.js', 'js/qrscan.js', 'js/shots.js', 'js/store.js', 'js/ui.js', 'js/map.js', 'js/sync.js', 'js/editor.js', 'js/changelog.js', 'js/views.js', 'js/ship.js', 'js/app.js', 'js/shipview.js',
   'data/holocle12.js', 'data/holocle12-map.webp',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
 ];

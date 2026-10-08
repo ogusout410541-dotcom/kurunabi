@@ -40,6 +40,7 @@
     showRoute: true,
     defaultPay: 'cash',
     dayMode: false,    // 当日モード（文字大きめ・当日に使う画面だけ）。端末ごと
+    shipMode: false,   // 発送モード（発送の作業に使う画面だけ。QR タグの読み取り）。端末ごと
   });
 
   // PCとスマホの同期（js/sync.js）。url と phrase が入っていれば動く
@@ -50,7 +51,8 @@
     syncedAt: 0,    // 最後に確認したサーバー側の更新時刻
     dirty: false,   // まだ送っていない変更があるか
     lastAt: 0,      // 最後に送受信した時刻（この端末の時計）
-    device: '',     // この端末の呼び名
+    device: '',     // この端末の呼び名（PC・iPhone・iPad など。設定で変えられる）
+    deviceId: '',   // この端末の識別子（端末の一覧で使う）
   });
 
   const defaultState = () => ({
@@ -63,6 +65,7 @@
     sync: defaultSync(),
     settings: defaultSettings(),
     sender: {},    // 発送伝票の差出人（自分）{ name, postal, addr1, addr2, phone }。全イベントで共通
+    devices: {},   // 同期している端末の一覧 { 識別子: { name, kind, lastAt } }。同期で共有する
     demo: null,    // デモ中の控え { eventId, snap(始める前のデータ), offset(時計のずれ), day, syncDirty, t }
   });
 
@@ -114,6 +117,7 @@
     out.layouts = st.layouts || {};
     out.sync = { ...defaultSync(), ...(st.sync || {}) };
     out.sender = st.sender || {};
+    out.devices = st.devices || {};
     out.data = S.migrateData(out.data);
     out.v = VERSION;
     return out;
@@ -128,6 +132,7 @@
       // 1.1.2 以前：財布から引いた額はサークルごとの cashPaid にしか残っていない
       if (!('cashSettled' in raw)) out[k].cashSettled = U.sum(Object.values(raw.entries || {}), (e) => e.cashPaid || 0);
       cleanFor(out[k]);
+      fixOrder(out[k]);
       // 1.5.0 以前：サークル外の支出から引いた額は控えが無い。引いた合計との差を、現金のサークル外の支出に割り当てる
       const d = out[k];
       let gap = (d.cashSettled || 0) - U.sum(Object.values(d.entries || {}), (e) => e.cashPaid || 0) - U.sum(d.extras || [], (x) => x.cashPaid || 0);
@@ -147,6 +152,23 @@
   const cleanFor = (d) => {
     const ids = new Set((d.requesters || []).map((r) => r.id));
     Object.values(d.entries || {}).forEach((e) => (e.items || []).forEach((i) => { if (i.for && !ids.has(i.for)) delete i.for; }));
+    return d;
+  };
+
+  /** 計画の並び（order）とサークルの記録（entries）を合わせる。重複と記録の無い並びを消し、並びに無い記録は最後に足す
+   *  （別の端末の変更を合わせたとき、片方でサークルを外し、もう片方でそのサークルを読み取った、などで片方だけ残ることがあるため。記録は消さない） */
+  const fixOrder = (d) => {
+    const ents = d.entries || {};
+    const seen = new Set();
+    d.order = (d.order || []).filter((c) => ents[c] && !seen.has(c) && seen.add(c));
+    Object.keys(ents).forEach((c) => { if (!seen.has(c)) { d.order.push(c); seen.add(c); } });
+    return d;
+  };
+  /** 同期で変更を合わせたあとの手当て：並び・持ち主・財布の控えの合計（cashSettled＝控えの合計） */
+  S.repairData = (d) => {
+    cleanFor(d);
+    fixOrder(d);
+    d.cashSettled = U.sum(Object.values(d.entries || {}), (e) => e.cashPaid || 0) + U.sum(d.extras || [], (x) => x.cashPaid || 0);
     return d;
   };
 
@@ -655,6 +677,118 @@
     if (parts && parts.length) it.parts = parts.map((p) => ({ n: String(p.n), q: Math.max(1, +p.q || 1) }));
     else delete it.parts;
   });
+
+  // ------------------------------------------------------------------ 検品・梱包（発送モード）
+  /*
+   * 買った品物に1点ずつ QR のタグを貼り、スマホで読んで「検品済み」「梱包済み」を記録する。
+   * 記録は品物の insp（検品済みの番号＝何点目か）と pack（梱包済みの番号）。数量を減らしたときは数量を超える番号を数えない
+   * タグの文字は「KN1:品物のid:何点目」（サークル外の支出は id の前に x）。どの品物かはこの端末のデータで引くので、PC と同期しておく
+   */
+  const TAG_RE = /^KN1:(x?)([0-9a-z]+):(\d{1,3})$/;
+  S.tagText = (iid, k, outside) => `KN1:${outside ? 'x' : ''}${iid}:${k}`;
+  S.parseTag = (text) => {
+    const m = TAG_RE.exec(String(text || '').trim());
+    return m ? { outside: !!m[1], iid: m[2], k: +m[3] } : null;
+  };
+  const unitsIn = (arr, qty) => [...new Set((arr || []).filter((k) => k >= 1 && k <= qty))].sort((a, b) => a - b);
+  /** 品物を id で探す（いまのイベント → ほかのイベント）。{ ev, cid, item, entry } か { ev, extra } */
+  S.findUnit = (iid, outside) => {
+    const find = (ev, d) => {
+      if (outside) { const x = (d.extras || []).find((e) => e.id === iid); return x ? { ev, extra: x } : null; }
+      for (const cid of Object.keys(d.entries)) {
+        const it = d.entries[cid].items.find((i) => i.id === iid);
+        if (it) return { ev, cid, entry: d.entries[cid], item: it };
+      }
+      return null;
+    };
+    const cur = S.state.eventId;
+    return find(cur, S.d(cur)) || Object.keys(S.state.data).filter((k) => k !== cur).map((k) => find(k, S.state.data[k])).find(Boolean) || null;
+  };
+  /** 品物の検品・梱包の進み具合（買った品物だけ。数量を超える番号は数えない） */
+  S.unitState = (it) => {
+    const qty = it.qty || 1;
+    return { qty, insp: unitsIn(it.insp, qty), pack: unitsIn(it.pack, qty) };
+  };
+
+  /**
+   * タグを読んだときの判定と記録。mode='insp'（購入検品）／'pack'（梱包。box＝依頼者の id）
+   * 戻り値 { kind, ... }：ok＝記録した / dup＝もう読んだ / wrongBox＝別の人の分 / own＝自分の分（箱に入れない）/
+   *   notBought＝購入の記録がない / over＝数量より多い番号 / otherEvent＝別のイベント / unknown＝この端末に無い品物 / invalid＝このアプリのタグではない
+   */
+  S.scanTag = (text, mode, box) => {
+    const t = S.parseTag(text);
+    if (!t) return { kind: 'invalid', text };
+    const f = S.findUnit(t.iid, t.outside);
+    if (!f) return { kind: 'unknown', k: t.k };
+    if (f.ev !== S.state.eventId) return { kind: 'otherEvent', ev: f.ev, k: t.k };
+    const d = S.d();
+    let info;
+    if (f.extra) {
+      const x = f.extra;
+      info = { iid: x.id, outside: true, cid: '', space: '', circle: '（サークル外）', name: x.name || '（無題）', qty: x.qty || 1, for: '', k: t.k };
+      if (mode === 'pack') return { kind: 'own', ...info };
+    } else {
+      const c = S.circle(f.cid) || f.entry.snap || {};
+      const it = f.item;
+      info = { iid: it.id, cid: f.cid, space: c.space || '', circle: c.name || '', name: it.name || '（無題）', qty: it.qty || 1, for: it.for || '', k: t.k, parts: it.parts || null };
+      if (it.status !== 'bought') return { kind: 'notBought', status: it.status, ...info };
+    }
+    if (t.k > info.qty) return { kind: 'over', ...info };
+    if (mode === 'pack') {
+      if (!info.for) return { kind: 'own', ...info };
+      if (info.for !== box) return { kind: 'wrongBox', ...info };
+    }
+    const key = mode === 'pack' ? 'pack' : 'insp';
+    const target = () => (f.extra ? (d.extras || []).find((e) => e.id === t.iid) : d.entries[f.cid].items.find((i) => i.id === t.iid));
+    if ((target()[key] || []).includes(t.k)) return { kind: 'dup', ...info, done: unitsIn(target()[key], info.qty).length };
+    S.mutate(mode === 'pack' ? '梱包の記録' : '検品の記録', () => {
+      const it = target();
+      it[key] = unitsIn([...(it[key] || []), t.k], info.qty);
+      // 箱に入れたものは検品も済んだものとみなす
+      if (key === 'pack') it.insp = unitsIn([...(it.insp || []), t.k], info.qty);
+    });
+    return { kind: 'ok', ...info, done: unitsIn(target()[key], info.qty).length };
+  };
+
+  /** 手で記録・取り消し（タグが読めないとき・読み間違えたとき） */
+  S.setUnit = (iid, k, mode, on, outside) => S.mutate(on ? (mode === 'pack' ? '梱包の記録' : '検品の記録') : (mode === 'pack' ? '梱包の記録を取り消す' : '検品の記録を取り消す'), (d) => {
+    const it = outside ? (d.extras || []).find((e) => e.id === iid) : Object.values(d.entries).flatMap((e) => e.items).find((i) => i.id === iid);
+    if (!it) return;
+    const qty = it.qty || 1;
+    const key = mode === 'pack' ? 'pack' : 'insp';
+    const now = unitsIn(it[key], qty).filter((x) => x !== k);
+    it[key] = on ? unitsIn([...now, k], qty) : now;
+    if (!it[key].length) delete it[key];   // 空になったら記録ごと消す（共有リンクの往復で形が変わらないように）
+    if (on && key === 'pack') it.insp = unitsIn([...(it.insp || []), k], qty);
+  });
+
+  /**
+   * 検品・梱包の一覧。who＝'all'／'own'／依頼者の id。買った品物だけを並べ、1点ごとの状態を返す
+   * { rows:[{cid, iid, outside, space, circle, name, qty, for, insp:[k], pack:[k]}], units, insp, pack }
+   */
+  S.unitRows = (who = 'all') => {
+    const d = S.d();
+    const rows = [];
+    d.order.forEach((cid) => {
+      const e = d.entries[cid];
+      if (!e) return;
+      const c = S.circle(cid) || e.snap || {};
+      e.items.forEach((it) => {
+        if (it.status !== 'bought') return;
+        const f = it.for || '';
+        if (who === 'own' ? f : who !== 'all' && f !== who) return;
+        const st = S.unitState(it);
+        rows.push({ cid, iid: it.id, space: c.space || '', circle: c.name || '', name: it.name || '（無題）', qty: st.qty, for: f, insp: st.insp, pack: st.pack });
+      });
+    });
+    if (who === 'all' || who === 'own') {
+      (d.extras || []).forEach((x) => {
+        const st = S.unitState(x);
+        rows.push({ cid: '', iid: x.id, outside: true, space: '', circle: '（サークル外）', name: x.name || '（無題）', qty: st.qty, for: '', insp: st.insp, pack: [] });
+      });
+    }
+    return { rows, units: U.sum(rows, (r) => r.qty), insp: U.sum(rows, (r) => r.insp.length), pack: U.sum(rows, (r) => r.pack.length) };
+  };
 
   S.setSettled = (rid, on) => S.mutate(on ? '精算済みにする' : '精算済みを戻す', (d) => {
     const r = (d.requesters || []).find((x) => x.id === rid);
@@ -1306,12 +1440,14 @@
     if (i.planned === false) o.x = 1;
     if (i.t) o.tt = i.t;
     if (i.for) o.f = i.for;   // 代行の依頼者
-    if (i.parts && i.parts.length) o.pt = i.parts.map((p) => [p.n, p.q]);   // セットの内容   // 買った時刻（記録をそのまま持ち帰れるように）
+    if (i.parts && i.parts.length) o.pt = i.parts.map((p) => [p.n, p.q]);   // セットの内容
+    if (i.insp && i.insp.length) o.ci = i.insp;   // 検品済みの番号（何点目か）
+    if (i.pack && i.pack.length) o.cp = i.pack;   // 梱包済みの番号   // 買った時刻（記録をそのまま持ち帰れるように）
     return o;
   };
   const fatItem = (o) =>
     typeof o === 'object' && o && 'n' in o
-      ? { id: U.uid(), name: o.n, price: o.p || 0, qty: o.q || 1, status: o.s || 'todo', paid: o.a != null ? o.a : null, pay: o.y || null, planned: !o.x, t: o.tt || null, ...(o.f ? { for: o.f } : {}), ...(o.pt ? { parts: o.pt.map(([n, q]) => ({ n, q: q || 1 })) } : {}) }
+      ? { id: U.uid(), name: o.n, price: o.p || 0, qty: o.q || 1, status: o.s || 'todo', paid: o.a != null ? o.a : null, pay: o.y || null, planned: !o.x, t: o.tt || null, ...(o.f ? { for: o.f } : {}), ...(o.pt ? { parts: o.pt.map(([n, q]) => ({ n, q: q || 1 })) } : {}), ...(o.ci ? { insp: o.ci } : {}), ...(o.cp ? { pack: o.cp } : {}) }
       : { ...S.newItem(), ...o };
 
   const slimEntry = (e, known) => {
@@ -1452,7 +1588,7 @@
       e.status = 'todo';
       e.doneAt = null;
       e.items = e.items.filter((i) => i.planned !== false);
-      e.items.forEach((i) => { i.status = 'todo'; i.paid = null; i.pay = null; i.t = null; delete i.byEntry; });
+      e.items.forEach((i) => { i.status = 'todo'; i.paid = null; i.pay = null; i.t = null; delete i.byEntry; delete i.insp; delete i.pack; });
       e.cashPaid = 0;
     });
     d.extras = [];

@@ -9,15 +9,16 @@
   const P = HC.parser;
   const Lay = HC.layout;
 
-  HC.VERSION = '1.7.0';
+  HC.VERSION = '1.8.0';
 
-  const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more'];
+  const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more', 'ship', 'scan'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });
 
   // ------------------------------------------------------------------ 画面
   app.show = (view, opt = {}) => {
     if (!VIEWS.includes(view)) view = 'go';
     const changed = app.view !== view;
+    if (changed && app.view === 'scan' && V.scan) V.scan.stop();   // 読み取りの画面を離れたらカメラを止める
     if (changed && view === 'more' && V.more.full) { V.more.full = false; app.dirty.add('more'); }
     app.view = view;
     VIEWS.forEach((v) => {
@@ -83,16 +84,20 @@
     else root.dataset.theme = set.theme;
     root.style.setProperty('--fs', String((set.font || 1) * (set.dayMode ? 1.12 : 1)));
     document.body.classList.toggle('day', !!set.dayMode);
+    document.body.classList.toggle('shipm', !!set.shipMode);
     document.body.classList.toggle('demo', S.isDemo());
     const dark = set.theme === 'dark' || (set.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
     const meta = U.$('meta[name="theme-color"]');
     if (meta) meta.content = dark ? '#12151c' : '#ffffff';
   };
 
+  app.applyLook = applyLook;
+  app.markAll = () => VIEWS.forEach((v) => app.dirty.add(v));
+
   // ------------------------------------------------------------------ 画面を消さない
   let wake = null;
   const updateWake = async () => {
-    const want = S.state.settings.wakeLock && (S.state.settings.dayMode || app.view === 'go' || app.view === 'map') && document.visibilityState === 'visible';
+    const want = S.state.settings.wakeLock && (S.state.settings.dayMode || app.view === 'go' || app.view === 'map' || app.view === 'scan') && document.visibilityState === 'visible';
     if (want && !wake && 'wakeLock' in navigator) {
       try {
         wake = await navigator.wakeLock.request('screen');
@@ -104,6 +109,7 @@
     }
   };
   document.addEventListener('visibilitychange', updateWake);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && V.scan) V.scan.stop(); });
 
   // ------------------------------------------------------------------ 共通処理
   const circleLabel = (cid) => {
@@ -685,7 +691,12 @@
   };
 
   /** 購入検品伝票（自分用。買った品物の一覧表と、品物に貼る付箋カード） */
-  A.buyCheck = (ds) => HC.ship.buyCheck(ds && ds.who ? { who: ds.who } : null);
+  A.buyCheck = (ds) => {
+    const patch = {};
+    if (ds && ds.who) patch.who = ds.who;
+    if (ds && ds.parts) patch.parts = ds.parts.split(',');
+    HC.ship.buyCheck(Object.keys(patch).length ? patch : null);
+  };
 
   /** 依頼者ごとの精算の画面 */
   A.proxySheet = (ds) => {
@@ -2364,6 +2375,8 @@
     V.header();
     V.demoBar();
     if (S.state.settings.dayMode && (initial === 'list' || initial === 'circles')) initial = 'go';
+    if (S.state.settings.shipMode && !['ship', 'scan', 'more', 'list'].includes(initial)) initial = 'ship';
+    if (!S.state.settings.shipMode && (initial === 'ship' || initial === 'scan')) initial = 'go';
     app.show(initial);
     setTimeout(() => dayPrompt(), 600);
 

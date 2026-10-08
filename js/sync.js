@@ -1,7 +1,11 @@
 /* PCとスマホで計画・記録を共有する（Google Apps Script に置いた JSON を読み書きするだけ）
    - 通信が切れていてもアプリは普段どおり動き、つながったときにまとめて送る（オフライン優先）
    - 送るのは計画・記録・お気に入り・自作の配置図。画面設定は端末ごとに残す
-   - 合言葉はサーバーに送らず、そのハッシュ（k）だけを使う */
+   - 合言葉はサーバーに送らず、そのハッシュ（k）だけを使う
+   - 複数の端末で同時に作業したとき（PC で宛先を入力しながら iPhone で読み取る、など）は、前回の同期の内容（base）を手元に控えておき、
+     「base → この端末」「base → サーバー」の変更を項目ごとに合わせる（merge3）。同じ項目を両方で変えたときだけ、この端末の変更を残す
+   - 端末ごとに名前を付けて登録し（state.devices）、最後に同期した時刻を共有する
+   - 発送モードの間は、読み取った記録を約1秒で送り、7秒ごとに受け取る */
 (function () {
   'use strict';
   const HC = window.HC;
@@ -41,15 +45,38 @@
     return (h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0')).repeat(2);
   };
 
-  /** この端末の呼び名（競合したときにどちらの変更か分かるように） */
+  /** 端末の種類から名前の候補を決める（iPad は Mac として名乗ることがあるので、タッチの点数で見分ける） */
+  const guessName = () => {
+    const ua = navigator.userAgent || '';
+    if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'iPad';
+    if (/iPhone/.test(ua)) return 'iPhone';
+    if (/Android/.test(ua)) return /Mobile/.test(ua) ? 'Android' : 'Androidタブレット';
+    return 'PC';
+  };
+  const kindOf = (name) => (/iPad|タブレット/.test(name) ? 'tablet' : /iPhone|Android|スマホ/.test(name) ? 'phone' : 'pc');
+  /** この端末の呼び名（端末の一覧と、競合したときにどちらの変更か分かるように） */
   const deviceName = () => {
     const c = conf();
-    if (!c.device) {
-      c.device = (matchMedia('(pointer: coarse)').matches ? 'スマホ' : 'PC') + '-' + U.uid().slice(-3);
-      S().save();
-    }
+    // 1.7.x までの自動の名前（「スマホ-abc」など）は、端末の種類の名前に付け直す
+    if (!c.device || /^(スマホ|PC)-[0-9a-z]{3}$/.test(c.device)) { c.device = guessName(); S().save(); }
     return c.device;
   };
+  const deviceId = () => {
+    const c = conf();
+    if (!c.deviceId) { c.deviceId = 'd' + U.uid(); S().save(); }
+    return c.deviceId;
+  };
+  Sy.deviceName = deviceName;
+  Sy.setDeviceName = (name) => { conf().device = String(name || '').trim().slice(0, 20) || guessName(); S().save(); U.emit('sync', { device: true }); };
+  /** 登録されている端末（この端末を先頭に、最近同期した順） */
+  Sy.devices = () => {
+    const me = deviceId();
+    const all = { ...(S().state.devices || {}) };
+    all[me] = { ...(all[me] || {}), name: deviceName(), kind: kindOf(deviceName()), lastAt: conf().lastAt || (all[me] || {}).lastAt || 0 };
+    return Object.entries(all).map(([id, d]) => ({ id, ...d, me: id === me })).sort((a, b) => (b.me - a.me) || (b.lastAt || 0) - (a.lastAt || 0));
+  };
+  /** 端末の一覧から消す（使わなくなった端末） */
+  Sy.forgetDevice = (id) => { const d = S().state.devices || {}; delete d[id]; S().save(); conf().dirty = true; schedule(); };
 
   // ---- 通信 ------------------------------------------------------------
   const get = async (k, q = '') => {
@@ -79,7 +106,87 @@
   /** 送受信するのは計画まわりだけ（テーマや地図の向きは端末ごと） */
   const payload = () => {
     const st = S().state;
-    return { v: 1, eventId: st.eventId, data: st.data, customEvents: st.customEvents, favorites: st.favorites, layouts: st.layouts, sender: st.sender || {} };
+    const devices = { ...(st.devices || {}) };
+    devices[deviceId()] = { name: deviceName(), kind: kindOf(deviceName()), lastAt: Date.now() };
+    return { v: 1, eventId: st.eventId, data: st.data, customEvents: st.customEvents, favorites: st.favorites, layouts: st.layouts, sender: st.sender || {}, devices };
+  };
+
+  // ---- 変更の自動合成 ------------------------------------------------
+  const BASE_KEY = 'kurunavi.syncBase';
+  /** 前回サーバーとそろえた内容（合成の起点）を控える */
+  const saveBase = (obj) => { try { localStorage.setItem(BASE_KEY, JSON.stringify(obj)); } catch (e) { /* 容量が足りないときは合成をあきらめて、従来どおり選んでもらう */ } };
+  const loadBase = () => { try { const t = localStorage.getItem(BASE_KEY); return t ? JSON.parse(t) : null; } catch (e) { return null; } };
+  const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
+  const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+  /**
+   * 3方向マージ。b＝前回そろえた内容、l＝この端末、r＝サーバー。
+   * 片方だけが変えた項目はその変更を採る。両方が変えた項目は、オブジェクトなら中まで見て合わせ、
+   * id を持つものの配列（品物・依頼者など）は id ごとに、数や文字の配列（検品済みの番号・並び順など）は足し引きで合わせる。
+   * それ以外で両方が違う値にしたときは、この端末の値を残す
+   */
+  const merge3 = (b, l, r) => {
+    if (same(l, r)) return l;
+    if (b !== undefined && same(b, l)) return r;
+    if (b !== undefined && same(b, r)) return l;
+    if (isObj(l) && isObj(r)) {
+      const bb = isObj(b) ? b : {};
+      const out = {};
+      new Set([...Object.keys(l), ...Object.keys(r)]).forEach((k) => {
+        const inL = k in l, inR = k in r, inB = k in bb;
+        if (inL && inR) out[k] = merge3(inB ? bb[k] : undefined, l[k], r[k]);
+        else if (inL && inB && Array.isArray(l[k]) && Array.isArray(bb[k])) {
+          // 配列の項目が片方で無くなった（検品の記録を全部取り消した、など）ときは、空の配列として合わせる
+          const v = merge3(bb[k], l[k], []);
+          if (v.length) out[k] = v;
+        } else if (inR && inB && Array.isArray(r[k]) && Array.isArray(bb[k])) {
+          const v = merge3(bb[k], [], r[k]);
+          if (v.length) out[k] = v;
+        } else if (inL) { if (!(inB && same(bb[k], l[k]))) out[k] = l[k]; }      // サーバーで消された項目は、こちらが変えていなければ消す
+        else if (!(inB && same(bb[k], r[k]))) out[k] = r[k];                   // こちらで消した項目は、サーバーが変えていなければ消したまま
+      });
+      return out;
+    }
+    if (Array.isArray(l) && Array.isArray(r)) {
+      const bb = Array.isArray(b) ? b : [];
+      const idd = (a) => a.length && a.every((x) => isObj(x) && typeof x.id === 'string');
+      if ((idd(l) || !l.length) && (idd(r) || !r.length) && (l.length || r.length)) {
+        const byB = new Map(bb.filter(isObj).map((x) => [x.id, x]));
+        const byR = new Map(r.map((x) => [x.id, x]));
+        const out = [];
+        l.forEach((x) => {
+          if (byR.has(x.id)) out.push(merge3(byB.get(x.id), x, byR.get(x.id)));
+          else if (!(byB.has(x.id) && same(byB.get(x.id), x))) out.push(x);   // サーバーで消されたものは、こちらが変えていなければ消す
+        });
+        const lIds = new Set(l.map((x) => x.id));
+        r.forEach((x) => { if (!lIds.has(x.id) && !(byB.has(x.id) && same(byB.get(x.id), x))) out.push(x); });   // サーバーで足されたもの
+        return out;
+      }
+      const prim = (a) => a.every((x) => x === null || typeof x !== 'object');
+      if (prim(l) && prim(r) && prim(bb)) {
+        const out = l.filter((x) => r.includes(x) || !bb.includes(x));
+        r.forEach((x) => { if (!l.includes(x) && !bb.includes(x) && !out.includes(x)) out.push(x); });
+        return out;
+      }
+      return l;
+    }
+    return l;
+  };
+  Sy.merge3 = merge3;
+  /** サーバーの内容と、この端末の未送信の変更を合わせて、この端末に入れる */
+  const mergeIn = async (serverPacked) => {
+    const base = loadBase();
+    if (!base) return false;
+    const server = await U.unpack(serverPacked);
+    const merged = merge3(base, payload(), server);
+    applying = true;
+    try {
+      apply(merged);
+      Object.values(S().state.data).forEach((d) => S().repairData(d));
+      S().flush();
+    } finally { applying = false; }
+    saveBase(server);
+    U.emit('change', { event: true, sync: true });
+    return true;
   };
 
   const apply = (obj) => {
@@ -90,6 +197,7 @@
     st.favorites = obj.favorites || {};
     st.layouts = obj.layouts || {};
     if (obj.sender) st.sender = obj.sender;
+    if (obj.devices) st.devices = obj.devices;
     if (obj.eventId && (Object.keys(st.customEvents).includes(obj.eventId) || (HC.bundled || []).some((e) => e.id === obj.eventId))) {
       st.eventId = obj.eventId;
     }
@@ -107,10 +215,16 @@
     Sy.state.busy = true;
     try {
       const k = await keyOf(c.phrase);
-      const data = await U.pack(payload());
-      const r = await post({ k, data, base: opt.force ? null : (c.syncedAt || 0), device: deviceName() });
+      let body = payload();
+      let r = await post({ k, data: await U.pack(body), base: opt.force ? null : (c.syncedAt || 0), device: deviceName() });
+      if (r.conflict && !opt.force && r.data && (await mergeIn(r.data))) {
+        // ほかの端末の変更と合わせたので、それを土台にもう一度送る
+        body = payload();
+        r = await post({ k, data: await U.pack(body), base: r.updated, device: deviceName() });
+      }
       if (r.conflict) return { conflict: true, server: r };
       if (!r.ok) throw new Error(r.error || '保存できませんでした');
+      saveBase(body);
       c.syncedAt = r.updated;
       c.dirty = false;
       c.lastAt = Date.now();
@@ -141,10 +255,23 @@
       const r = await get(k);
       if (!r.ok) throw new Error(r.error || '読み込めませんでした');
       if (!r.updated || !r.data) return { ok: true, empty: true };
-      if (r.updated === c.syncedAt && !opt.force) return { ok: true, same: true };
-      if (c.dirty && !opt.force) return { conflict: true, server: r };
+      if (r.updated === c.syncedAt && !opt.force) {
+        if (!loadBase()) saveBase(await U.unpack(r.data));   // 合成の起点が無ければ、ここで控える
+        return { ok: true, same: true };
+      }
+      if (c.dirty && !opt.force) {
+        if (!(await mergeIn(r.data))) return { conflict: true, server: r };
+        c.syncedAt = r.updated;
+        c.lastAt = Date.now();
+        S().save();
+        Sy.state.error = '';
+        schedule();   // 合わせた結果を送る
+        return { ok: true, merged: true, updated: r.updated, device: r.device };
+      }
       applying = true;
-      apply(await U.unpack(r.data));
+      const obj = await U.unpack(r.data);
+      apply(obj);
+      saveBase(obj);
       applying = false;
       c.syncedAt = r.updated;
       c.dirty = false;
@@ -186,6 +313,23 @@
   });
 
   window.addEventListener('online', () => { if (conf().dirty) schedule(); });
+
+  /** 発送モードで読み取った記録などを、待たずに送る（約1秒後） */
+  const soon = U.debounce(() => {
+    if (!Sy.configured() || S().isDemo()) return;
+    Sy.push().then((r) => { if (r && r.conflict) U.emit('sync', { conflict: r.server }); else if (r && r.skipped === 'busy') soon(); });
+  }, 1200);
+  Sy.soon = () => { if (Sy.configured()) soon(); };
+  /** いま同期する：未送信があれば送り（ほかの端末の変更とも合わせる）、無ければ受け取る */
+  Sy.syncNow = async () => (conf().dirty ? Sy.push() : Sy.pull());
+  // 発送モードの間は、ほかの端末の記録をこまめに受け取る（PC の進み具合がスマホの読み取りに合わせて動くように）
+  setInterval(async () => {
+    const st = S().state;
+    if (!st.settings.shipMode || document.visibilityState !== 'visible' || !Sy.configured() || !navigator.onLine || Sy.state.busy || S().isDemo()) return;
+    const r = await Sy.syncNow();
+    if (r && r.conflict) U.emit('sync', { conflict: r.server });
+    else if (r && r.ok) U.emit('sync', { tick: true });
+  }, 7000);
 
   // ---- 端末を持ち替えたときの取り込み --------------------------------
   let lastPullAt = 0;
