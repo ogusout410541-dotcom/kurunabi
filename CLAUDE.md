@@ -165,6 +165,8 @@ Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv�
   形式情報（BCH、距離3まで）→ マスクを外してコード語 → Reed-Solomon（Berlekamp-Massey・Chien・Forney、根は α^0 から）→ 数字・英数字・バイト・漢字のモード。表は作成側（`HC.qr._t`）と共通。
   カメラは真ん中の正方形（80%）を 520px に縮めて約90msごとに読む。検証：作成 → ゆがめて描く（回転・遠近・ぼけ・ノイズ・照明のむら）→ 読む を大量に試し、タグと同じ中身で ふつうの写り方は全部読め、誤読は0件。
   ほかに Chrome の偽のカメラ（`--use-file-for-fake-video-capture` に QR を写した y4m）で、カメラの映像から読む流れまで確かめた
+  **PC で読み取る**（1.8.1。本人は iPhone を Windows PC の Web カメラにして使う。iVCam・Camo などのアプリ）：「カメラを選ぶ」で使うカメラを選び `localStorage['kurunavi.camId']` に覚える（`HC.qrscan.cameras`、`start(opt.deviceId)`）。
+  Web カメラは映像が鏡写しで届くことがあるので、読み取った行列の転置も試す（鏡写しは3つの角の向きが逆に見え、行列が転置になる）。PC だけで読むなら同期は要らない
 - **連打の保険**：完了して次のカードに切り替わった直後の 0.7 秒は、当日カードのボタンを押しても反応しない（`app.curGuard` と `.cur.enter`）
 - **当日までの準備**（`V.prep`）：開催前（と、まだ1件も回っていない間）の当日タブに、開催日・予算・お品書き待ち・価格未定・ルート・
   財布・オフライン保存・同期・新しい版の抜けを出す。始まってからは抜けがあるときだけ、たたんで出す。開け閉めは `V.prepOpen` に覚える。
@@ -375,7 +377,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## 版の更新（ここを間違えると「いつまでも古い版のまま」になる）
 
-- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.8.0）。
+- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.8.1）。
   **`js/changelog.js` の先頭にもその版の内容を1件足す**（tag: new=新機能 / up=改善 / fix=修正。利用者向けの自然な文で）。
   更新後の初回起動で、前に開いた版（`localStorage['kurunavi.version']`）より新しい分を「新しくなったこと」として自動で出す（`A.changelog({since})`）
 - **SW の install はブラウザのHTTPキャッシュを避けて取り込む**（`freshRequests()`＝`cache:'reload'` ＋ `?v=CACHE`）。

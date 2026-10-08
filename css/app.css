@@ -1697,3 +1697,7 @@ body.shipm .top-wallet { display: none; }
 .sf-no { font-size: .86rem; }
 .scan-boxes .chip small, .sm-dev small, .sm-total b small { font-size: .82rem; }
 .sb-st, .ship-tag { font-size: .82rem; }
+/* PC での読み取り：使っているカメラの名前・カメラの選択 */
+.scan-camname { position: absolute; left: 8px; top: 8px; max-width: calc(100% - 16px); font-size: .78rem; font-weight: 700; color: #fff; background: rgba(0, 0, 0, .55); padding: 3px 8px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: none; }
+.scan-cam.on .scan-camname:not(:empty) { display: block; }
+.scan-off .scan-help { color: #9cc4ff; }

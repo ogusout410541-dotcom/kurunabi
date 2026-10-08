@@ -514,9 +514,12 @@
           const m = quad2quad([3.5, 3.5, dim - 3.5, 3.5, brMod, brMod, 3.5, dim - 3.5], [tl.x, tl.y, tr.x, tr.y, bx, by, bl.x, bl.y]);
           const g = sample(bm, w, h, m, dim);
           if (!g) continue;
-          if (!readFormat(g)) continue;   // 形式情報が読めない位置は飛ばす（速さのため）
-          const text = decodeMatrix(g);
-          if (text != null) return { text, corners: [tl, tr, bl] };
+          // Web カメラのアプリによっては映像が鏡写し（左右反転）で届く。そのときは行列が元の転置になるので、それも試す
+          const tg = g.map((row, y) => row.map((_, x) => g[x][y]));
+          const fa = readFormat(g), fb = readFormat(tg);
+          if (!fa && !fb) continue;   // 形式情報が読めない位置は飛ばす（速さのため）
+          const text = (fa && decodeMatrix(g)) ?? (fb && decodeMatrix(tg)) ?? null;
+          if (text != null && text !== false) return { text, corners: [tl, tr, bl] };
         }
         }
       }
@@ -542,6 +545,12 @@
   };
 
   QS.supported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  /** 使えるカメラの一覧（名前は一度カメラを許可したあとでないと出ない） */
+  QS.cameras = async () => {
+    try {
+      return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput').map((d, i) => ({ id: d.deviceId, label: d.label || `カメラ ${i + 1}` }));
+    } catch (e) { return []; }
+  };
 
   /**
    * カメラを動かして読み続ける。onRead(text) は読めるたびに呼ぶ（同じ文字は cooldown の間は呼ばない）。
@@ -550,7 +559,8 @@
   QS.start = async (video, onRead, opt = {}) => {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      // カメラを選んであればそれを使う（PC に iPhone を Web カメラとしてつないだとき、内蔵カメラと並ぶため）。無ければ背面カメラ
+      video: opt.deviceId ? { deviceId: { exact: opt.deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
     });
     video.srcObject = stream;
     video.setAttribute('playsinline', '');
@@ -601,6 +611,8 @@
         video.srcObject = null;
       },
       native: !!nat,
+      deviceId: (stream.getVideoTracks()[0].getSettings() || {}).deviceId || '',
+      label: stream.getVideoTracks()[0].label || '',
       torch: async (on) => {
         const tr = stream.getVideoTracks()[0];
         try { await tr.applyConstraints({ advanced: [{ torch: !!on }] }); return true; } catch (e) { return false; }

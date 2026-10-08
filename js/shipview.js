@@ -52,7 +52,7 @@
           <h3>${U.icon('list')}手順</h3>
           <ol class="sm-steps">
             ${step(1, 'QRタグを印刷して貼る', false, 'PC で A4 普通紙に印刷し、切って品物1点に1枚ずつテープで貼ります', `<button class="btn sm" data-act="buyCheck" data-parts="list,tags">${U.icon('print', 'sm')}印刷</button>`)}
-            ${step(2, '購入検品', all.units > 0 && all.insp === all.units, `スマホでタグを読むと、1点ずつ検品済みになります（${all.insp}/${all.units}点）`, `<button class="btn sm" data-act="scanGo" data-mode="insp">${U.icon('qr', 'sm')}読み取る</button>`)}
+            ${step(2, '購入検品', all.units > 0 && all.insp === all.units, `「読み取り」でタグをカメラに写すと、1点ずつ検品済みになります（${all.insp}/${all.units}点）`, `<button class="btn sm" data-act="scanGo" data-mode="insp">${U.icon('qr', 'sm')}読み取る</button>`)}
             ${step(3, '宛先を入力する', rq.length > 0 && addrOk === rq.length, `依頼者ごとにお届け先と発送方法を入力します（${addrOk}/${rq.length}人）`)}
             ${step(4, '梱包', px.units > 0 && px.pack === px.units, `箱を選んでタグを読むと、入れてよい品物か・足りない品物が分かります（${px.pack}/${px.units}点）`)}
             ${step(5, '伝票を印刷して同封する', false, '梱包伝票と発送伝票を A4 で印刷します', `<button class="btn sm" data-act="shipAll">${U.icon('print', 'sm')}印刷</button>`)}
@@ -89,7 +89,7 @@
   V.shipSync = () => {
     const Sy = HC.sync;
     if (!Sy.configured()) {
-      return `<p class="sf-lack small">${U.icon('warn', 'sm')}同期を設定していません。PC で印刷したタグをスマホで読むには、同期で計画をそろえてください。<button class="link-btn" data-act="shipDevices">端末を登録する</button></p>`;
+      return `<p class="muted small">${U.icon('note', 'sm')}同期は設定していません。PC につないだカメラで読み取るなら、このままで使えます。スマホ・iPad でも読み取るときは、端末を登録してください。<button class="link-btn" data-act="shipDevices">端末を登録する</button></p>`;
     }
     const devs = Sy.devices ? Sy.devices() : [];
     const ago = (t) => {
@@ -124,7 +124,7 @@
     notBought: '売り切れ・見送り・未購入の品物です。タグの貼り間違いがないか確かめてください',
     over: 'タグを印刷し直すか、品物の数量を確かめてください',
     otherEvent: 'イベントを切り替えてから読み直してください',
-    unknown: 'PC で作った品物は、同期で受け取ってから読み直してください',
+    unknown: 'この端末の計画に無い品物です。別の端末で足した品物なら、同期で受け取ってから読み直してください',
     invalid: 'クルナビで印刷した QR タグを読んでください',
   };
 
@@ -147,6 +147,11 @@
     } catch (e) { /* 音が出なくても記録はできる */ }
     if (navigator.vibrate) navigator.vibrate(tone === 'ok' ? 40 : tone === 'dup' ? [30, 40, 30] : [120, 60, 120]);
   };
+
+  const CAM_KEY = 'kurunavi.camId';
+  const savedCam = () => { try { return localStorage.getItem(CAM_KEY) || ''; } catch (e) { return ''; } };
+  const saveCam = (id) => { try { localStorage.setItem(CAM_KEY, id); } catch (e) { /* 覚えられなくても使える */ } };
+  const isPC = () => matchMedia('(pointer: fine)').matches;
 
   V.scan = {
     mode: 'insp',
@@ -177,9 +182,12 @@
             <div class="scan-off">
               <button type="button" class="btn primary lg" data-scanstart>${U.icon('camera')}カメラで読み取る</button>
               <small>タグの QR を、真ん中の枠に写してください</small>
+              ${isPC() ? `<button type="button" class="link-btn scan-help" data-camhelp>${U.icon('note', 'sm')}iPhone を PC のカメラにする方法</button>` : ''}
             </div>
+            <div class="scan-camname"></div>
             <div class="scan-ctl">
-              <button type="button" class="icon-btn" data-torch aria-label="ライト">${U.icon('sun')}</button>
+              <button type="button" class="btn sm" data-camsel>${U.icon('camera', 'sm')}カメラを選ぶ</button>
+              ${isPC() ? '' : `<button type="button" class="icon-btn" data-torch aria-label="ライト">${U.icon('sun')}</button>`}
               <button type="button" class="btn sm" data-scanstop>止める</button>
             </div>
           </div>
@@ -199,6 +207,8 @@
         if (b.dataset.box) { this.box = b.dataset.box; this.last = null; this.render(el); return; }
         if (b.hasAttribute('data-scanstart')) { this.start(el); return; }
         if (b.hasAttribute('data-scanstop')) { this.stop(); this.paintCam(el); return; }
+        if (b.hasAttribute('data-camsel')) { this.pickCam(el); return; }
+        if (b.hasAttribute('data-camhelp')) { A.camHelp(); return; }
         if (b.hasAttribute('data-torch')) { if (this.cam) this.cam.torch(!(this.torch = !this.torch)).then((ok) => { if (!ok) UI().toast('この端末ではライトを使えません'); }); return; }
         if (b.dataset.manual) {
           // タグが読めないときに手で記録する
@@ -225,6 +235,18 @@
     paintCam(el) {
       const cam = U.$('.scan-cam', el);
       if (cam) cam.classList.toggle('on', !!this.cam);
+      const nm = U.$('.scan-camname', el);
+      if (nm) nm.textContent = this.cam && this.cam.label ? `カメラ：${this.cam.label}` : '';
+    },
+    /** カメラを選ぶ（PC に iPhone をつなぐと、内蔵カメラと iPhone の仮想カメラが並ぶ）。選んだものは次から最初に使う */
+    async pickCam(el) {
+      const list = await HC.qrscan.cameras();
+      if (list.length < 2) return UI().toast(list.length ? 'ほかのカメラが見つかりません。iPhone をつないで、Web カメラのアプリを起動してから選び直してください' : 'カメラが見つかりません', { ms: 6000 });
+      const cur = this.cam ? this.cam.deviceId : savedCam();
+      UI().menu('使うカメラ', list.map((c) => ({
+        label: c.label, icon: c.id === cur ? 'check' : 'camera', active: c.id === cur,
+        act: async () => { saveCam(c.id); this.stop(); await this.start(el); },
+      })));
     },
     async start(el) {
       if (this.cam) return;
@@ -232,13 +254,18 @@
       if (!HC.qrscan.supported()) return UI().toast('この端末・ブラウザではカメラを使えません。公開版（https）のページで開いているか確かめてください', { error: true, ms: 6000 });
       try {
         beep('prep');   // 音は押した操作のあとでないと鳴らせないので、ここで準備しておく
-        this.cam = await HC.qrscan.start(v, (text) => this.onRead(text, el));
+        const want = savedCam();
+        const has = want && (await HC.qrscan.cameras()).some((c) => c.id === want);
+        this.cam = await HC.qrscan.start(v, (text) => this.onRead(text, el), has ? { deviceId: want } : {});
+        // 初めて使う PC でカメラが2つ以上あれば、iPhone のカメラを選べることを知らせる
+        if (!want && isPC() && (await HC.qrscan.cameras()).length > 1) UI().toast('カメラが2つ以上あります。iPhone のカメラを使うときは「カメラを選ぶ」から選んでください', { ms: 6000 });
         this.paintCam(el);
       } catch (e) {
         this.cam = null;
         const n = e && e.name;
         UI().toast(n === 'NotAllowedError' ? 'カメラの使用が許可されていません。設定アプリの Safari →「カメラ」で許可してください（ホーム画面のアプリは、いったん閉じて開き直すと聞き直されます）'
-          : n === 'NotFoundError' ? 'カメラが見つかりませんでした' : 'カメラを起動できませんでした', { error: true, ms: 7000 });
+          : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'カメラが見つかりませんでした。iPhone をつないで、Web カメラのアプリを起動してください'
+          : n === 'NotReadableError' ? 'カメラをほかのアプリが使っています。ほかのアプリ（ビデオ会議など）を閉じてから、もう一度押してください' : 'カメラを起動できませんでした', { error: true, ms: 7000 });
       }
     },
     stop() {
@@ -287,7 +314,7 @@
           ${L.name ? `<div class="sl-item"><span class="sl-who ${L.for ? 'px ' + V.rqClass(L.for) : ''}">${esc(whoLabel(L.for))}</span>
             <b>${esc(L.space || '')} ${esc(L.circle || '')}</b><span>${esc(L.name)}　<b>${L.k}/${L.qty}</b>点目</span></div>` : ''}
           ${HINT[L.kind] ? `<p class="small">${HINT[L.kind]}</p>` : ''}
-          ${L.kind === 'unknown' ? `<button class="btn sm" data-act="shipSyncNow">${U.icon('sync', 'sm')}PC の最新を受け取る</button>` : ''}
+          ${L.kind === 'unknown' && HC.sync.configured() ? `<button class="btn sm" data-act="shipSyncNow">${U.icon('sync', 'sm')}ほかの端末の最新を受け取る</button>` : ''}
           ${complete ? `<div class="sl-done">${U.icon('check')}過不足なし：${esc(rqName(this.box))}の分 全${b.units}点がそろいました
             <div class="btn-grid2"><button class="btn" data-act="shipOpen" data-rid="${esc(this.box)}">${U.icon('print', 'sm')}伝票を印刷</button><button class="btn primary" data-act="shipDone" data-rid="${esc(this.box)}">${U.icon('truck', 'sm')}発送済みにする</button></div></div>` : ''}`;
       } else {
@@ -398,6 +425,21 @@
       },
     });
   };
+
+  /** iPhone を PC の Web カメラにする手順（Windows） */
+  A.camHelp = () => UI().sheet({
+    id: 'camHelp',
+    center: true,
+    title: 'iPhone を PC のカメラにする',
+    html: `<ol class="a2hs-steps">
+        <li>iPhone を Web カメラにするアプリを、PC と iPhone の両方に入れます（例：iVCam、Camo など。どちらも PC 用と iPhone 用があります）</li>
+        <li>iPhone を USB ケーブルで PC につなぎ、PC と iPhone の両方でアプリを起動します。PC のアプリに iPhone の映像が出れば準備できています</li>
+        <li>クルナビの「読み取り」で「カメラで読み取る」を押し、「カメラを選ぶ」から iPhone のカメラ（アプリの名前のカメラ）を選びます。次からは最初にそのカメラを使います</li>
+        <li>iPhone をスタンドなどに固定し、タグを 10〜20cm ほど離して写します。読めると音が鳴り、画面が緑（OK）・黄（読み取り済み）・赤（入れてはいけない）に光ります</li>
+      </ol>
+      <p class="muted small">ブラウザがカメラの使用を聞いてきたら「許可」を押してください。映像が左右反転していても読み取れます。PC だけで読み取るときは、同期の設定は要りません。</p>
+      <div class="btn-row"><button class="btn primary" data-close>閉じる</button></div>`,
+  });
 
   // ------------------------------------------------------------------ 操作
   A.shipModeOn = () => {
