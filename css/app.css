@@ -267,7 +267,7 @@ select.input { appearance: auto; }
   .chips.scroll { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; }
 }
 .chip {
-  flex: none; min-height: 38px; padding: 0 13px; border-radius: 999px; font-size: .85rem; font-weight: 650;
+  flex: none; min-height: 38px; padding: 0 13px; border-radius: 6px; font-size: .85rem; font-weight: 650;
   background: var(--surface); border: 1px solid var(--line); white-space: nowrap;
 }
 .chip.sm { min-height: 36px; padding: 0 11px; font-size: .8rem; }
@@ -278,7 +278,7 @@ select.input { appearance: auto; }
 .st-chip { display: inline-flex; align-items: center; height: 23px; padding: 0 9px; border-radius: 6px; font-size: .78rem; font-weight: 800; background: var(--surface3); color: var(--text); flex: none; }
 .st-chip.st-done { background: var(--ok-soft); color: var(--ok); }
 .st-chip.st-later { background: var(--warn-bg); color: var(--warn-ink); }
-.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 5px; font-size: .7rem; font-weight: 700; background: var(--surface3); color: var(--muted); margin-left: 6px; }
+.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 5px; font-size: .74rem; font-weight: 700; background: var(--surface3); color: var(--muted); margin-left: 6px; }
 .tag.wall { background: #3b3f4a; color: #fff; }
 
 /* スペース表記 */
@@ -288,7 +288,7 @@ select.input { appearance: auto; }
 .sp.xl { font-size: 2.6rem; font-weight: 850; line-height: 1.05; letter-spacing: .02em; }
 
 .link-chip {
-  display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 11px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 11px; border-radius: 6px;
   background: var(--surface2); color: var(--text); text-decoration: none; font-size: .8rem; font-weight: 650; border: 1px solid var(--line);
 }
 .link-chip.menu { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
@@ -541,7 +541,7 @@ select.input { appearance: auto; }
 
 .map-ctrl { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 8px; z-index: 2; }
 .route-off { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--tab-h) + var(--safe-b) + 16px); z-index: 3;
-  display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 16px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 16px; border-radius: 6px;
   background: var(--surface); color: var(--accent); border: 2px solid var(--accent); font-weight: 700; font-size: .85rem; box-shadow: var(--shadow-lg); }
 @media (min-width: 960px) { .route-off { bottom: 20px; } }
 .map-legend { position: absolute; left: 10px; top: 10px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 80px); z-index: 2; pointer-events: none; }
@@ -629,7 +629,7 @@ select.input { appearance: auto; }
 .ph-row.alt > b { font-weight: 700; }
 .ph-coins { display: flex; gap: 6px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
 .ph-coins span {
-  background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
   padding: 3px 9px; font-weight: 800; white-space: nowrap;
 }
 .ph-coins small { font-weight: 700; color: var(--muted); margin-left: 2px; }
@@ -784,7 +784,7 @@ body.editing { overflow: hidden; }
 .near-l { display: inline-flex; align-items: center; gap: 4px; font-size: .76rem; color: var(--muted); font-weight: 650; }
 .near-chip {
   display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
-  min-height: 38px; padding: 5px 12px; border-radius: 999px; background: var(--surface2); border: 1px solid var(--line); font-size: .8rem;
+  min-height: 38px; padding: 5px 12px; border-radius: 6px; background: var(--surface2); border: 1px solid var(--line); font-size: .8rem;
 }
 .near-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 11em; }
 .cur-memo-add {
@@ -833,7 +833,7 @@ body.editing { overflow: hidden; }
 /* ------------------------------------------------------------ オフライン表示 */
 .net-chip {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 9px; border-radius: 999px; font-size: .74rem; font-weight: 700;
+  padding: 3px 9px; border-radius: 6px; font-size: .74rem; font-weight: 700;
   background: var(--warn-bg); color: var(--warn-ink); white-space: nowrap;
 }
 /* 圏外では外部リンクを薄くして、押しても開かないことを示す */
@@ -877,7 +877,7 @@ body.offline .link-chip.x, body.offline .link-chip.px, body.offline .link-chip.w
 /* 新しい版が届いていることを、押せる形で出しておく */
 .update-chip {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 10px; border-radius: 999px; font-size: .74rem; font-weight: 700;
+  padding: 4px 10px; border-radius: 6px; font-size: .74rem; font-weight: 700;
   background: var(--accent); color: var(--on-accent); white-space: nowrap;
 }
 
@@ -898,7 +898,7 @@ body.offline .link-chip.x, body.offline .link-chip.px, body.offline .link-chip.w
 .pend-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .pend-chip {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
-  min-height: 40px; padding: 5px 12px; border-radius: 999px;
+  min-height: 40px; padding: 5px 12px; border-radius: 6px;
   background: color-mix(in srgb, var(--p2) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--p2) 40%, transparent); font-size: .82rem; font-weight: 650;
 }
@@ -981,7 +981,7 @@ body.day .tabbar .ic { width: 26px; height: 26px; }
 .dc-shots { margin: 4px 0 12px; }
 .dc-shot { position: relative; display: block; width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #fff; }
 .dc-shot img { display: block; width: 100%; max-height: 46vh; object-fit: contain; background: #fff; }
-.dc-zoom { position: absolute; right: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 999px; background: rgba(0,0,0,.66); color: #fff; font-size: .8rem; font-weight: 700; }
+.dc-zoom { position: absolute; right: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 6px; background: rgba(0,0,0,.66); color: #fff; font-size: .8rem; font-weight: 700; }
 .dc-shots .shots { margin-top: 8px; }
 .dc-noshot { font-size: .85rem; color: var(--muted); margin: 0 0 10px; }
 .day-card .item-main { min-height: 60px; }
@@ -1035,7 +1035,7 @@ body.day[data-view="go"] { padding-bottom: calc(var(--tab-h) + var(--safe-b) + 1
 .db-l { display: inline-flex; align-items: baseline; gap: 8px; }
 .db-now { font-variant-numeric: tabular-nums; font-size: 1.05rem; font-weight: 850; }
 .db-note { flex: 1; font-size: .74rem; font-weight: 650; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.db-btn { min-height: 36px; padding: 0 12px; border-radius: 999px; background: rgba(255,255,255,.85); color: #1b1203; font-size: .85rem; font-weight: 800; }
+.db-btn { min-height: 36px; padding: 0 12px; border-radius: 6px; background: rgba(255,255,255,.85); color: #1b1203; font-size: .85rem; font-weight: 800; }
 .db-btn.end { background: #1b1203; color: #fff; }
 .demo-card { border: 2px solid #f59315; }
 body.demo .topbar { border-bottom-color: #f59315; }
@@ -1128,7 +1128,7 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .clog-v { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; background: var(--surface); }
 .clog-v.now { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .clog-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.clog-ver { font-weight: 850; font-variant-numeric: tabular-nums; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: .85rem; }
+.clog-ver { font-weight: 850; font-variant-numeric: tabular-nums; padding: 2px 9px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: .85rem; }
 .clog-now { font-size: .72rem; font-weight: 800; color: #fff; background: var(--accent); padding: 2px 8px; border-radius: 999px; }
 .clog-date { margin-left: auto; color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
 .clog-title { display: block; font-size: .98rem; margin: 2px 0 6px; }
@@ -1591,7 +1591,7 @@ body.shipm .top-wallet { display: none; }
 .sm-sync-st { display: inline-flex; align-items: center; gap: 4px; color: var(--ok); font-weight: 700; }
 .sm-sync-st.err { color: var(--warn-ink); }
 .sm-devs { display: inline-flex; flex-wrap: wrap; gap: 6px; }
-.sm-dev { display: inline-flex; align-items: baseline; gap: 4px; padding: 2px 8px; border-radius: 999px; background: var(--surface2); font-weight: 700; }
+.sm-dev { display: inline-flex; align-items: baseline; gap: 4px; padding: 2px 8px; border-radius: 6px; background: var(--surface2); font-weight: 700; }
 .sm-dev small { color: var(--muted); font-weight: 500; font-size: .74rem; }
 .sm-dev.me { outline: 1.5px solid var(--accent); }
 /* 手順 */
@@ -1663,7 +1663,7 @@ body.shipm .top-wallet { display: none; }
 .scan-out { border-color: var(--danger); }
 .scan-out h3 .ic { color: var(--danger); }
 .scan-piles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.scan-piles span { display: inline-flex; gap: 6px; align-items: baseline; padding: 3px 10px; border-radius: 999px; background: var(--surface2); font-variant-numeric: tabular-nums; font-size: .85rem; }
+.scan-piles span { display: inline-flex; gap: 6px; align-items: baseline; padding: 3px 10px; border-radius: 6px; background: var(--surface2); font-variant-numeric: tabular-nums; font-size: .85rem; }
 .scan-piles span.px { background: color-mix(in srgb, var(--rq, #7c3aed) 16%, transparent); }
 @media (min-width: 960px) {
   .scan-view { grid-template-columns: minmax(360px, 1fr) minmax(320px, 1fr); align-items: start; }
@@ -1715,3 +1715,141 @@ body.shipm .top-wallet { display: none; }
 .tg-nm.l4 { font-size: 6.3pt; line-height: 1.2; }
 .tg-sp span.long { font-size: 6.5pt; }
 .tg-tx { overflow: hidden; }   /* 収まり具合を測るため（fitTags） */
+
+/* 発送の一覧表（PC）。スマホでは横にスクロール */
+.sm-table-wrap { overflow-x: auto; margin: 0 -14px; padding: 0 14px; }
+.sm-table { width: 100%; border-collapse: collapse; font-size: .84rem; min-width: 980px; }
+.sm-table th { text-align: left; font-size: .76rem; font-weight: 700; color: var(--muted); background: var(--surface2); padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.sm-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+.sm-table td small { display: block; color: var(--muted); font-size: .74rem; }
+.sm-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.sm-table td.ok { color: var(--ok); font-weight: 700; }
+.sm-table tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.sm-table tr.shipped td { color: var(--muted); }
+.sm-table .rq-dot { display: inline-block; margin-right: 6px; vertical-align: middle; }
+.sm-trk { min-height: 36px; width: 12em; padding: 4px 8px; font-size: .84rem; font-variant-numeric: tabular-nums; }
+.sm-ops { white-space: nowrap; }
+.sm-ops .icon-btn { vertical-align: middle; }
+.sm-ops .icon-btn.on { color: var(--ok); }
+.sm-ledger h3 .link-btn { margin-left: auto; }
+/* 読み取りの画面：No. で手入力 */
+.scan-manual { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.scan-manual-lb { width: 100%; display: flex; align-items: center; gap: 6px; font-size: .82rem; font-weight: 700; color: var(--muted); }
+.scan-manual label { display: flex; flex-direction: column; gap: 2px; font-size: .76rem; color: var(--muted); font-weight: 600; }
+.scan-manual label:first-of-type .input { width: 6em; }
+.scan-manual label:nth-of-type(2) .input { width: 5em; }
+.scan-manual .btn { min-height: 44px; }
+@media (min-width: 960px) { .scan-manual { grid-column: 1; } }
+
+/* ====================================================================
+   業務用の見た目（1.9.0）
+   落ち着いた配色・角を控えめに・影ではなく線で区切る・見出しに区切り線・数字は等幅。
+   部品の作りは変えず、色と形だけをここで上書きする（下の方ほど後から効く）
+   ==================================================================== */
+:root {
+  --radius: 8px;
+  --bg: #f1f3f6;
+  --surface2: #f0f2f5;
+  --surface3: #e2e6ec;
+  --text: #1a1f27;
+  --muted: #5b6676;
+  --line: #d5dae2;
+  --accent: #1f6fd1;
+  --accent-2: #1859aa;
+  --accent-soft: rgba(31, 111, 209, .10);
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 40, .18);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1216;
+    --surface: #171b21;
+    --surface2: #1e232b;
+    --surface3: #283039;
+    --text: #e6eaf0;
+    --muted: #9aa5b4;
+    --line: #2b323d;
+    --accent: #4d94e8;
+    --accent-2: #74aaf0;
+    --accent-soft: rgba(77, 148, 232, .16);
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1216;
+  --surface: #171b21;
+  --surface2: #1e232b;
+  --surface3: #283039;
+  --text: #e6eaf0;
+  --muted: #9aa5b4;
+  --line: #2b323d;
+  --accent: #4d94e8;
+  --accent-2: #74aaf0;
+  --accent-soft: rgba(77, 148, 232, .16);
+  --shadow: none;
+}
+
+/* 全体：数字は桁をそろえる */
+body { font-feature-settings: "palt" 0; }
+.money, .num, td.mo, .mo, b { font-variant-numeric: tabular-nums; }
+
+/* 上の帯：ロゴは単色の四角に */
+.logo { background: var(--accent); border-radius: 6px; }
+.top-wallet { border-radius: 6px; border: 1px solid var(--line); background: var(--surface); }
+
+/* カード：影ではなく線、見出しの下に区切り線 */
+.card { border-radius: var(--radius); box-shadow: none; }
+.card > h3:first-child { margin: -2px 0 12px; padding-bottom: 9px; border-bottom: 1px solid var(--line); font-size: .95rem; letter-spacing: .02em; }
+.card > h3:first-child .ic { color: var(--accent); }
+.clockbar { border-radius: var(--radius); box-shadow: none; }
+
+/* ボタン：角は控えめ、ふつうのボタンは白地に線 */
+.btn { border-radius: 6px; font-weight: 600; background: var(--surface); }
+.btn.sm { border-radius: 6px; }
+.btn.xl, .btn.lg { border-radius: 8px; }
+.btn.ghost { background: transparent; }
+.btn.primary { box-shadow: 0 1px 0 rgba(0, 0, 0, .06); }
+.btn.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+.btn:not(.primary):not(.danger):hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.icon-btn { border-radius: 6px; }
+.icon-btn.solid { box-shadow: none; }
+
+/* 切り替え・チップ：角ばった形、選んでいるものは主色 */
+.seg { border-radius: 6px; padding: 2px; border: 1px solid var(--line); }
+.seg button { border-radius: 4px; }
+.seg button.on { box-shadow: none; background: var(--surface); color: var(--accent); outline: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.chip { border-radius: 6px; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.link-chip { border-radius: 6px; }
+.pri-chip, .st-chip { border-radius: 4px; }
+.tag { border-radius: 3px; }
+
+/* 入力欄：白地に線 */
+.input { border-radius: 6px; background: var(--surface); }
+.input:focus { box-shadow: 0 0 0 3px var(--accent-soft); }
+.warn { border-radius: 6px; }
+
+/* 下のタブ：選んでいるタブに上の線 */
+.tabbar button.on { box-shadow: inset 0 2px 0 var(--accent); }
+@media (min-width: 960px) {
+  .tabbar button { border-radius: 6px; }
+  .tabbar button.on { box-shadow: inset 0 -2px 0 var(--accent); background: transparent; }
+  .sheet-wrap.center .sheet, .sheet-wrap.numpad-sheet .sheet, .sheet-wrap.menu-sheet .sheet { border-radius: 10px; }
+}
+
+/* シート：角を少し控えめに */
+.sheet { border-radius: 14px 14px 0 0; }
+.sheet-head { border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+
+/* 表：見出しの行は地の色、行は線で区切る */
+.proxy-table th, .simtable th { background: var(--surface2); font-size: .76rem; font-weight: 700; color: var(--muted); }
+.proxy-table tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+
+/* トースト：角を控えめに */
+.toast { border-radius: 8px; }
+@media (min-width: 960px) {
+  body[data-view="ship"] main { max-width: 1240px; }   /* 発送の一覧表を1画面に収める */
+  .sm-boxes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; align-items: start; }
+  .sm-table { min-width: 0; }
+}
+.sm-trk { width: 11em; }

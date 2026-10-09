@@ -29,6 +29,12 @@
   // ------------------------------------------------------------------ 発送（手順と進み具合）
   V.ship = {
     render(el) {
+      el.onchange = (e) => {
+        const t = e.target;
+        if (!t.matches || !t.matches('[data-trk]')) return;
+        S().setShip(t.dataset.trk, { tracking: t.value.trim() });
+        UI().toast('追跡番号を保存しました');
+      };
       const s = S();
       const all = s.unitRows('all');
       const rq = s.requesters().map((r) => ({ r, b: boxInfo(r.id), st: HC.ship.state(r.id) })).filter((x) => x.b.units || x.st === 'shipped');
@@ -59,8 +65,29 @@
             ${step(6, '発送済みにする', rq.length > 0 && shipped === rq.length, `追跡番号を入れて、発送済みにします（${shipped}/${rq.length}人）`)}
           </ol>
         </section>
+        ${rq.length ? `<section class="card sm-ledger">
+          <h3>${U.icon('list')}発送の一覧 <small>${rq.length}人</small><button class="link-btn" data-act="shipCsv">${U.icon('download', 'sm')}発送台帳（CSV）</button></h3>
+          <div class="sm-table-wrap"><table class="sm-table">
+            <thead><tr><th>伝票No.</th><th>依頼者</th><th class="num">点数</th><th class="num">検品</th><th class="num">梱包</th><th>宛先</th><th>発送方法</th><th class="num">送料</th><th>追跡番号</th><th>発送日</th><th>状態</th><th></th></tr></thead>
+            <tbody>${rq.map(({ r, b, st }) => { const sh = r.ship || {}; const fee = sh.feeMode === 'cod' ? '着払い' : sh.feeMode === 'none' ? '—' : sh.fee ? U.yen(sh.fee) : '未入力'; return `<tr class="${st}">
+              <td class="mono">${sh.no ? String(sh.no).padStart(4, '0') : '—'}</td>
+              <td><span class="rq-dot ${V.rqClass(r.id)}"></span><b>${esc(r.name)}</b></td>
+              <td class="num">${b.units}</td>
+              <td class="num${b.insp === b.units && b.units ? ' ok' : ''}">${b.insp}/${b.units}</td>
+              <td class="num${b.done ? ' ok' : ''}">${b.pack}/${b.units}</td>
+              <td>${sh.addr1 ? `${esc(sh.name || '')}<small>〒${esc(HC.ship.postal(sh.postal))}</small>` : '<span class="sb-lack">未入力</span>'}</td>
+              <td>${esc(sh.method || '—')}</td>
+              <td class="num">${fee}</td>
+              <td><input class="input sm-trk" data-trk="${esc(r.id)}" value="${esc(sh.tracking || '')}" placeholder="入力" inputmode="numeric" autocomplete="off" aria-label="${esc(r.name)}の追跡番号"></td>
+              <td>${sh.shippedAt ? esc(U.md(sh.shippedAt)) : '—'}</td>
+              <td><em class="ship-tag ${st}">${HC.ship.STATE[st] || ''}</em></td>
+              <td class="sm-ops"><button class="icon-btn sm" data-act="shipOpen" data-rid="${esc(r.id)}" title="宛先・伝票" aria-label="宛先・伝票">${U.icon('print', 'sm')}</button><button class="icon-btn sm" data-act="shipNotice" data-rid="${esc(r.id)}" title="発送のお知らせ文をコピー" aria-label="発送のお知らせ文をコピー">${U.icon('note', 'sm')}</button><button class="icon-btn sm${st === 'shipped' ? ' on' : ''}" data-act="shipDone" data-rid="${esc(r.id)}" title="${st === 'shipped' ? '発送済みを取り消す' : '発送済みにする'}" aria-label="${st === 'shipped' ? '発送済みを取り消す' : '発送済みにする'}">${U.icon('truck', 'sm')}</button></td>
+            </tr>`; }).join('')}</tbody>
+          </table></div>
+          <p class="muted small">追跡番号はこの表で直接入力できます（入力すると保存します）。行の右のボタンは、左から「宛先・伝票」「発送のお知らせ文をコピー」「発送済み」です。</p>
+        </section>` : ''}
         <h3 class="sm-sec-title">${U.icon('box')}箱（依頼者ごと）</h3>
-        ${rq.length ? rq.map(({ r, b, st }) => `<section class="card sm-box ${st}">
+        ${rq.length ? '<div class="sm-boxes">' + rq.map(({ r, b, st }) => `<section class="card sm-box ${st}">
             <div class="smb-hd"><span class="rq-dot ${V.rqClass(r.id)}"></span><b>${esc(r.name)}</b><em class="ship-tag ${st}">${HC.ship.STATE[st] || ''}</em></div>
             <div class="sm-total">
               <div><span>検品</span>${bar(b.insp, b.units)}<b>${b.insp}<small>/${b.units}点</small></b></div>
@@ -73,7 +100,8 @@
               <button class="btn" data-act="shipOpen" data-rid="${esc(r.id)}">${U.icon('print')}宛先・伝票</button>
             </div>
             ${b.done || st === 'shipped' ? `<button class="btn block ${st === 'shipped' ? 'ghost' : 'primary'}" data-act="shipDone" data-rid="${esc(r.id)}">${U.icon('truck')}${st === 'shipped' ? `発送済み（${esc(U.md((r.ship || {}).shippedAt))}）を取り消す` : '発送済みにする'}</button>` : ''}
-          </section>`).join('') : '<p class="muted card">代行の品物で買えたものがまだありません。</p>'}
+            ${st === 'shipped' ? `<button class="btn block" data-act="shipNotice" data-rid="${esc(r.id)}">${U.icon('note')}発送のお知らせ文をコピー</button>` : ''}
+          </section>`).join('') + '</div>' : '<p class="muted card">代行の品物で買えたものがまだありません。</p>'}
         ${(() => {
           const own = s.unitRows('own');
           return own.units ? `<section class="card sm-box own">
@@ -191,10 +219,35 @@
               <button type="button" class="btn sm" data-scanstop>止める</button>
             </div>
           </div>
+          <form class="scan-manual" autocomplete="off">
+            <span class="scan-manual-lb">${U.icon('edit', 'sm')}No. で入力</span>
+            <label><span>No.</span><input class="input" name="no" inputmode="numeric" placeholder="12" aria-label="タグの No."></label>
+            <label><span>何点目</span><input class="input" name="k" inputmode="numeric" placeholder="自動" aria-label="何点目（空なら、まだの点を自動で選びます）"></label>
+            <button type="submit" class="btn sm primary">記録</button>
+          </form>
           <div class="scan-last" aria-live="assertive"></div>
           <div class="scan-body"></div>
         </div>`;
         this.bind(el);
+        // タグが汚れて読めないときは、タグに印刷した No. と何点目を打ち込んで記録する
+        U.$('.scan-manual', el).onsubmit = (e) => {
+          e.preventDefault();
+          const f = e.target;
+          const no = parseInt(U.toHalf(f.no.value), 10);
+          const row = HC.ship.tagRows().find((r) => r.no === no);
+          if (!row) { UI().toast(`No.${f.no.value || '?'} の品物が見つかりません（タグを印刷したときの並びで数えています）`, { error: true }); return; }
+          const outside = !!(row.cid && row.cid.startsWith('x:'));
+          let k = parseInt(U.toHalf(f.k.value), 10);
+          if (!k) {
+            // 空なら、まだ記録していない最初の点
+            const it = outside ? (S().d().extras || []).find((x) => x.id === row.iid) : Object.values(S().d().entries).flatMap((x) => x.items).find((i) => i.id === row.iid);
+            const done = (it && it[this.mode === 'pack' ? 'pack' : 'insp']) || [];
+            k = Array.from({ length: row.qty }, (_, i) => i + 1).find((x) => !done.includes(x)) || 1;
+          }
+          this.onRead(S().tagText(row.iid, k, outside), el);
+          f.no.value = ''; f.k.value = '';
+          f.no.focus();
+        };
         if (wasOn) this.start(el);
       }
       this.paint(el);
@@ -377,6 +430,7 @@
           ${tile('shipAll', 'print', '梱包・発送伝票をまとめて印刷')}
           ${tile('scanGo', 'check', '購入検品を読み取る', 'data-mode="insp"')}
           ${tile('scanGo', 'box', '梱包を読み取る', 'data-mode="pack"')}
+          ${tile('shipCsv', 'download', '発送台帳（CSV）')}
           ${tile('shipDevices', 'sync', '端末と同期')}
           ${tile('nav', 'wallet', '代行の精算', 'data-view="list" data-scroll="proxy"')}
         </div>
@@ -467,12 +521,23 @@
     app.show('scan');
   };
   A.shipOpen = (ds) => HC.ship.open(ds.rid);
+  /** 発送のお知らせ文をコピー */
+  A.shipNotice = async (ds) => {
+    const t = HC.ship.noticeText(ds.rid);
+    if (await U.copy(t)) UI().toast('発送のお知らせ文をコピーしました。LINE や DM に貼り付けて送れます');
+    else UI().prompt('発送のお知らせ文（長押しでコピー）', { value: t, multiline: true, ok: '閉じる' });
+  };
+  /** 発送台帳（CSV）を書き出す */
+  A.shipCsv = () => {
+    U.download(`kurunavi_発送台帳_${S().ev().short || 'event'}_${U.today().replace(/-/g, '')}.csv`, HC.ship.ledgerCsv(), 'text/csv');
+    UI().toast('発送台帳を書き出しました');
+  };
   A.shipDone = (ds) => {
     const r = S().requester(ds.rid);
     if (!r) return;
     const on = !(r.ship && r.ship.shippedAt);
     S().setShipped(ds.rid, on);
-    UI().toast(on ? `${r.name}の分を発送済みにしました` : '発送済みを取り消しました', { undo: true });
+    UI().toast(on ? `${r.name}の分を発送済みにしました` : '発送済みを取り消しました', on ? { undo: true, action: { label: 'お知らせ文をコピー', fn: () => A.shipNotice({ rid: ds.rid }) } } : { undo: true });
   };
   A.shipSyncNow = async () => {
     const Sy = HC.sync;

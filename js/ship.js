@@ -853,6 +853,51 @@
     });
   };
 
+  /** タグの No. と品物の対応（最後に印刷したときの対象・並び順で数える。読み取りの画面の「No. で手入力」に使う） */
+  Sh.tagRows = () => { const o = bcOpt(); return Sh.buyRows(o.who, o.order); };
+
+  /** 発送のお知らせ文（発送したあとに依頼者へ送る。LINE や X の DM にそのまま貼れる形。精算の方法は書かない） */
+  Sh.noticeText = (rid) => {
+    const d = Sh.data(rid);
+    const sh = d.ship;
+    const qty = U.sum(d.got, (x) => x.qty);
+    const fee = sh.feeMode === 'charge' ? `（送料 ${U.yen(d.fee)} を含めて合計 ${U.yen(d.total)}）` : sh.feeMode === 'cod' ? '（送料は着払いです）' : '';
+    return [
+      `【${S().ev().name} 代行】発送のお知らせ`,
+      `${d.r.name}さん`,
+      '',
+      `${sh.shippedAt ? U.md(sh.shippedAt) + 'に、' : ''}ご依頼の品物を発送しました。`,
+      '',
+      `・発送方法：${sh.method || '—'}`,
+      `・追跡番号：${sh.tracking || '（分かりしだいお知らせします）'}`,
+      `・品物：${d.got.length}品目 ${qty}点${d.miss.length ? `（ご用意できなかったもの ${d.miss.length}点）` : ''}`,
+      `・立て替え分：${U.yen(d.items)}${fee}`,
+      '',
+      '届きましたら、中身をご確認いただけると助かります。',
+      'どうぞよろしくお願いします。',
+    ].join('\n');
+  };
+
+  /** 発送台帳（CSV）。依頼者ごとに1行。表計算ソフトで開けるよう先頭に BOM を付ける */
+  Sh.ledgerCsv = () => {
+    const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const head = ['伝票No.', '状態', '梱包日', '発送日', '依頼者', 'お届け先', '郵便番号', '住所', '電話番号', '発送方法', '送料の扱い', '送料', '品目', '点数', 'ご用意できなかった点数', '立て替え分', '合計', '追跡番号', '検品', '梱包'];
+    const lines = [head.map(q).join(',')];
+    const day = (t) => { if (!t) return ''; const x = new Date(t); return `${x.getFullYear()}/${String(x.getMonth() + 1).padStart(2, '0')}/${String(x.getDate()).padStart(2, '0')}`; };
+    S().requesters().forEach((r) => {
+      const d = Sh.data(r.id);
+      if (!d.got.length && !(r.ship && r.ship.shippedAt)) return;
+      const sh = d.ship;
+      const u = S().unitRows(r.id);
+      lines.push([
+        sh.no ? noTxt(sh.no) : '', Sh.STATE[Sh.state(r.id)] || '', (sh.date || '').replace(/-/g, '/'), day(sh.shippedAt), r.name, sh.name || '',
+        Sh.postal(sh.postal || ''), [sh.addr1, sh.addr2].filter(Boolean).join(' '), sh.phone || '', sh.method || '', FEE[sh.feeMode] || '', sh.feeMode === 'charge' ? d.fee : '',
+        d.got.length, U.sum(d.got, (x) => x.qty), U.sum(d.miss, (x) => x.qty), d.items, d.total, sh.tracking || '', `${u.insp}/${u.units}`, `${u.pack}/${u.units}`,
+      ].map(q).join(','));
+    });
+    return '\uFEFF' + lines.join('\r\n');
+  };
+
   /** 買えた品物がある依頼者（まとめて印刷の対象） */
   Sh.printable = () => S().requesters().filter((r) => S().proxySummary(r.id).boughtCount > 0).map((r) => r.id);
 })();
