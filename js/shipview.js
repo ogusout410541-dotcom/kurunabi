@@ -197,12 +197,13 @@
         const wasOn = !!this.cam;
         this.stop();
         el.dataset.key = key;
-        el.innerHTML = `<div class="scan-view">
+        el.innerHTML = `<div class="scan-view mode-${this.mode}">
           <div class="seg scan-mode">
+            <button type="button" class="${this.mode === 'tag' ? 'on' : ''}" data-scanmode="tag">${U.icon('qr', 'sm')}タグ貼り</button>
             <button type="button" class="${this.mode === 'insp' ? 'on' : ''}" data-scanmode="insp">${U.icon('check', 'sm')}購入検品</button>
             <button type="button" class="${this.mode === 'pack' ? 'on' : ''}" data-scanmode="pack">${U.icon('box', 'sm')}梱包</button>
           </div>
-          ${this.mode === 'pack' ? '<div class="scan-boxes"></div>' : '<p class="muted small scan-lead">タグを読むと、検品済みになります。下に大きく出る「誰の分」を見て、人ごとに分けて置いてください。</p>'}
+          ${this.mode === 'pack' ? '<div class="scan-boxes"></div>' : this.mode === 'tag' ? '<p class="muted small scan-lead">切ったタグを1枚ずつ読むと、その品物とお品書き画像を大きく出します。品物を見つけてタグを貼り、「貼った」を押すと検品済みになります。</p>' : '<p class="muted small scan-lead">タグを読むと、検品済みになります。下に大きく出る「誰の分」を見て、人ごとに分けて置いてください。</p>'}
           <div class="scan-cam">
             <video playsinline muted></video>
             <div class="scan-aim" aria-hidden="true"></div>
@@ -266,7 +267,7 @@
         if (b.dataset.manual) {
           // タグが読めないときに手で記録する
           const [iid, k, out] = b.dataset.manual.split('|');
-          S().setUnit(iid, +k, this.mode, true, out === '1');
+          S().setUnit(iid, +k, this.mode === 'tag' ? 'insp' : this.mode, true, out === '1');
           UI().toast(this.mode === 'pack' ? '箱に入れたことにしました' : '検品済みにしました', { undo: true });
           return;
         }
@@ -275,6 +276,17 @@
           S().setUnit(iid, +k, mode, false, out === '1');
           this.log = this.log.filter((x) => !(x.iid === iid && x.k === +k && x.mode === mode));
           UI().toast('記録を取り消しました', { undo: true });
+          return;
+        }
+        if (b.dataset.tcidx) { this.shotIdx = +b.dataset.tcidx; this.paint(el); return; }
+        if (b.dataset.tagdone) {
+          const [iid, k, out] = b.dataset.tagdone.split('|');
+          S().setUnit(iid, +k, 'insp', true, out === '1');
+          if (this.last) this.last.insp = [...new Set([...(this.last.insp || []), +k])];
+          this.log.unshift({ ...this.last, mode: 'tag', t: Date.now() });
+          HC.sync.soon && HC.sync.soon();
+          UI().toast(`${k}点目を検品済みにしました。次のタグを読んでください`, { undo: true });
+          this.paint(el);
           return;
         }
         if (b.dataset.takeout) {
@@ -326,14 +338,15 @@
       this.torch = false;
     },
     onRead(text, el) {
-      const res = S().scanTag(text, this.mode, this.box);
+      const res = S().scanTag(text, this.mode === 'tag' ? 'look' : this.mode, this.box);
       const rec = { ...res, mode: this.mode, box: this.box, t: Date.now() };
       this.last = rec;
+      this.shotIdx = 0;
       const tone = TONE[res.kind] || 'ng';
       beep(tone);
       const flash = U.$('.scan-flash', el);
       if (flash) { flash.className = 'scan-flash ' + tone; void flash.offsetWidth; flash.classList.add('go'); }
-      if (res.kind === 'ok') this.log.unshift(rec);
+      if (res.kind === 'ok' && this.mode !== 'tag') this.log.unshift(rec);   // タグ貼りは「貼った」を押したときに控える
       if (this.log.length > 60) this.log.length = 60;
       if (this.mode === 'pack' && (res.kind === 'wrongBox' || res.kind === 'own' || res.kind === 'notBought' || res.kind === 'over')) {
         const list = (this.out[this.box] = this.out[this.box] || []);
@@ -358,7 +371,9 @@
       // いま読んだもの
       const last = U.$('.scan-last', el);
       const L = this.last;
-      if (L) {
+      if (L && this.mode === 'tag' && L.mode === 'tag') {
+        this.paintTag(last, L);
+      } else if (L) {
         const tone = TONE[L.kind] || 'ng';
         const b = this.mode === 'pack' && this.box ? boxInfo(this.box) : null;
         const complete = b && b.done && !(this.out[this.box] || []).length;
@@ -376,7 +391,8 @@
       }
       // 進み具合と一覧
       const body = U.$('.scan-body', el);
-      const unitBtn = (r, k, act) => `<button type="button" class="chip sm" data-${act}="${esc(r.iid)}|${k}${act === 'undo' ? `|${this.mode}` : ''}|${r.outside ? 1 : 0}">${k}点目${act === 'manual' ? 'を記録' : 'を取り消す'}</button>`;
+      const recMode = this.mode === 'tag' ? 'insp' : this.mode;   // タグ貼りで記録するのは検品
+      const unitBtn = (r, k, act) => `<button type="button" class="chip sm" data-${act}="${esc(r.iid)}|${k}${act === 'undo' ? `|${recMode}` : ''}|${r.outside ? 1 : 0}">${k}点目${act === 'manual' ? 'を記録' : 'を取り消す'}</button>`;
       if (this.mode === 'pack') {
         if (!this.box) { body.innerHTML = ''; return; }
         const b = boxInfo(this.box);
@@ -393,6 +409,7 @@
             <p class="muted small">タグが読めないときは「◯点目を記録」で手で記録できます。</p></section>` : ''}
           ${this.logHTML(unitBtn)}`;
       } else {
+        // 購入検品とタグ貼り：まだ検品していない品物（タグ貼りでは「貼った」を押すと検品済みになる）
         const u = s.unitRows('all');
         const piles = [['', '自分'], ...s.requesters().map((r) => [r.id, r.name])].map(([f, n]) => {
           const rows = u.rows.filter((r) => r.for === f);
@@ -410,6 +427,44 @@
           : u.units ? `<p class="sf-ok card">${U.icon('check', 'sm')}全${u.units}点の検品が終わりました</p>` : ''}
           ${this.logHTML(unitBtn)}`;
       }
+    },
+    /** タグ貼り：読んだ品物を大きく見せる（No.・何点目・誰の分・品名・お品書き画像）。貼ったら検品済みにできる */
+    paintTag(box, L) {
+      const s = S();
+      box.className = 'scan-last tagcard ' + (L.kind === 'ok' ? 'ok' : 'ng');
+      if (L.kind !== 'ok') {
+        box.innerHTML = `<div class="sl-msg">${U.icon('warn')}<b>${esc(MSG[L.kind] ? MSG[L.kind](L, 'insp') : '読み取れません')}</b></div>${HINT[L.kind] ? `<p class="small">${HINT[L.kind]}</p>` : ''}`;
+        return;
+      }
+      const row = HC.ship.tagRows().find((r) => r.iid === L.iid);
+      const shots = L.cid && HC.shots && HC.shots.ready ? HC.shots.list(s.state.eventId, L.cid) : [];
+      const cur = this.shotIdx && shots[this.shotIdx] ? this.shotIdx : 0;
+      const done = L.insp.includes(L.k);
+      const parts = L.parts && L.parts.length ? L.parts.filter((p) => String(p.n || '').trim()) : [];
+      box.innerHTML = `
+        <div class="tc-head">
+          <span class="tc-no">No.<b>${row ? row.no : '—'}</b></span>
+          <span class="tc-k"><b>${L.k}</b>/${L.qty}点目</span>
+          <span class="sl-who ${L.for ? 'px ' + V.rqClass(L.for) : ''}">${esc(whoLabel(L.for))}</span>
+        </div>
+        <div class="tc-main">
+          <div class="tc-img">${shots.length ? `<button type="button" class="tc-shot" data-act="viewShot" data-id="${esc(shots[cur].id)}" aria-label="お品書き画像を拡大"><img data-tcshot="${esc(shots[cur].id)}" src="${shots[cur].thumb || ''}" alt="お品書き画像"></button>
+              ${shots.length > 1 ? `<div class="tc-thumbs">${shots.map((m, i) => `<button type="button" class="tc-th${i === cur ? ' on' : ''}" data-tcidx="${i}" aria-label="${i + 1}枚目"><img src="${m.thumb || ''}" alt=""></button>`).join('')}</div>` : ''}
+              <small class="muted">押すと拡大します${shots.length > 1 ? `（${shots.length}枚）` : ''}</small>`
+            : `<div class="tc-noimg">${U.icon('image')}<span>このサークルのお品書き画像は未登録です</span>${L.cid && HC.shots && HC.shots.ready ? `<button type="button" class="btn sm" data-act="addShot" data-cid="${esc(L.cid)}">${U.icon('plus', 'sm')}画像を追加</button>` : ''}</div>`}</div>
+          <div class="tc-info">
+            <div class="tc-sp"><b>${esc(L.space || '—')}</b>${esc(L.circle || '')}</div>
+            <div class="tc-name">${esc(L.name)}</div>
+            <div class="tc-meta">${L.qty}点 ・ ${U.yen(L.cost || 0)}</div>
+            ${parts.length ? `<div class="tc-parts">中身：${parts.map((p) => `${esc(p.n)} ×${p.q}`).join('、')}</div>` : ''}
+            ${L.memo ? `<div class="tc-memo">${U.icon('note', 'sm')}${esc(L.memo)}</div>` : ''}
+            <div class="tc-units">${Array.from({ length: L.qty }, (_, i) => i + 1).map((k) => `<span class="${L.insp.includes(k) ? 'done' : ''}${k === L.k ? ' cur' : ''}">${L.insp.includes(k) ? U.icon('check', 'sm') : ''}${k}/${L.qty}</span>`).join('')}</div>
+          </div>
+        </div>
+        <button type="button" class="btn ${done ? '' : 'primary '}lg block" data-tagdone="${esc(L.iid)}|${L.k}|${L.outside ? 1 : 0}"${done ? ' disabled' : ''}>${U.icon('check')}${done ? `${L.k}/${L.qty}点目は貼って検品済みです` : `貼った（${L.k}/${L.qty}点目を検品済みにする）`}</button>`;
+      // 本体の画像に差し替える（まずサムネを出し、あとで大きい画像に）
+      const img = U.$('img[data-tcshot]', box);
+      if (img) HC.shots.url(img.dataset.tcshot).then((u) => { if (u && img.isConnected) { img.src = u; img.onload = () => setTimeout(() => URL.revokeObjectURL(u), 1000); } }).catch(() => {});
     },
     logHTML(unitBtn) {
       const log = this.log.filter((x) => x.mode === this.mode && (this.mode !== 'pack' || x.box === this.box)).slice(0, 15);

@@ -734,6 +734,11 @@
       if (it.status !== 'bought') return { kind: 'notBought', status: it.status, ...info };
     }
     if (t.k > info.qty) return { kind: 'over', ...info };
+    // 調べるだけ（タグ貼り）：記録はせず、品物と検品の様子を返す
+    if (mode === 'look') {
+      const it = f.extra || f.item;
+      return { kind: 'ok', ...info, insp: unitsIn(it.insp, info.qty), pack: unitsIn(it.pack, info.qty), memo: f.entry ? f.entry.memo || '' : '', cost: f.extra ? f.extra.cost || 0 : S.itemCost(it) };
+    }
     if (mode === 'pack') {
       if (!info.for) return { kind: 'own', ...info };
       if (info.for !== box) return { kind: 'wrongBox', ...info };
