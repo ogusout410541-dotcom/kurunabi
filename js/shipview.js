@@ -180,6 +180,10 @@
   const savedCam = () => { try { return localStorage.getItem(CAM_KEY) || ''; } catch (e) { return ''; } };
   const saveCam = (id) => { try { localStorage.setItem(CAM_KEY, id); } catch (e) { /* 覚えられなくても使える */ } };
   const isPC = () => matchMedia('(pointer: fine)').matches;
+  /** iVCam（iPhone を PC の Web カメラにするアプリ）の仮想カメラ。PC 側では「e2eSoft iVCam」という名前で並ぶ */
+  const isIVCam = (label) => /ivcam/i.test(label || '');
+  // 読み取りの設定：切り出す大きさを1コマごとに替えて、近くのタグも離れたタグも読む。PC（iVCam）は 1080p で受ける
+  const camOpt = () => ({ hd: isPC(), crops: [0.8, 0.5] });
 
   V.scan = {
     mode: 'insp',
@@ -211,7 +215,7 @@
             <div class="scan-off">
               <button type="button" class="btn primary lg" data-scanstart>${U.icon('camera')}カメラで読み取る</button>
               <small>タグの QR を、真ん中の枠に写してください</small>
-              ${isPC() ? `<button type="button" class="link-btn scan-help" data-camhelp>${U.icon('note', 'sm')}iPhone を PC のカメラにする方法</button>` : ''}
+              ${isPC() ? `<button type="button" class="link-btn scan-help" data-camhelp>${U.icon('note', 'sm')}iVCam で iPhone をカメラにする方法</button>` : ''}
             </div>
             <div class="scan-camname"></div>
             <div class="scan-ctl">
@@ -301,7 +305,9 @@
       const cam = U.$('.scan-cam', el);
       if (cam) cam.classList.toggle('on', !!this.cam);
       const nm = U.$('.scan-camname', el);
-      if (nm) nm.textContent = this.cam && this.cam.label ? `カメラ：${this.cam.label}` : '';
+      if (!nm) return;
+      const [w, h] = this.cam ? this.cam.res() : [0, 0];
+      nm.textContent = this.cam && this.cam.label ? `カメラ：${this.cam.label}${w ? `（${w}×${h}）` : ''}` : '';
     },
     /** カメラを選ぶ（PC に iPhone をつなぐと、内蔵カメラと iPhone の仮想カメラが並ぶ）。選んだものは次から最初に使う */
     async pickCam(el) {
@@ -321,10 +327,33 @@
         beep('prep');   // 音は押した操作のあとでないと鳴らせないので、ここで準備しておく
         const want = savedCam();
         const has = want && (await HC.qrscan.cameras()).some((c) => c.id === want);
-        this.cam = await HC.qrscan.start(v, (text) => this.onRead(text, el), has ? { deviceId: want } : {});
-        // 初めて使う PC でカメラが2つ以上あれば、iPhone のカメラを選べることを知らせる
-        if (!want && isPC() && (await HC.qrscan.cameras()).length > 1) UI().toast('カメラが2つ以上あります。iPhone のカメラを使うときは「カメラを選ぶ」から選んでください', { ms: 6000 });
+        this.cam = await HC.qrscan.start(v, (text) => this.onRead(text, el), has ? { ...camOpt(), deviceId: want } : camOpt());
+        // カメラの名前は許可したあとでないと分からないので、動かしてから見る
+        const list = isPC() ? await HC.qrscan.cameras() : [];
+        const iv = list.find((c) => isIVCam(c.label));
+        if (iv && !has && !isIVCam(this.cam.label)) {
+          // 自分で選んだカメラが無ければ、iVCam に切り替えて覚える（内蔵カメラが先に選ばれることがあるため）
+          this.cam.stop();
+          this.cam = await HC.qrscan.start(v, (text) => this.onRead(text, el), { ...camOpt(), deviceId: iv.id });
+          saveCam(iv.id);
+          UI().toast('iVCam（iPhone のカメラ）を使います。ほかのカメラにするときは「カメラを選ぶ」から選んでください', { ms: 5000 });
+        } else if (iv && !has) {
+          saveCam(iv.id);   // はじめから iVCam が選ばれたときも覚えておく
+        } else if (!want && !iv && list.length > 1) {
+          UI().toast('カメラが2つ以上あります。iPhone のカメラを使うときは「カメラを選ぶ」から選んでください', { ms: 6000 });
+        }
         this.paintCam(el);
+        // 映像の大きさは少し遅れて決まる。iVCam の解像度が低いときは設定を案内する（1回だけ）
+        const cam = this.cam;
+        setTimeout(() => {
+          if (this.cam !== cam) return;
+          this.paintCam(el);
+          const [w, h] = cam.res();
+          if (isIVCam(cam.label) && w && Math.min(w, h) < 1080 && !V.scan.lowResTold) {
+            V.scan.lowResTold = true;
+            UI().toast(`iVCam の映像が ${w}×${h} です。PC の iVCam の設定で解像度を 1080p（1920×1080）にすると、離れたタグも読みやすくなります`, { ms: 8000 });
+          }
+        }, 1500);
       } catch (e) {
         this.cam = null;
         const n = e && e.name;
@@ -535,18 +564,18 @@
     });
   };
 
-  /** iPhone を PC の Web カメラにする手順（Windows） */
+  /** iVCam で iPhone を PC の Web カメラにする手順（Windows） */
   A.camHelp = () => UI().sheet({
     id: 'camHelp',
     center: true,
-    title: 'iPhone を PC のカメラにする',
+    title: 'iVCam で iPhone をカメラにする',
     html: `<ol class="a2hs-steps">
-        <li>iPhone を Web カメラにするアプリを、PC と iPhone の両方に入れます（例：iVCam、Camo など。どちらも PC 用と iPhone 用があります）</li>
-        <li>iPhone を USB ケーブルで PC につなぎ、PC と iPhone の両方でアプリを起動します。PC のアプリに iPhone の映像が出れば準備できています</li>
-        <li>クルナビの「読み取り」で「カメラで読み取る」を押し、「カメラを選ぶ」から iPhone のカメラ（アプリの名前のカメラ）を選びます。次からは最初にそのカメラを使います</li>
-        <li>iPhone をスタンドなどに固定し、タグを 10〜20cm ほど離して写します。読めると音が鳴り、画面が緑（OK）・黄（読み取り済み）・赤（入れてはいけない）に光ります</li>
+        <li>PC の iVCam と、iPhone の iVCam を両方とも起動します。同じ Wi-Fi につながっていれば自動でつながり、PC の iVCam に iPhone の映像が出ます（USB ケーブルでつなぐと映像が安定します。Windows で USB を使うには iTunes が必要です）</li>
+        <li>PC の iVCam の設定で、解像度を 1080p（1920×1080）にします。離れたタグや小さいタグも読みやすくなります</li>
+        <li>クルナビの「読み取り」で「カメラで読み取る」を押します。iVCam のカメラ（e2eSoft iVCam）があれば自動で選び、次からも最初に使います</li>
+        <li>iPhone をスタンドなどに固定し、タグを 15〜30cm ほど離して、真ん中の枠に写します。ピントが合わないときは、iPhone の画面でタグのあたりを押します</li>
       </ol>
-      <p class="muted small">ブラウザがカメラの使用を聞いてきたら「許可」を押してください。映像が左右反転していても読み取れます。PC だけで読み取るときは、同期の設定は要りません。</p>
+      <p class="muted small">読めると音が鳴り、画面が緑（OK）・黄（読み取り済み）・赤（入れてはいけない）に光ります。iPhone の iVCam はほかのアプリに切り替えると映像が止まるので、開いたままにしてください。映像が左右反転していても読み取れます。ブラウザがカメラの使用を聞いてきたら「許可」を押してください。PC だけで読み取るときは、同期の設定は要りません。</p>
       <div class="btn-row"><button class="btn primary" data-close>閉じる</button></div>`,
   });
 

@@ -554,13 +554,16 @@
 
   /**
    * カメラを動かして読み続ける。onRead(text) は読めるたびに呼ぶ（同じ文字は cooldown の間は呼ばない）。
-   * 戻り値の stop() で止める。video 要素は呼び出し側が用意する（playsinline・muted）
+   * 戻り値の stop() で止める。video 要素は呼び出し側が用意する（playsinline・muted）。
+   * opt.hd：1920×1080 を頼む（PC につないだ iPhone 向け。高い解像度で受けて真ん中を細かく切り出す）。
+   * opt.crops：切り出す大きさ（短い辺に対する割合）を1コマごとに順に替える。[0.8, 0.5] なら、ふつうの距離と、離れて小さく写ったタグの両方を読む
    */
   QS.start = async (video, onRead, opt = {}) => {
+    const size = opt.hd ? { width: { ideal: 1920 }, height: { ideal: 1080 } } : { width: { ideal: 1280 }, height: { ideal: 720 } };
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       // カメラを選んであればそれを使う（PC に iPhone を Web カメラとしてつないだとき、内蔵カメラと並ぶため）。無ければ背面カメラ
-      video: opt.deviceId ? { deviceId: { exact: opt.deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      video: opt.deviceId ? { deviceId: { exact: opt.deviceId }, ...size } : { facingMode: { ideal: 'environment' }, ...size },
     });
     video.srcObject = stream;
     video.setAttribute('playsinline', '');
@@ -570,7 +573,8 @@
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const nat = await nativeDetector();
     const cooldown = opt.cooldown || 1500;
-    let last = '', lastAt = 0, stopped = false, busy = false, timer = 0;
+    const crops = opt.crops && opt.crops.length ? opt.crops : [opt.crop || 0.8];
+    let last = '', lastAt = 0, stopped = false, busy = false, timer = 0, frame = 0;
     const tick = async () => {
       if (stopped) return;
       if (!busy && video.readyState >= 2 && video.videoWidth) {
@@ -584,7 +588,7 @@
           if (text == null) {
             // 真ん中の正方形を切り出して縮める（速さのため。タグは真ん中に写す前提）
             const vw = video.videoWidth, vh = video.videoHeight;
-            const s = Math.min(vw, vh) * (opt.crop || 0.8);
+            const s = Math.min(vw, vh) * crops[frame++ % crops.length];
             const N = opt.size || 520;
             canvas.width = N; canvas.height = N;
             ctx.drawImage(video, (vw - s) / 2, (vh - s) / 2, s, s, 0, 0, N, N);
@@ -613,6 +617,8 @@
       native: !!nat,
       deviceId: (stream.getVideoTracks()[0].getSettings() || {}).deviceId || '',
       label: stream.getVideoTracks()[0].label || '',
+      /** いま届いている映像の大きさ（カメラ側の設定で変わるので、そのつど見る） */
+      res: () => [video.videoWidth || 0, video.videoHeight || 0],
       torch: async (on) => {
         const tr = stream.getVideoTracks()[0];
         try { await tr.applyConstraints({ advanced: [{ torch: !!on }] }); return true; } catch (e) { return false; }
