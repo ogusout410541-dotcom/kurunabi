@@ -61,7 +61,7 @@
             ${step(2, '購入検品', all.units > 0 && all.insp === all.units, `「読み取り」でタグをカメラに写すと、1点ずつ検品済みになります（${all.insp}/${all.units}点）`, `<button class="btn sm" data-act="scanGo" data-mode="insp">${U.icon('qr', 'sm')}読み取る</button>`)}
             ${step(3, '宛先を入力する', rq.length > 0 && addrOk === rq.length, `依頼者ごとにお届け先と発送方法を入力します（${addrOk}/${rq.length}人）`)}
             ${step(4, '梱包', px.units > 0 && px.pack === px.units, `箱を選んでタグを読むと、入れてよい品物か・足りない品物が分かります（${px.pack}/${px.units}点）`)}
-            ${step(5, '伝票を印刷して同封する', false, '梱包伝票と発送伝票を A4 で印刷します', `<button class="btn sm" data-act="shipAll">${U.icon('print', 'sm')}印刷</button>`)}
+            ${step(5, '伝票を印刷して同封する', false, '梱包伝票・発送伝票（定形外郵便は宛名ラベルも）を A4 で印刷します', `<button class="btn sm" data-act="shipAll">${U.icon('print', 'sm')}印刷</button>`)}
             ${step(6, '発送済みにする', rq.length > 0 && shipped === rq.length, `追跡番号を入れて、発送済みにします（${shipped}/${rq.length}人）`)}
           </ol>
         </section>

@@ -1897,3 +1897,26 @@ body { font-feature-settings: "palt" 0; }
 }
 /* タグ貼り（スマホ）：品名を画像より先に、画像は少し小さく（カメラの下で読めるように） */
 @media (max-width: 959px) { .tc-info { order: -1; } .tc-shot img { max-height: 40vh; } }
+
+/* 宛名ラベル（1.9.3。定形外郵便など。A4 に 2列×2段＝4人分、95×137mm、点線が切り取り線）。横書きで宛先を大きく、下に差出人 */
+.al-grid { display: grid; grid-template-columns: repeat(2, 95mm); grid-auto-rows: 137mm; width: 190mm; border-top: .6pt dashed #999; border-left: .6pt dashed #999; }
+.al { position: relative; display: flex; flex-direction: column; padding: 9mm 8mm 7mm; border-right: .6pt dashed #999; border-bottom: .6pt dashed #999; overflow: hidden; break-inside: avoid; }
+.al-to { flex: 1; display: flex; flex-direction: column; gap: 5mm; }
+.al-zip { font-size: 19pt; font-weight: 800; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.al-zip span { margin-right: 1.5mm; }
+.al-addr { font-size: 15pt; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; }
+.al-addr.l2 { font-size: 13.5pt; }
+.al-addr.l3 { font-size: 12pt; }
+.al-name { margin-top: 6mm; font-size: 25pt; font-weight: 900; line-height: 1.3; letter-spacing: .08em; overflow-wrap: anywhere; }
+.al-name.l2 { font-size: 19pt; }
+.al-name span { font-size: 16pt; margin-left: 3mm; font-weight: 800; }
+.al-tel { font-size: 10pt; font-weight: 700; font-variant-numeric: tabular-nums; }
+.al-from { display: flex; gap: 3mm; border-top: .8pt solid #111; padding-top: 3mm; font-size: 8.5pt; line-height: 1.5; }
+.al-fl { flex: none; font-size: 7.5pt; font-weight: 800; color: #fff; background: #111; padding: .4mm 1.6mm; border-radius: .6mm; align-self: flex-start; letter-spacing: .1em; }
+.al-fb { min-width: 0; overflow-wrap: anywhere; }
+.al-fn { font-weight: 800; font-size: 9.5pt; }
+.al-fn span { font-weight: 600; font-size: 8pt; margin-left: 3mm; }
+.al-no { position: absolute; right: 3mm; top: 2.5mm; font-size: 7pt; font-weight: 700; color: #777; font-variant-numeric: tabular-nums; }
+.sf-sub { margin: 14px 0 6px; font-size: .9rem; display: flex; flex-direction: column; gap: 2px; }
+.sf-sub small { font-weight: 400; color: var(--muted); font-size: .78rem; }
+.sf-kind { gap: 6px; }

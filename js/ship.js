@@ -5,12 +5,13 @@
      （発送伝票の見出し・右上の差出人・梱包日／発送方法／OC名／No. の帯・お届け先様・ご注文内容・
        メモ・備考・A 商品代金／B 送料／合計）。足したもの：スペースとサークルの列、送料の扱いの選択、
        ご用意できなかったもの、伝票番号の連番。
-     以前あった「発送元」の欄は右上の差出人と同じ内容なので外した。※の注意書きと宛名ラベルは本人の希望で載せない（1.6.1）
+     以前あった「発送元」の欄は右上の差出人と同じ内容なので外した。※の注意書きと宛名ラベルは本人の希望で載せない（1.6.1）。
+     宛名ラベルは別の紙に印刷する（1.9.3。定形外郵便は荷物に宛名を書く必要があるため。A4 に4人分、切って貼る）
    - 梱包伝票の記入欄は追跡番号だけ（厚さ・重さは測れないので載せない。1.6.1）
    - 宛先・発送の情報は依頼者ごと（EventData.requesters[].ship）、差出人は全イベント共通（state.sender）
    - 精算の方法（振込先など）は書かない（本人の希望）
-   - 印刷するもの（両方／梱包伝票／発送伝票）は端末ごとに覚える（localStorage 'kurunavi.slipKind'）。
-     両方のときは1人ずつ「梱包伝票 → 発送伝票」の順に出すので、箱ごとに紙がまとまる */
+   - 印刷するもの（梱包伝票・発送伝票・宛名ラベルを組み合わせて選ぶ）は端末ごとに覚える（localStorage 'kurunavi.slipKind'）。
+     1人ずつ「梱包伝票 → 発送伝票」の順に出すので、箱ごとに紙がまとまる。宛名ラベルは最後にまとめて（A4 1枚に4人分） */
 (function () {
   'use strict';
   const HC = window.HC;
@@ -28,13 +29,23 @@
   };
   const OLD_NOTE = '梱包内容をご確認ください。\n商品の破損・内容不一致の場合はXのDMまたはメールにてご連絡ください。';   // 1.6.1 までの既定（そのままなら新しい文面に）
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
-  const KINDS = { both: '両方', pack: '梱包伝票', ship: '発送伝票' };
+  const KINDS = { pack: '梱包伝票', ship: '発送伝票', label: '宛名ラベル' };
   const KIND_KEY = 'kurunavi.slipKind';
-  Sh.kind = () => { try { const k = localStorage.getItem(KIND_KEY); return KINDS[k] ? k : 'both'; } catch (e) { return 'both'; } };
-  const setKind = (k) => { try { localStorage.setItem(KIND_KEY, k); } catch (e) { /* 覚えられなくても印刷はできる */ } };
-  const kindBtns = (k) => `<div class="seg sm sf-kind">${Object.entries(KINDS).map(([v, l]) => `<button type="button" class="${k === v ? 'on' : ''}" data-kind="${v}">${l}</button>`).join('')}</div>`;
+  /** 印刷するもの（配列）。1.9.2 までの 'both' / 'pack' / 'ship' も読める */
+  const kindsOf = (k) => {
+    const a = (Array.isArray(k) ? k : k === 'both' ? ['pack', 'ship'] : String(k || '').split(',')).filter((x) => KINDS[x]);
+    return a.length ? Object.keys(KINDS).filter((x) => a.includes(x)) : ['pack', 'ship'];
+  };
+  Sh.kind = () => { try { return kindsOf(localStorage.getItem(KIND_KEY) || 'both'); } catch (e) { return ['pack', 'ship']; } };
+  const setKind = (k) => { try { localStorage.setItem(KIND_KEY, kindsOf(k).join(',')); } catch (e) { /* 覚えられなくても印刷はできる */ } };
+  /** 押したものを足す・外す（1つは残す） */
+  const toggleKind = (k) => { const a = Sh.kind(); const b = a.includes(k) ? a.filter((x) => x !== k) : [...a, k]; if (b.length) setKind(b); return Sh.kind(); };
+  const kindBtns = (k) => `<div class="chips sf-kind" role="group" aria-label="印刷するもの">${Object.entries(KINDS).map(([v, l]) => `<button type="button" class="chip sm${kindsOf(k).includes(v) ? ' on' : ''}" data-kind="${v}" aria-pressed="${kindsOf(k).includes(v)}">${l}</button>`).join('')}</div>`;
   const kindSeg = (k) => `<div class="field"><span>印刷するもの</span>${kindBtns(k)}</div>`;
-  const kindsOf = (k) => (k === 'both' ? ['pack', 'ship'] : [k]);
+  const paintKinds = (el) => { const a = Sh.kind(); U.$$('[data-kind]', el).forEach((x) => { const on = a.includes(x.dataset.kind); x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); }); };
+  /** 宛名ラベル（荷物に宛名を書く送り方）。定形外郵便のときは差出人の住所・氏名も要る */
+  Sh.LABEL_METHOD = '定形外郵便';
+  const needsLabel = (sh) => (sh && sh.method) === Sh.LABEL_METHOD;
   /** セット商品らしい品名（内容が未入力なら入力画面で知らせる） */
   const SETLIKE = /セット|詰め合わせ|詰合せ|福袋|まとめ|BOX|ボックス/i;
   Sh.isSetLike = (name) => SETLIKE.test(name || '');
@@ -100,6 +111,11 @@
     if (!postalOk(ship.postal)) lacks.push('郵便番号');
     if (!(ship.addr1 || '').trim()) lacks.push('ご住所');
     if (!(snd.name || '').trim()) lacks.push('発送元の名前');
+    if (needsLabel(ship)) {
+      // 届かなかったときに戻ってくるよう、宛名ラベルに差出人の住所・氏名を入れる
+      if (!postalOk(snd.postal) || !(snd.addr1 || '').trim()) lacks.push('発送元の住所');
+      if (!(snd.real || '').trim()) lacks.push('発送元の氏名');
+    }
     if (ship.feeMode === 'charge' && !fee) lacks.push('送料');
     return out;
   };
@@ -154,10 +170,11 @@
           <ol class="sf-steps">
             <li><b>梱包伝票</b>：箱詰めのときに、品物を1点ずつ検品します。金額は載らないので、そのまま同封できます</li>
             <li><b>発送伝票</b>：品物と金額の明細です。箱に同封してください</li>
+            <li><b>宛名ラベル</b>：荷物の表に貼る宛名です（定形外郵便など、宛名を書いて送るとき）。A4 1枚に4人分で、切ってテープで貼ります</li>
           </ol>
           ${kindBtns(Sh.kind())}
         </section>
-        <details class="sf-sec sf-sender" id="sf-from"${snd.name ? '' : ' open'}>
+        <details class="sf-sec sf-sender" id="sf-from"${v.lacks.some((x) => x.startsWith('発送元')) ? ' open' : ''}>
           <summary><h4><span class="sf-no">4</span>発送元（自分）<small>${snd.name ? esc(snd.name) : '未入力'} ・ 全員の伝票で共通</small></h4></summary>
           <div class="grid2">
             ${f('name', '名前', snd.name, 'autocomplete="off" data-sender placeholder="例：屋号・ハンドルネーム"')}
@@ -166,6 +183,14 @@
           ${f('mail', 'Mail（任意）', snd.mail, 'type="email" autocomplete="off" data-sender')}
           ${f('tagline', '見出しの下に入る文', snd.tagline, 'autocomplete="off" data-sender')}
           ${f('nextNo', '次の伝票番号', snd.nextNo, 'inputmode="numeric" data-sender', '印刷するたびに、この番号から順に付けます')}
+          <h5 class="sf-sub">宛名ラベルの差出人<small>定形外郵便のときに使います。宛先に届かなかったときは、この住所に戻ってきます</small></h5>
+          <div class="grid2">
+            ${f('real', '氏名', snd.real, 'autocomplete="off" data-sender placeholder="例：山田 太郎"')}
+            ${f('phone', '電話番号（任意）', snd.phone, 'inputmode="tel" autocomplete="off" data-sender')}
+          </div>
+          ${f('postal', '郵便番号', snd.postal, 'inputmode="numeric" placeholder="例：100-0001" autocomplete="off" data-sender')}
+          ${f('addr1', '住所（都道府県から番地まで）', snd.addr1, 'autocomplete="off" data-sender placeholder="例：東京都千代田区千代田1-1"')}
+          ${f('addr2', '建物名・部屋番号（任意）', snd.addr2, 'autocomplete="off" data-sender')}
         </details>
         <button class="btn block ghost" data-shipped>${U.icon('check')}${r.ship && r.ship.shippedAt ? `発送済みを取り消す（${esc(U.md(r.ship.shippedAt))}に発送）` : '発送済みにする'}</button>
         <p class="muted small">入力した内容は自動で保存されます。宛先は、次の代行でも「前回の宛先を使う」から呼び出せます。用紙は A4縦です。黒い帯が印刷されないときは、印刷の設定で「背景のグラフィック」をオンにしてください。</p>
@@ -178,7 +203,7 @@
       <aside class="ship-pv" aria-label="印刷のプレビュー">
         <div class="spv-head"><b>${U.icon('note', 'sm')}プレビュー</b>${kindBtns(Sh.kind())}<button class="btn" data-keep>${U.icon('save')}一時保存して閉じる</button><button class="btn primary" data-print2>${U.icon('print')}印刷する</button></div>
         <div class="spv-pages slip-preview"></div>
-        <p class="spv-note muted small">梱包伝票は箱詰めの検品に、発送伝票は箱に同封する明細に使います。どちらも A4縦で印刷します。</p>
+        <p class="spv-note muted small">梱包伝票は箱詰めの検品に、発送伝票は箱に同封する明細に、宛名ラベルは荷物の表に貼る宛名に使います。どれも A4縦で印刷します。</p>
       </aside></div>`,
       onMount: (el) => {
         // PC：右側のプレビューを入力に合わせて描き直す（幅が狭い画面では出さない）
@@ -186,7 +211,7 @@
         const paintPv = () => {
           if (!pv || !matchMedia('(min-width: 960px)').matches) return;
           const top = pv.scrollTop;
-          pv.innerHTML = kindsOf(Sh.kind()).map((k) => `<div class="sp-page">${k === 'pack' ? Sh.packHTML(rid) : Sh.slipHTML(rid)}</div>`).join('');
+          pv.innerHTML = pagesOf([rid], Sh.kind(), true).map((h) => `<div class="sp-page">${h}</div>`).join('');
           scalePages(pv);
           pv.scrollTop = top;
         };
@@ -213,7 +238,7 @@
             ['sf-to', 1, 'お届け先', to.length ? `未入力 ${to.length}件` : '', to.length ? `未入力：${to.join('・')}` : ''],
             ['sf-ship', 2, '発送', has('送料') ? '送料が未入力' : '', ''],
             ['sf-parts', 3, 'セットの内容', sets ? `未登録 ${sets}件` : '', ''],
-            ['sf-from', 4, '発送元', has('発送元の名前') ? '名前が未入力' : '', ''],
+            ['sf-from', 4, '発送元', (() => { const l = d.lacks.filter((x) => x.startsWith('発送元')).map((x) => x.replace('発送元の', '')); return l.length ? `${l.join('・')}が未入力` : ''; })(), ''],
           ];
           nav.innerHTML = items.map(([id, n, label, warn, tip]) => `<button type="button" class="sf-nav-i${warn ? ' warn' : ' ok'}" data-go="${id}" title="${esc(tip || warn || '入力済み')}"><span class="sf-no">${n}</span><span><b>${label}</b><small>${warn ? esc(warn) : '入力済み'}</small></span></button>`).join('');
         };
@@ -354,13 +379,18 @@
           const p = Sh.postal(inp.value);
           if (p === inp.value) return;
           inp.value = p;
-          S().setShip(rid, { postal: p });
+          if (inp.hasAttribute('data-sender')) S().setSender({ postal: p }); else S().setShip(rid, { postal: p });
           paintSum();
         }));
         U.$$('[data-method]', el).forEach((b) => (b.onclick = () => {
           S().setShip(rid, { method: b.dataset.method });
           mark();
           U.$$('[data-method]', el).forEach((x) => x.classList.toggle('on', x === b));
+          if (b.dataset.method === Sh.LABEL_METHOD && !Sh.kind().includes('label')) {
+            setKind([...Sh.kind(), 'label']);
+            paintKinds(el);
+            UI().toast('定形外郵便なので、宛名ラベルも印刷するようにしました');
+          }
           paintSum();
         }));
         U.$$('[data-fee]', el).forEach((b) => (b.onclick = () => {
@@ -378,14 +408,14 @@
           UI().toast('前回の宛先を入れました');
         };
         U.$$('[data-kind]', el).forEach((b) => (b.onclick = () => {
-          setKind(b.dataset.kind);
-          U.$$('[data-kind]', el).forEach((x) => x.classList.toggle('on', x.dataset.kind === b.dataset.kind));
+          toggleKind(b.dataset.kind);
+          paintKinds(el);
           paintPv();
         }));
-        U.$('[data-preview]', el).onclick = () => Sh.preview([rid]);
+        U.$('[data-preview]', el).onclick = () => Sh.preview([rid], Sh.kind(), true);
         const p2 = U.$('[data-print2]', el);
-        if (p2) p2.onclick = () => Sh.print([rid]);
-        U.$('[data-print]', el).onclick = () => Sh.print([rid]);
+        if (p2) p2.onclick = () => Sh.print([rid], Sh.kind(), true);
+        U.$('[data-print]', el).onclick = () => Sh.print([rid], Sh.kind(), true);
         U.$('[data-shipped]', el).onclick = () => {
           const on = !(S().requester(rid).ship || {}).shippedAt;
           S().setShipped(rid, on);
@@ -565,8 +595,54 @@
       </div>
     </article>`;
   };
-  /** 選んだ種類の伝票を1人ずつ並べる（両方なら 梱包 → 発送 の順） */
-  const docsHTML = (rids, kind) => rids.map((rid) => kindsOf(kind).map((k) => (k === 'pack' ? Sh.packHTML(rid) : Sh.slipHTML(rid))).join('')).join('');
+  // ------------------------------------------------------------------ 宛名ラベル（定形外郵便など）
+  /* A4 に 2列×2段＝4人分（95×137mm、点線が切り取り線）。荷物の表に貼る。横書きで、郵便番号・住所・氏名を大きく、
+     下に差出人（届かなかったときに戻る先）。右上の No. は伝票と同じ番号（どの箱に貼るかを取り違えないように） */
+  const LABELS_PER_PAGE = 4;
+  /** 宛名ラベルを出す人。その人の入力画面から印刷するとき（own）は選んだとおり、まとめて印刷するときは定形外郵便の人だけ（手渡しは出さない） */
+  Sh.labelRids = (rids, own) => rids.filter((rid) => {
+    const sh = (S().requester(rid) || {}).ship || {};
+    return sh.method !== '手渡し' && (own || needsLabel(sh));
+  });
+  const sama = (n) => String(n || '').trim().replace(/\s*様$/, '');
+  Sh.labelsHTML = (rids, own) => {
+    const snd = Sh.sender();
+    const one = (rid) => {
+      const sh = { ...(S().requester(rid).ship || {}) };
+      const ad = [sh.addr1, sh.addr2].filter(Boolean).join('');
+      const nm = sama(sh.name);
+      return `<div class="al">
+          <div class="al-to">
+            <div class="al-zip"><span>〒</span>${esc(Sh.postal(sh.postal) || '')}</div>
+            <div class="al-addr${ad.length > 40 ? ' l3' : ad.length > 26 ? ' l2' : ''}">${esc(sh.addr1 || '')}${sh.addr2 ? `<br>${esc(sh.addr2)}` : ''}</div>
+            <div class="al-name${nm.length > 10 ? ' l2' : ''}">${esc(nm)}<span>様</span></div>
+            ${sh.phone ? `<div class="al-tel">TEL ${esc(sh.phone)}</div>` : ''}
+          </div>
+          <div class="al-from">
+            <div class="al-fl">差出人</div>
+            <div class="al-fb">
+              ${snd.postal ? `<div>〒${esc(Sh.postal(snd.postal))}</div>` : ''}
+              <div>${esc(snd.addr1 || '')}${snd.addr2 ? ` ${esc(snd.addr2)}` : ''}</div>
+              <div class="al-fn">${esc(snd.real || snd.name || '')}${snd.phone ? `<span>TEL ${esc(snd.phone)}</span>` : ''}</div>
+            </div>
+          </div>
+          <div class="al-no">No.${esc(noTxt(sh.no))}</div>
+        </div>`;
+    };
+    const list = Sh.labelRids(rids, own);
+    const pages = [];
+    for (let i = 0; i < list.length; i += LABELS_PER_PAGE) pages.push(list.slice(i, i + LABELS_PER_PAGE));
+    return pages.map((p) => `<article class="slip al-page"><div class="al-grid">${p.map(one).join('')}${'<div class="al al-empty"></div>'.repeat(LABELS_PER_PAGE - p.length)}</div></article>`);
+  };
+  /** 印刷するページ（1人ずつ 梱包 → 発送、宛名ラベルは最後にまとめて）。プレビューと印刷で共通 */
+  const pagesOf = (rids, kind, own) => {
+    const ks = kindsOf(kind);
+    const out = [];
+    rids.forEach((rid) => ks.forEach((k) => { if (k === 'pack') out.push(Sh.packHTML(rid)); else if (k === 'ship') out.push(Sh.slipHTML(rid)); }));
+    if (ks.includes('label')) out.push(...Sh.labelsHTML(rids, own));
+    return out;
+  };
+  const docsHTML = (rids, kind, own) => pagesOf(rids, kind, own).join('');
 
   // ------------------------------------------------------------------ プレビュー・印刷
   /** A4（幅190mm）の伝票を、入れ物の幅に合わせて縮める（offsetHeight は縮める前の大きさ） */
@@ -580,7 +656,7 @@
 
   /** 入力の足りないところがあれば、印刷の前に確かめる */
   const checkLacks = async (rids, kind) => {
-    const k = kind === 'pack' ? 'pack' : 'ship';
+    const k = kindsOf(kind).some((x) => x !== 'pack') ? 'ship' : 'pack';
     const lines = rids.map((rid) => {
       const d = Sh.data(rid, k);
       const why = [d.lacks.length ? `${d.lacks.join('・')}が未入力` : '', d.got.length ? '' : '買えた品物がありません'].filter(Boolean);
@@ -590,30 +666,36 @@
     return UI().confirm(`入力が済んでいない伝票があります。このまま印刷しますか？\n\n${lines.join('\n')}`, { ok: '印刷する', cancel: '入力に戻る', title: '印刷の前に' });
   };
 
-  Sh.preview = (rids, kind = Sh.kind()) => {
-    const n = rids.length * kindsOf(kind).length;
+  Sh.preview = (rids, kind = Sh.kind(), own = false) => {
+    const pages = pagesOf(rids, kind, own);
+    const n = pages.length;
+    // 定形外郵便の人がいるのに宛名ラベルを選んでいなければ知らせる
+    const wantLabel = !kindsOf(kind).includes('label') && rids.some((rid) => needsLabel((S().requester(rid) || {}).ship));
     UI().sheet({
       id: 'slipPreview',
       center: true,
       cls: 'slip-preview-sheet',
-      title: `伝票のプレビュー<small>${rids.length}人・${n}枚</small>`,
+      title: `伝票のプレビュー<small>${rids.length}人・A4 ${n}枚</small>`,
       html: `${kindSeg(kind)}
-        <div class="slip-preview">${rids.map((rid) => kindsOf(kind).map((k) => `<div class="sp-page">${k === 'pack' ? Sh.packHTML(rid) : Sh.slipHTML(rid)}</div>`).join('')).join('')}</div>
+        ${wantLabel ? `<p class="sf-lack">${U.icon('warn', 'sm')}定形外郵便の人がいます。「宛名ラベル」を選ぶと、荷物に貼る宛名も一緒に印刷します</p>` : ''}
+        <div class="slip-preview">${pages.map((h) => `<div class="sp-page">${h}</div>`).join('')}</div>
         ${rids.some((rid) => !(S().requester(rid).ship || {}).no) ? '<p class="muted small">「No. ----」の伝票には、印刷するときに番号が付きます。</p>' : ''}
         <div class="btn-row sticky-acts"><button class="btn ghost" data-close>閉じる</button><button class="btn primary" data-print>${U.icon('print')}印刷する</button></div>`,
       onMount: (el) => {
-        U.$('[data-print]', el).onclick = () => Sh.print(rids, kind);
-        U.$$('[data-kind]', el).forEach((b) => (b.onclick = () => { setKind(b.dataset.kind); Sh.preview(rids, b.dataset.kind); }));
+        U.$('[data-print]', el).onclick = () => Sh.print(rids, kind, own);
+        U.$$('[data-kind]', el).forEach((b) => (b.onclick = () => Sh.preview(rids, toggleKind(b.dataset.kind), own)));
         // A4（210mm）を画面の幅に合わせて縮める
         requestAnimationFrame(() => scalePages(el));
       },
     });
   };
 
-  Sh.print = async (rids, kind = Sh.kind()) => {
+  /** own：その人の入力画面から印刷する（宛名ラベルは発送方法にかかわらず出す） */
+  Sh.print = async (rids, kind = Sh.kind(), own = false) => {
+    if (!pagesOf(rids, kind, own).length) return UI().toast('印刷するものがありません。宛名ラベルは、まとめて印刷するときは定形外郵便の人の分だけ出します', { ms: 6000 });
     if (!(await checkLacks(rids, kind))) return;
     rids.forEach((rid) => Sh.ensureNo(rid));   // 番号は印刷するときに割り当てる
-    printHTML(docsHTML(rids, kind));
+    printHTML(docsHTML(rids, kind, own));
   };
 
   /** QR タグの品名が枠に収まるまで文字を少しずつ小さくする（品名の長さだけでは文字の幅の違いを見込みきれないため。途中で切らない） */
