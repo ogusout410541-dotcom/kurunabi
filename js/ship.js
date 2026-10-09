@@ -113,8 +113,8 @@
     if (!(snd.name || '').trim()) lacks.push('発送元の名前');
     if (needsLabel(ship)) {
       // 届かなかったときに戻ってくるよう、宛名ラベルに差出人の住所・氏名を入れる
-      if (!postalOk(snd.postal) || !(snd.addr1 || '').trim()) lacks.push('発送元の住所');
-      if (!(snd.real || '').trim()) lacks.push('発送元の氏名');
+      if (!postalOk(snd.postal) || !(snd.addr1 || '').trim()) lacks.push('差出人の住所');
+      if (!(snd.real || '').trim()) lacks.push('差出人の氏名');
     }
     if (ship.feeMode === 'charge' && !fee) lacks.push('送料');
     return out;
@@ -141,7 +141,7 @@
           <h4><span class="sf-no">1</span>お届け先様</h4>
           ${known ? `<button class="btn sm block" data-known>${U.icon('undo', 'sm')}前回の宛先を使う（${esc(known.name || '')} 〒${esc(known.postal || '')}）</button>` : ''}
           <div class="grid2">
-            ${f('name', 'お名前（「様」は自動で付きます）', v.ship.name, 'autocomplete="off" data-ship placeholder="例：山田 花子"')}
+            ${f('name', 'お名前（本名。「様」は自動で付きます）', v.ship.name, 'autocomplete="off" data-ship placeholder="例：山田 花子"')}
             ${f('kana', 'フリガナ（任意）', v.ship.kana, 'autocomplete="off" data-ship placeholder="例：ヤマダ ハナコ"')}
           </div>
           <div class="grid2">
@@ -164,6 +164,30 @@
           ${t('note', 'メモ・備考（発送伝票に載ります）', v.ship.note, 'data-ship')}
         </section>
         <section class="sf-sec sf-parts-sec" id="sf-parts"></section>
+        <section class="sf-sec sf-sender" id="sf-from">
+          <h4><span class="sf-no">4</span>差出人（自分）<small>全員の伝票で共通</small></h4>
+          <p class="muted small">宛名ラベル（定形外郵便など）の差出人に載ります。宛先に届かなかったときは、この住所に戻ってきます。郵便で使うので、本名と実際の住所を入力してください。</p>
+          <div class="grid2">
+            ${f('real', '氏名（本名）', snd.real, 'autocomplete="off" data-sender placeholder="例：山田 太郎"')}
+            ${f('phone', '電話番号（任意）', snd.phone, 'inputmode="tel" autocomplete="off" data-sender placeholder="例：090-0000-0000"')}
+          </div>
+          <div class="grid2">
+            ${f('postal', '郵便番号', snd.postal, 'inputmode="numeric" placeholder="例：100-0001" autocomplete="off" data-sender')}
+          </div>
+          ${f('addr1', '住所（都道府県から番地まで）', snd.addr1, 'autocomplete="off" data-sender placeholder="例：東京都千代田区千代田1-1"')}
+          ${f('addr2', '建物名・部屋番号（任意）', snd.addr2, 'autocomplete="off" data-sender')}
+          <details class="sf-more"${(snd.name || '').trim() ? '' : ' open'}>
+            <summary>${U.icon('note', 'sm')}発送伝票・梱包伝票に載せる名前と連絡先<small>${snd.name ? esc(snd.name) : '未入力'}</small></summary>
+            <p class="muted small">伝票の右上に載る名前です（屋号・ハンドルネームでかまいません）。宛名ラベルには載りません。</p>
+            <div class="grid2">
+              ${f('name', '伝票に載せる名前', snd.name, 'autocomplete="off" data-sender placeholder="例：屋号・ハンドルネーム"')}
+              ${f('x', 'X（任意）', snd.x, 'autocomplete="off" data-sender placeholder="例：@kurunavi"')}
+            </div>
+            ${f('mail', 'Mail（任意）', snd.mail, 'type="email" autocomplete="off" data-sender')}
+            ${f('tagline', '見出しの下に入る文', snd.tagline, 'autocomplete="off" data-sender')}
+            ${f('nextNo', '次の伝票番号', snd.nextNo, 'inputmode="numeric" data-sender', '印刷するたびに、この番号から順に付けます')}
+          </details>
+        </section>
         <section class="sf-sum" aria-live="polite"></section>
         <section class="sf-sec sf-docs">
           <h4>${U.icon('print', 'sm')}印刷するもの</h4>
@@ -174,24 +198,6 @@
           </ol>
           ${kindBtns(Sh.kind())}
         </section>
-        <details class="sf-sec sf-sender" id="sf-from"${v.lacks.some((x) => x.startsWith('発送元')) ? ' open' : ''}>
-          <summary><h4><span class="sf-no">4</span>発送元（自分）<small>${snd.name ? esc(snd.name) : '未入力'} ・ 全員の伝票で共通</small></h4></summary>
-          <div class="grid2">
-            ${f('name', '名前', snd.name, 'autocomplete="off" data-sender placeholder="例：屋号・ハンドルネーム"')}
-            ${f('x', 'X（任意）', snd.x, 'autocomplete="off" data-sender placeholder="例：@kurunavi"')}
-          </div>
-          ${f('mail', 'Mail（任意）', snd.mail, 'type="email" autocomplete="off" data-sender')}
-          ${f('tagline', '見出しの下に入る文', snd.tagline, 'autocomplete="off" data-sender')}
-          ${f('nextNo', '次の伝票番号', snd.nextNo, 'inputmode="numeric" data-sender', '印刷するたびに、この番号から順に付けます')}
-          <h5 class="sf-sub">宛名ラベルの差出人<small>定形外郵便のときに使います。宛先に届かなかったときは、この住所に戻ってきます</small></h5>
-          <div class="grid2">
-            ${f('real', '氏名', snd.real, 'autocomplete="off" data-sender placeholder="例：山田 太郎"')}
-            ${f('phone', '電話番号（任意）', snd.phone, 'inputmode="tel" autocomplete="off" data-sender')}
-          </div>
-          ${f('postal', '郵便番号', snd.postal, 'inputmode="numeric" placeholder="例：100-0001" autocomplete="off" data-sender')}
-          ${f('addr1', '住所（都道府県から番地まで）', snd.addr1, 'autocomplete="off" data-sender placeholder="例：東京都千代田区千代田1-1"')}
-          ${f('addr2', '建物名・部屋番号（任意）', snd.addr2, 'autocomplete="off" data-sender')}
-        </details>
         <button class="btn block ghost" data-shipped>${U.icon('check')}${r.ship && r.ship.shippedAt ? `発送済みを取り消す（${esc(U.md(r.ship.shippedAt))}に発送）` : '発送済みにする'}</button>
         <p class="muted small">入力した内容は自動で保存されます。宛先は、次の代行でも「前回の宛先を使う」から呼び出せます。用紙は A4縦です。黒い帯が印刷されないときは、印刷の設定で「背景のグラフィック」をオンにしてください。</p>
         <div class="sf-actions">
@@ -212,6 +218,7 @@
           if (!pv || !matchMedia('(min-width: 960px)').matches) return;
           const top = pv.scrollTop;
           pv.innerHTML = pagesOf([rid], Sh.kind(), true).map((h) => `<div class="sp-page">${h}</div>`).join('');
+          fitLabels(pv);
           scalePages(pv);
           pv.scrollTop = top;
         };
@@ -238,7 +245,7 @@
             ['sf-to', 1, 'お届け先', to.length ? `未入力 ${to.length}件` : '', to.length ? `未入力：${to.join('・')}` : ''],
             ['sf-ship', 2, '発送', has('送料') ? '送料が未入力' : '', ''],
             ['sf-parts', 3, 'セットの内容', sets ? `未登録 ${sets}件` : '', ''],
-            ['sf-from', 4, '発送元', (() => { const l = d.lacks.filter((x) => x.startsWith('発送元')).map((x) => x.replace('発送元の', '')); return l.length ? `${l.join('・')}が未入力` : ''; })(), ''],
+            ['sf-from', 4, '差出人', (() => { const l = d.lacks.filter((x) => /^(差出人|発送元)の/.test(x)).map((x) => x.replace(/^(差出人|発送元)の/, '')); return l.length ? `${l.join('・')}が未入力` : ''; })(), ''],
           ];
           nav.innerHTML = items.map(([id, n, label, warn, tip]) => `<button type="button" class="sf-nav-i${warn ? ' warn' : ' ok'}" data-go="${id}" title="${esc(tip || warn || '入力済み')}"><span class="sf-no">${n}</span><span><b>${label}</b><small>${warn ? esc(warn) : '入力済み'}</small></span></button>`).join('');
         };
@@ -247,6 +254,8 @@
           const sec = b && U.$('#' + b.dataset.go, el);
           if (!sec) return;
           if (sec.tagName === 'DETAILS') sec.open = true;
+          const more = U.$('.sf-more', sec);
+          if (more && Sh.data(rid).lacks.includes('発送元の名前')) more.open = true;
           // 上に固定した進み具合の帯に隠れないよう、その高さぶん下げて見せる（PC は入力の列、スマホはシートがスクロールする）
           const sc = [U.$('.ship-form', el), U.$('.sheet-body', el)].find((x) => x && /auto|scroll/.test(getComputedStyle(x).overflowY) && x.scrollHeight > x.clientHeight);
           if (sc) sc.scrollTo({ top: sc.scrollTop + sec.getBoundingClientRect().top - sc.getBoundingClientRect().top - nav.offsetHeight - 8, behavior: 'smooth' });
@@ -596,8 +605,11 @@
     </article>`;
   };
   // ------------------------------------------------------------------ 宛名ラベル（定形外郵便など）
-  /* A4 に 2列×2段＝4人分（95×137mm、点線が切り取り線）。荷物の表に貼る。横書きで、郵便番号・住所・氏名を大きく、
-     下に差出人（届かなかったときに戻る先）。右上の No. は伝票と同じ番号（どの箱に貼るかを取り違えないように） */
+  /* A4 に 2列×2段＝4人分（95×137mm、点線が切り取り線）。荷物の表に貼る。郵便局の方が読みやすいことを第一に作る：
+     - 上から「送り方」→「お届け先」（太い枠）→「差出人」（細い枠）。見出しを付けて、宛先と差出人を取り違えないように
+     - お届け先は郵便番号・住所・氏名をはっきり大きく。住所は「都道府県＋市区町村」と「町名・番地」で行を分け、建物名は別の行。氏名は中央に一番大きく
+     - 差出人も小さすぎない大きさにする（届かなかったときに戻すため）。ハンドルネームは載せず、本名（sender.real）だけ
+     - 枠に収まらないときは、印刷の前に文字を少しずつ小さくする（fitLabels）。右下の小さな No. は伝票と同じ番号（箱との照合用） */
   const LABELS_PER_PAGE = 4;
   /** 宛名ラベルを出す人。その人の入力画面から印刷するとき（own）は選んだとおり、まとめて印刷するときは定形外郵便の人だけ（手渡しは出さない） */
   Sh.labelRids = (rids, own) => rids.filter((rid) => {
@@ -605,27 +617,36 @@
     return sh.method !== '手渡し' && (own || needsLabel(sh));
   });
   const sama = (n) => String(n || '').trim().replace(/\s*様$/, '');
+  /** 住所を「都道府県＋市区町村」と「それより後」に分ける（行を分けて読みやすく）。分けられなければ1行のまま */
+  Sh.splitAddr = (a) => {
+    const s = String(a || '').trim();
+    const m = /^((?:.{2,3}?[都道府県])?(?:.+?郡.+?[町村]|.+?市[^\s市区町村]{1,4}区|.+?[市区町村](?![市区町村])))\s*(.+)$/.exec(s);
+    return m ? [m[1], m[2]] : [s];
+  };
   Sh.labelsHTML = (rids, own) => {
     const snd = Sh.sender();
+    const fromAddr = [snd.addr1, snd.addr2].map((x) => String(x || '').trim()).filter(Boolean);   // 建物名は別の行（途中で折り返さないように）
     const one = (rid) => {
       const sh = { ...(S().requester(rid).ship || {}) };
-      const ad = [sh.addr1, sh.addr2].filter(Boolean).join('');
+      const lines = [...Sh.splitAddr(sh.addr1), ...(sh.addr2 ? [String(sh.addr2).trim()] : [])].filter(Boolean);
       const nm = sama(sh.name);
+      // 文字の大きさは住所の行（都道府県〜番地）の長さで決める。建物名が長いときは小さくせずに折り返す
+      const long = Math.max(0, ...Sh.splitAddr(sh.addr1).map((l) => [...l].length));
       return `<div class="al">
-          <div class="al-to">
-            <div class="al-zip"><span>〒</span>${esc(Sh.postal(sh.postal) || '')}</div>
-            <div class="al-addr${ad.length > 40 ? ' l3' : ad.length > 26 ? ' l2' : ''}">${esc(sh.addr1 || '')}${sh.addr2 ? `<br>${esc(sh.addr2)}` : ''}</div>
-            <div class="al-name${nm.length > 10 ? ' l2' : ''}">${esc(nm)}<span>様</span></div>
+          <div class="al-top">${sh.method ? `<span class="al-svc">${esc(sh.method)}</span>` : ''}</div>
+          <section class="al-to">
+            <div class="al-h">お届け先</div>
+            <div class="al-zip">〒${esc(Sh.postal(sh.postal) || '')}</div>
+            <div class="al-addr${long > 20 ? ' l4' : long > 17 ? ' l3' : long > 13 ? ' l2' : ''}">${lines.map((l) => `<div>${esc(l)}</div>`).join('')}</div>
+            <div class="al-name${[...nm].length > 8 ? ' l2' : ''}">${esc(nm)}<span>様</span></div>
             ${sh.phone ? `<div class="al-tel">TEL ${esc(sh.phone)}</div>` : ''}
-          </div>
-          <div class="al-from">
-            <div class="al-fl">差出人</div>
-            <div class="al-fb">
-              ${snd.postal ? `<div>〒${esc(Sh.postal(snd.postal))}</div>` : ''}
-              <div>${esc(snd.addr1 || '')}${snd.addr2 ? ` ${esc(snd.addr2)}` : ''}</div>
-              <div class="al-fn">${esc(snd.real || snd.name || '')}${snd.phone ? `<span>TEL ${esc(snd.phone)}</span>` : ''}</div>
-            </div>
-          </div>
+          </section>
+          <section class="al-from">
+            <div class="al-h">差出人</div>
+            <div class="al-fzip">〒${esc(Sh.postal(snd.postal) || '')}</div>
+            <div class="al-faddr">${fromAddr.map((l) => `<div>${esc(l)}</div>`).join('')}</div>
+            <div class="al-fname">${esc(sama(snd.real))}${snd.phone ? `<span>TEL ${esc(snd.phone)}</span>` : ''}</div>
+          </section>
           <div class="al-no">No.${esc(noTxt(sh.no))}</div>
         </div>`;
     };
@@ -633,6 +654,15 @@
     const pages = [];
     for (let i = 0; i < list.length; i += LABELS_PER_PAGE) pages.push(list.slice(i, i + LABELS_PER_PAGE));
     return pages.map((p) => `<article class="slip al-page"><div class="al-grid">${p.map(one).join('')}${'<div class="al al-empty"></div>'.repeat(LABELS_PER_PAGE - p.length)}</div></article>`);
+  };
+  /** 宛名ラベルの文字が枠からはみ出すときは、住所と氏名を少しずつ小さくする（途中で切らない） */
+  const fitLabels = (root) => {
+    U.$$('.al-to, .al-from', root).forEach((box) => {
+      const parts = U.$$('.al-addr, .al-name, .al-faddr, .al-fname', box);
+      for (let i = 0; i < 24 && box.scrollHeight > box.clientHeight + 1; i++) {
+        parts.forEach((p) => { p.style.fontSize = (parseFloat(getComputedStyle(p).fontSize) * 0.94).toFixed(2) + 'px'; });
+      }
+    });
   };
   /** 印刷するページ（1人ずつ 梱包 → 発送、宛名ラベルは最後にまとめて）。プレビューと印刷で共通 */
   const pagesOf = (rids, kind, own) => {
@@ -685,7 +715,7 @@
         U.$('[data-print]', el).onclick = () => Sh.print(rids, kind, own);
         U.$$('[data-kind]', el).forEach((b) => (b.onclick = () => Sh.preview(rids, toggleKind(b.dataset.kind), own)));
         // A4（210mm）を画面の幅に合わせて縮める
-        requestAnimationFrame(() => scalePages(el));
+        requestAnimationFrame(() => { fitLabels(el); scalePages(el); });
       },
     });
   };
@@ -722,6 +752,7 @@
     box.style.cssText = 'display:block;position:absolute;left:-10000px;top:0;visibility:hidden';
     document.body.appendChild(box);
     fitTags(box);
+    fitLabels(box);
     box.style.cssText = '';
     document.body.classList.add('printing', 'printing-slips');
     const cleanup = () => {

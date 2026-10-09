@@ -1898,25 +1898,33 @@ body { font-feature-settings: "palt" 0; }
 /* タグ貼り（スマホ）：品名を画像より先に、画像は少し小さく（カメラの下で読めるように） */
 @media (max-width: 959px) { .tc-info { order: -1; } .tc-shot img { max-height: 40vh; } }
 
-/* 宛名ラベル（1.9.3。定形外郵便など。A4 に 2列×2段＝4人分、95×137mm、点線が切り取り線）。横書きで宛先を大きく、下に差出人 */
+/* 宛名ラベル（1.9.3、1.9.4 で見直し。定形外郵便など。A4 に 2列×2段＝4人分、95×137mm、点線が切り取り線）。
+   郵便局の方が読みやすいように：送り方 → お届け先（太い枠・大きな文字）→ 差出人（細い枠）。文字は太いゴシック、数字は桁をそろえる */
 .al-grid { display: grid; grid-template-columns: repeat(2, 95mm); grid-auto-rows: 137mm; width: 190mm; border-top: .6pt dashed #999; border-left: .6pt dashed #999; }
-.al { position: relative; display: flex; flex-direction: column; padding: 9mm 8mm 7mm; border-right: .6pt dashed #999; border-bottom: .6pt dashed #999; overflow: hidden; break-inside: avoid; }
-.al-to { flex: 1; display: flex; flex-direction: column; gap: 5mm; }
-.al-zip { font-size: 19pt; font-weight: 800; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
-.al-zip span { margin-right: 1.5mm; }
-.al-addr { font-size: 15pt; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; }
-.al-addr.l2 { font-size: 13.5pt; }
-.al-addr.l3 { font-size: 12pt; }
-.al-name { margin-top: 6mm; font-size: 25pt; font-weight: 900; line-height: 1.3; letter-spacing: .08em; overflow-wrap: anywhere; }
-.al-name.l2 { font-size: 19pt; }
-.al-name span { font-size: 16pt; margin-left: 3mm; font-weight: 800; }
-.al-tel { font-size: 10pt; font-weight: 700; font-variant-numeric: tabular-nums; }
-.al-from { display: flex; gap: 3mm; border-top: .8pt solid #111; padding-top: 3mm; font-size: 8.5pt; line-height: 1.5; }
-.al-fl { flex: none; font-size: 7.5pt; font-weight: 800; color: #fff; background: #111; padding: .4mm 1.6mm; border-radius: .6mm; align-self: flex-start; letter-spacing: .1em; }
-.al-fb { min-width: 0; overflow-wrap: anywhere; }
-.al-fn { font-weight: 800; font-size: 9.5pt; }
-.al-fn span { font-weight: 600; font-size: 8pt; margin-left: 3mm; }
-.al-no { position: absolute; right: 3mm; top: 2.5mm; font-size: 7pt; font-weight: 700; color: #777; font-variant-numeric: tabular-nums; }
-.sf-sub { margin: 14px 0 6px; font-size: .9rem; display: flex; flex-direction: column; gap: 2px; }
-.sf-sub small { font-weight: 400; color: var(--muted); font-size: .78rem; }
+.al { position: relative; display: flex; flex-direction: column; gap: 3mm; padding: 6mm 6mm 6.5mm; border-right: .6pt dashed #999; border-bottom: .6pt dashed #999; overflow: hidden; break-inside: avoid; color: #000; }
+.al-empty { padding: 0; }
+.al-top { display: flex; justify-content: flex-end; min-height: 7mm; }
+.al-svc { border: 1.2pt solid #000; padding: .6mm 2.6mm; font-size: 11pt; font-weight: 900; letter-spacing: .12em; line-height: 1.3; }
+.al-h { font-size: 8.5pt; font-weight: 800; letter-spacing: .2em; line-height: 1; }
+.al-to { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 3.2mm; border: 1.6pt solid #000; padding: 4mm 4.5mm; overflow: hidden; }
+.al-to .al-h { align-self: flex-start; background: #000; color: #fff; padding: 1mm 2mm; }
+.al-zip { font-size: 20pt; font-weight: 800; letter-spacing: .08em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.al-addr { font-size: 16pt; font-weight: 700; line-height: 1.42; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.al-addr.l2 { font-size: 14pt; }
+.al-addr.l3 { font-size: 12.5pt; }
+.al-addr.l4 { font-size: 11pt; }
+.al-name { margin: auto 0; padding: 2mm 0; text-align: center; font-size: 26pt; font-weight: 900; line-height: 1.25; letter-spacing: .1em; overflow-wrap: anywhere; }
+.al-name.l2 { font-size: 20pt; letter-spacing: .04em; }
+.al-name span { font-size: 17pt; margin-left: 2.5mm; letter-spacing: 0; }
+.al-tel { font-size: 11pt; font-weight: 700; font-variant-numeric: tabular-nums; }
+.al-from { flex: none; max-height: 34mm; display: flex; flex-direction: column; gap: 1.2mm; border: .8pt solid #000; padding: 3mm 4mm; overflow: hidden; }
+.al-from .al-h { margin-bottom: .8mm; }
+.al-fzip { font-size: 10.5pt; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.al-faddr { font-size: 10.5pt; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.al-fname { font-size: 12pt; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
+.al-fname span { font-size: 9.5pt; font-weight: 600; margin-left: 3mm; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.al-no { position: absolute; right: 6mm; bottom: 1.6mm; font-size: 6.5pt; font-weight: 600; color: #888; font-variant-numeric: tabular-nums; }
+.ship-form .sf-more { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 4px; }
+.ship-form .sf-more summary { gap: 6px; font-weight: 700; font-size: .88rem; }
+.ship-form .sf-more summary small { margin-left: auto; color: var(--muted); font-weight: 400; font-size: .78rem; }
 .sf-kind { gap: 6px; }
