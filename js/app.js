@@ -9,7 +9,7 @@
   const P = HC.parser;
   const Lay = HC.layout;
 
-  HC.VERSION = '1.8.1';
+  HC.VERSION = '1.8.2';
 
   const VIEWS = ['go', 'list', 'map', 'log', 'circles', 'more', 'ship', 'scan'];
   const app = (HC.app = { view: 'go', dirty: new Set(VIEWS), sheetCid: null, clockTick: () => {} });

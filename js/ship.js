@@ -616,13 +616,31 @@
     printHTML(docsHTML(rids, kind));
   };
 
+  /** QR タグの品名が枠に収まるまで文字を少しずつ小さくする（品名の長さだけでは文字の幅の違いを見込みきれないため。途中で切らない） */
+  const fitTags = (root) => {
+    U.$$('.tg-tx', root).forEach((tx) => {
+      const nm = U.$('.tg-nm', tx);
+      if (!nm) return;
+      let pt = parseFloat(getComputedStyle(nm).fontSize) * 0.75;   // px → pt
+      for (let i = 0; i < 20 && tx.scrollHeight > tx.clientHeight + 1 && pt > 5.2; i++) {
+        pt -= 0.3;
+        nm.style.fontSize = pt.toFixed(1) + 'pt';
+        nm.style.lineHeight = '1.18';
+      }
+    });
+  };
+
   /** 伝票の HTML を印刷する（印刷のあいだはシートごと隠れるので、入力の画面は閉じない） */
   const printHTML = (html) => {
     const box = document.createElement('div');
     box.id = 'printsheet';
     box.className = 'slips';
     box.innerHTML = html;
+    // 画面の外で組んで測ってから印刷の形にする（印刷用の入れ物はふだん隠れているので）
+    box.style.cssText = 'display:block;position:absolute;left:-10000px;top:0;visibility:hidden';
     document.body.appendChild(box);
+    fitTags(box);
+    box.style.cssText = '';
     document.body.classList.add('printing', 'printing-slips');
     const cleanup = () => {
       document.body.classList.remove('printing', 'printing-slips');
@@ -665,6 +683,8 @@
   const BC_ORDERS = { space: 'スペース順', time: '購入順' };
   const PAYS = { cash: '現金', card: 'キャッシュレス' };
   const whoName = (f) => (f ? `${(S().requester(f) || {}).name || '代行'}の代行` : '自分');
+  /** タグ・付箋カードに小さく書く「誰の分」（名前だけ。代行の分は左端の黒い帯でも見分けられる） */
+  const whoShort = (f) => (f ? (S().requester(f) || {}).name || '代行' : '自分');
 
   /** 買った品物の一覧。who＝'all'（全員）／'own'（自分）／依頼者の id。No. は並べた順に振る */
   Sh.buyRows = (who = 'all', order = 'space') => {
@@ -750,7 +770,7 @@
         <div class="bcc-nm">${esc(r.name)}${r.parts ? '<span class="tag-set">セット</span>' : ''}${isRandom(r.name) ? '<span class="tag-rand">ランダム</span>' : ''}</div>
         ${r.parts ? `<div class="bcc-parts">中身：${r.parts.map((p) => `${esc(p.n)} ×${p.q}`).join('、')}</div>` : ''}
         <div class="bcc-q"><b>×${r.qty}</b>${boxes(r.qty, 12)}</div>
-        <div class="bcc-ft"><span class="bcc-who${r.for ? ' px' : ''}">${esc(whoName(r.for))}</span><span class="bcc-hist">${esc(hist(r))}</span></div>
+        <div class="bcc-ft"><span class="bcc-who${r.for ? ' px' : ''}">${esc(whoShort(r.for))}</span><span class="bcc-hist">${esc(hist(r))}</span></div>
       </div>`;
     const pages = [];
     for (let i = 0; i < rows.length; i += CARDS_PER_PAGE) pages.push(rows.slice(i, i + CARDS_PER_PAGE));
@@ -759,29 +779,31 @@
   };
 
   /**
-   * QR タグ（1点ごとに1枚。A4 に 4列×9段＝36枚、47.5×30mm）。点線で切ってテープで品物に貼る。
+   * QR タグ（1点ごとに1枚。A4 に 3列×8段＝24枚、63×33.5mm）。点線で切ってテープで品物に貼る。
+   * No. と「何点目／数量」は大きく、品名とサークル名は途中で切らずに折り返す（長い品名は文字を小さくして収める）。誰の分は名前だけ小さく
    * QR には「KN1:品物のid:何点目」だけを入れる（どの品物かはスマホ側のデータで引く）。誤り訂正 M・型番2以上（位置合わせパターン入り）で、斜めからでも読みやすくする
    */
-  const TAGS_PER_PAGE = 36;
+  const TAGS_PER_PAGE = 24;
   Sh.tagsHTML = (rows) => {
     const units = [];
     rows.forEach((r) => { for (let k = 1; k <= r.qty; k++) units.push({ r, k }); });
     const tag = ({ r, k }) => {
       const qr = HC.qr.svg(S().tagText(r.iid, k, r.cid && r.cid.startsWith('x:')), { ecl: 'M', minVersion: 2, quiet: 2, px: 76 });
+      const len = [...r.name].length;
       return `<div class="tg${r.for ? ' px' : ''}">
           <div class="tg-qr">${qr || ''}</div>
           <div class="tg-tx">
-            <div class="tg-top"><b>No.${r.no}</b><span class="tg-k">${k}<small>/${r.qty}</small></span></div>
-            <div class="tg-sp"><b>${esc(r.space || '—')}</b> ${esc(r.circle)}</div>
-            <div class="tg-nm">${esc(r.name)}</div>
-            <div class="tg-who${r.for ? ' px' : ''}">${esc(whoName(r.for))}</div>
+            <div class="tg-top"><span class="tg-no">No.<b>${r.no}</b></span><span class="tg-k"><b>${k}</b>/${r.qty}</span></div>
+            <div class="tg-sp"><b>${esc(r.space || '—')}</b><span${[...r.circle].length > 7 ? ' class="long"' : ''}>${esc(r.circle)}</span></div>
+            <div class="tg-nm${len > 48 ? ' l4' : len > 34 ? ' l3' : len > 22 ? ' l2' : ''}">${esc(r.name)}</div>
+            <div class="tg-who">${esc(whoShort(r.for))}</div>
           </div>
         </div>`;
     };
     const pages = [];
     for (let i = 0; i < units.length; i += TAGS_PER_PAGE) pages.push(units.slice(i, i + TAGS_PER_PAGE));
     return pages.map((p, k) => `<article class="slip bc-tags"><div class="tg-grid">${p.map(tag).join('')}</div>
-      <div class="bc-cut">QRタグ ${k + 1}/${pages.length} ・ 点線で切って、品物1点に1枚ずつテープで貼ってください（No. は一覧表と同じ。右上は「何点目／数量」）</div></article>`).join('');
+      <div class="bc-cut">QRタグ ${k + 1}/${pages.length} ・ 点線で切って、品物1点に1枚ずつテープで貼ってください（No. は一覧表と同じ。右上は「何点目／数量」、右下は誰の分）</div></article>`).join('');
   };
 
   const bcDocs = (o) => {
@@ -811,7 +833,7 @@
             <div class="field"><span>印刷するもの（組み合わせて選べます）</span><div class="chips wrap">${Object.entries(BC_PARTS).map(([v, l]) => `<button type="button" class="chip sm${o.parts.includes(v) ? ' on' : ''}" data-bcpart="${v}">${o.parts.includes(v) ? U.icon('check', 'sm') : ''}${l}</button>`).join('')}</div></div>
             <div class="field"><span>並び順</span>${seg('order', BC_ORDERS)}</div>
           </div>
-          <p class="muted small">QRタグは1点に1枚（A4 1枚に36枚）。切って品物に貼り、発送モードの「読み取り」でスマホのカメラを向けると、検品と梱包の過不足を自動で確かめられます。付箋カード（A4 1枚に12枚）は品物ごとに1枚です。どれも一覧表と同じ No. です。</p>
+          <p class="muted small">QRタグは1点に1枚（A4 1枚に24枚）。切って品物に貼り、発送モードの「読み取り」でスマホのカメラを向けると、検品と梱包の過不足を自動で確かめられます。付箋カード（A4 1枚に12枚）は品物ごとに1枚です。どれも一覧表と同じ No. です。</p>
         </div>
         ${rows.length ? `<div class="slip-preview">${html.split('<article').filter(Boolean).map((a) => `<div class="sp-page">${'<article' + a}</div>`).join('')}</div>`
           : '<p class="muted">この対象で買った品物はまだありません。</p>'}
@@ -826,7 +848,7 @@
         }));
         const pb = U.$('[data-bcprint]', el);
         if (pb) pb.onclick = () => { if (rows.length) printHTML(bcDocs(o).html); };
-        requestAnimationFrame(() => scalePages(el));
+        requestAnimationFrame(() => { fitTags(el); scalePages(el); });
       },
     });
   };

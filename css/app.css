@@ -1568,23 +1568,6 @@ body:has(.sheet-wrap.open) .toast { top: calc(env(safe-area-inset-top, 0px) + 8p
 .sheet-wrap.slip-preview-sheet .sheet-body { padding-bottom: 0; }
 .sticky-acts { position: sticky; bottom: 0; z-index: 2; margin: 10px -16px 0; padding: 10px 16px calc(10px + var(--safe-b)); background: var(--surface); border-top: 1px solid var(--line); }
 
-/* QR タグ（1点1枚・A4 に 4列×9段。点線が切り取り線） */
-.bc-tags { width: 190mm; }
-.tg-grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 30mm; width: 190mm; border-top: .6pt dashed #999; border-left: .6pt dashed #999; }
-.tg { display: flex; gap: 1.6mm; padding: 1.6mm; border-right: .6pt dashed #999; border-bottom: .6pt dashed #999; overflow: hidden; break-inside: avoid; }
-.tg.px { box-shadow: inset 1.6mm 0 0 #111; padding-left: 2.6mm; }
-.tg-qr { flex: none; width: 21mm; height: 21mm; align-self: center; }
-.tg-qr svg { width: 100%; height: 100%; display: block; }
-.tg-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .5mm; }
-.tg-top { display: flex; align-items: baseline; justify-content: space-between; gap: 1mm; }
-.tg-top b { font-size: 8pt; font-weight: 900; white-space: nowrap; }
-.tg-k { font-size: 12pt; font-weight: 900; line-height: 1; white-space: nowrap; }
-.tg-k small { font-size: 7pt; font-weight: 700; color: #555; }
-.tg-sp { font-size: 6.5pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #333; }
-.tg-sp b { font-size: 7.5pt; color: #111; }
-.tg-nm { font-size: 7.5pt; font-weight: 800; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.tg-who { margin-top: auto; align-self: flex-start; font-size: 6.5pt; font-weight: 800; border: .7pt solid #111; border-radius: .7mm; padding: 0 1mm; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tg-who.px { background: #111; color: #fff; }
 
 /* ============================================================ 発送モード（js/shipview.js） */
 /* タブ：発送モードでは「発送・読み取り・メニュー」だけ */
@@ -1701,3 +1684,34 @@ body.shipm .top-wallet { display: none; }
 .scan-camname { position: absolute; left: 8px; top: 8px; max-width: calc(100% - 16px); font-size: .78rem; font-weight: 700; color: #fff; background: rgba(0, 0, 0, .55); padding: 3px 8px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: none; }
 .scan-cam.on .scan-camname:not(:empty) { display: block; }
 .scan-off .scan-help { color: #9cc4ff; }
+
+/* QR タグ（1点1枚・A4 に 3列×8段＝24枚、63×33.5mm。点線が切り取り線）。No. と何点目は大きく、品名・サークル名は切らずに折り返す */
+.bc-tags { width: 190mm; }
+.tg-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 33.5mm; width: 190mm; border-top: .6pt dashed #999; border-left: .6pt dashed #999; }
+.tg { display: flex; gap: 2.2mm; padding: 2mm 2.4mm; border-right: .6pt dashed #999; border-bottom: .6pt dashed #999; overflow: hidden; break-inside: avoid; }
+.tg.px { box-shadow: inset 1.8mm 0 0 #111; padding-left: 3.8mm; }
+.tg-qr { flex: none; width: 24mm; height: 24mm; align-self: center; }
+.tg-qr svg { width: 100%; height: 100%; display: block; }
+.tg-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .7mm; }
+.tg-top { display: flex; align-items: baseline; justify-content: space-between; gap: 1mm; border-bottom: .6pt solid #bbb; padding-bottom: .5mm; }
+.tg-no { font-size: 7pt; font-weight: 700; color: #555; white-space: nowrap; }
+.tg-no b { font-size: 13pt; font-weight: 900; color: #111; margin-left: .3mm; font-variant-numeric: tabular-nums; }
+.tg-k { font-size: 8pt; font-weight: 700; color: #555; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tg-k b { font-size: 15pt; font-weight: 900; color: #111; }
+.tg-sp { display: flex; align-items: baseline; gap: 1.2mm; font-size: 7.5pt; line-height: 1.25; color: #333; }
+.tg-sp b { flex: none; font-size: 9pt; font-weight: 900; color: #111; }
+.tg-sp span { min-width: 0; overflow-wrap: anywhere; }
+.tg-nm { font-size: 9pt; font-weight: 800; line-height: 1.28; overflow-wrap: anywhere; }
+.tg-nm.l2 { font-size: 8pt; }
+.tg-nm.l3 { font-size: 7pt; line-height: 1.22; }
+.tg-who { margin-top: auto; align-self: flex-end; max-width: 100%; font-size: 6.5pt; font-weight: 700; color: #666; overflow-wrap: anywhere; text-align: right; }
+.tg.px .tg-who { color: #111; font-weight: 800; }
+/* 付箋カードの「誰の分」も名前だけ（小さく） */
+.bcc-who { font-size: 7pt; }
+/* 誰の分はタグの右下に固定して、品名が長くても必ず見えるように。とても長い品名・サークル名は文字を小さく */
+.tg { position: relative; }
+.tg-tx { padding-bottom: 3.2mm; }
+.tg-who { position: absolute; right: 2.4mm; bottom: 1.4mm; max-width: 34mm; margin: 0; background: #fff; padding-left: 1mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tg-nm.l4 { font-size: 6.3pt; line-height: 1.2; }
+.tg-sp span.long { font-size: 6.5pt; }
+.tg-tx { overflow: hidden; }   /* 収まり具合を測るため（fitTags） */

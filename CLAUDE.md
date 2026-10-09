@@ -152,7 +152,7 @@ Circle = { id:'A01', block:'A', nums:[1,2], space:'A01-02', name, tw, px(pixiv�
   チェキのように見分けにくい品物を付箋で照らし合わせて検品し、付箋を見ながら梱包するため（2026-10-04 本人）。人に渡さないので金額・支払方法・時刻も載せる
   確認は CDP の `Page.printToPDF`（`printBackground`・`preferCSSPageSize`）で PDF にして見る。入力欄の例には実在の宛先を書かない
 - **発送モード**（1.8.0、`settings.shipMode`。端末ごと＝同期しない。`body.shipm`）：タブは「発送（V.ship）・読み取り（V.scan）・メニュー（V.shipMenu）」だけ。入口は代行のカード・設定・当日メニュー。
-  流れ：PC で QR タグを印刷（購入検品伝票の画面で「QRタグ」。1点1枚、A4 に 4列×9段＝36枚、47.5×30mm、`Sh.tagsHTML`）→ 品物に貼る → スマホで「購入検品」→ 宛先・伝票 → 箱を選んで「梱包」→ 伝票を同封 → 発送済み。
+  流れ：PC で QR タグを印刷（購入検品伝票の画面で「QRタグ」。1点1枚、A4 に 3列×8段＝24枚、63×33.5mm、QR 24mm、`Sh.tagsHTML`。1.8.2 で4列から変更：No.・何点目を大きく、品名・サークル名は切らずに折り返し、品名が長いと `fitTags` が枠に収まるまで文字を小さくする。誰の分は名前だけ右下に小さく＝`whoShort`）→ 品物に貼る → スマホで「購入検品」→ 宛先・伝票 → 箱を選んで「梱包」→ 伝票を同封 → 発送済み。
   タグの QR は `KN1:品物のid:何点目`（サークル外の支出は id の前に x。`S.tagText`／`S.parseTag`）。誤り訂正 M・型番2以上（位置合わせパターン入り）。どの品物かはスマホ側のデータで引くので、同期でそろえておく。
   判定は `S.scanTag(text, mode, box)`：ok／dup（読み取り済み）／wrongBox（別の人の分）／own（自分の分は箱に入れない）／notBought／over（数量より多い番号）／otherEvent／unknown（この端末に無い）／invalid。
   記録は品物の `insp`／`pack`（何点目かの配列）。梱包すると検品も済みにする。手で記録・取り消しは `S.setUnit`。一覧は `S.unitRows(who)`。梱包が全部済むと `Sh.state` が packed（梱包済み）。
@@ -377,7 +377,7 @@ mode: `must`=必須を先に回り切ってから残り / `tier`=優先度ごと
 
 ## 版の更新（ここを間違えると「いつまでも古い版のまま」になる）
 
-- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.8.1）。
+- リリースのたびに **`sw.js` の `CACHE`** と **`js/app.js` の `HC.VERSION`** を同じ番号に上げる（現在 1.8.2）。
   **`js/changelog.js` の先頭にもその版の内容を1件足す**（tag: new=新機能 / up=改善 / fix=修正。利用者向けの自然な文で）。
   更新後の初回起動で、前に開いた版（`localStorage['kurunavi.version']`）より新しい分を「新しくなったこと」として自動で出す（`A.changelog({since})`）
 - **SW の install はブラウザのHTTPキャッシュを避けて取り込む**（`freshRequests()`＝`cache:'reload'` ＋ `?v=CACHE`）。
